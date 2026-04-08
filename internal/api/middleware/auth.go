@@ -134,6 +134,16 @@ func shouldBypass(r *http.Request) bool {
 		return true
 	}
 
+	// Templates are public (helps onboarding before login)
+	if strings.HasPrefix(path, "/api/v1/templates") {
+		return true
+	}
+
+	// OAuth flow paths are public (user isn't authenticated yet)
+	if strings.HasPrefix(path, "/api/v1/auth/oauth/") {
+		return true
+	}
+
 	// Specific /api/ paths that are public
 	if bypassPaths[path] {
 		return true

@@ -86,6 +86,9 @@ func NewServer(deps Deps) *Server {
 		return resp, nil
 	})
 
+	// Templates (public, helps onboarding)
+	handler.NewTemplateHandler().Register(api)
+
 	// Auth handlers (always registered)
 	handler.NewAuthHandler(deps.AuthService).Register(api)
 
@@ -132,6 +135,14 @@ func NewServer(deps Deps) *Server {
 		termHandler := ws.NewTerminalHandler(deps.DockerClient)
 		router.With(authmw.RequireRole(auth.RoleOperator)).
 			Get("/api/v1/ws/terminal/{id}", termHandler.ServeHTTP)
+	}
+
+	// OAuth/OIDC (raw chi handlers -- goth needs raw http)
+	if deps.UserRepo != nil {
+		oauthHandler := handler.NewOAuthHandler(deps.AuthService, deps.UserRepo)
+		if oauthHandler.Setup() {
+			oauthHandler.RegisterRaw(router)
+		}
 	}
 
 	// Webhook receiver (raw chi handler -- validates signature, not session)

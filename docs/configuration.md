@@ -17,6 +17,12 @@ All configuration is via `COMPOSER_*` environment variables. No config files, no
 | `COMPOSER_COOKIE_SECURE` | `true` | Set session cookie Secure flag. Set to `false` for local dev without TLS |
 | `COMPOSER_NOTIFY_URL` | (empty) | Webhook URL for deploy/failure notifications. Empty = disabled |
 | `COMPOSER_SLACK_WEBHOOK` | (empty) | Slack incoming webhook URL. Empty = disabled |
+| `COMPOSER_GITHUB_CLIENT_ID` | (empty) | GitHub OAuth app client ID. Empty = disabled |
+| `COMPOSER_GITHUB_CLIENT_SECRET` | (empty) | GitHub OAuth app client secret |
+| `COMPOSER_GOOGLE_CLIENT_ID` | (empty) | Google OAuth client ID. Empty = disabled |
+| `COMPOSER_GOOGLE_CLIENT_SECRET` | (empty) | Google OAuth client secret |
+| `COMPOSER_OAUTH_CALLBACK_URL` | `http://localhost:8080` | Base URL for OAuth callbacks |
+| `COMPOSER_SESSION_SECRET` | (auto) | Secret key for OAuth session store |
 
 ## Container User Mapping (PUID/PGID)
 
