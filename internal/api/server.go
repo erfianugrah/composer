@@ -16,6 +16,7 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/infra/docker"
+	"github.com/erfianugrah/composer/internal/infra/store/postgres"
 )
 
 // Server is the HTTP API server.
@@ -27,10 +28,12 @@ type Server struct {
 // Deps holds all dependencies needed by the API server.
 type Deps struct {
 	AuthService  *app.AuthService
-	StackService *app.StackService   // nil if Docker not available
-	UserRepo     auth.UserRepository // nil disables user management
-	EventBus     event.Bus           // nil disables SSE events endpoint
-	DockerClient *docker.Client      // nil disables container/SSE/terminal endpoints
+	StackService *app.StackService     // nil if Docker not available
+	GitService   *app.GitService       // nil disables git operations
+	UserRepo     auth.UserRepository   // nil disables user management
+	WebhookRepo  *postgres.WebhookRepo // nil disables webhook receiver
+	EventBus     event.Bus             // nil disables SSE events endpoint
+	DockerClient *docker.Client        // nil disables container/SSE/terminal endpoints
 }
 
 // NewServer creates a new API server with all routes registered.
@@ -107,6 +110,12 @@ func NewServer(deps Deps) *Server {
 		termHandler := ws.NewTerminalHandler(deps.DockerClient)
 		router.With(authmw.RequireRole(auth.RoleOperator)).
 			Get("/api/v1/ws/terminal/{id}", termHandler.ServeHTTP)
+	}
+
+	// Webhook receiver (raw chi handler -- validates signature, not session)
+	if deps.GitService != nil && deps.WebhookRepo != nil {
+		webhookHandler := handler.NewWebhookHandler(deps.GitService, deps.WebhookRepo)
+		webhookHandler.RegisterRaw(router)
 	}
 
 	return &Server{Router: router, API: api}
