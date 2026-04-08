@@ -241,6 +241,18 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 	return result, err
 }
 
+// Validate runs docker compose config to validate the compose syntax.
+func (s *StackService) Validate(ctx context.Context, name string) (*docker.ComposeResult, error) {
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if st == nil {
+		return nil, ErrNotFound
+	}
+	return s.compose.Validate(ctx, st.Path)
+}
+
 // publishEvent sends an event to the bus if one is configured.
 func (s *StackService) publishEvent(evt event.Event) {
 	if s.bus != nil {

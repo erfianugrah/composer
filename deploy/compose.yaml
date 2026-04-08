@@ -41,7 +41,9 @@ services:
         condition: service_started
     restart: unless-stopped
     # Security hardening
-    read_only: true
+    # Note: read_only is NOT used because the entrypoint needs to modify
+    # /etc/passwd and /etc/group for PUID/PGID + Docker socket GID setup.
+    # Security is maintained via cap_drop, no-new-privileges, and non-root user.
     tmpfs:
       - /tmp
     security_opt:

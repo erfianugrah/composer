@@ -66,6 +66,30 @@ func (h *SSEHandler) Register(api huma.API) {
 	}, map[string]any{
 		"stats": event.ContainerStats{},
 	}, h.StreamContainerStats)
+
+	// Stack-level aggregated log stream (all containers in a stack)
+	sse.Register(api, huma.Operation{
+		OperationID: "streamStackLogs",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/sse/stacks/{name}/logs",
+		Summary:     "Stream aggregated logs for all services in a stack",
+		Tags:        []string{"sse"},
+	}, map[string]any{
+		"log": event.LogEntry{},
+	}, h.StreamStackLogs)
+
+	// Pipeline run output stream (filters events for a specific run)
+	sse.Register(api, huma.Operation{
+		OperationID: "streamPipelineRun",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/sse/pipelines/{id}/runs/{runId}",
+		Summary:     "Stream live pipeline run output",
+		Tags:        []string{"sse"},
+	}, map[string]any{
+		"pipeline.step.started":  event.PipelineStepStarted{},
+		"pipeline.step.finished": event.PipelineStepFinished{},
+		"pipeline.run.finished":  event.PipelineRunFinished{},
+	}, h.StreamPipelineRun)
 }
 
 // StreamEvents streams all domain events to the client via SSE. Requires viewer+ role.
@@ -102,6 +126,19 @@ type ContainerLogInput struct {
 	ID    string `path:"id" doc:"Container ID"`
 	Tail  string `query:"tail" default:"100" doc:"Number of lines from the end"`
 	Since string `query:"since" default:"" doc:"Show logs since timestamp or relative (e.g. 5m)"`
+}
+
+// StackLogInput defines the path/query params for stack-level log streaming.
+type StackLogInput struct {
+	Name  string `path:"name" doc:"Stack name"`
+	Tail  string `query:"tail" default:"50" doc:"Lines per container"`
+	Since string `query:"since" default:"" doc:"Since timestamp"`
+}
+
+// PipelineRunSSEInput defines the path params for pipeline run streaming.
+type PipelineRunSSEInput struct {
+	ID    string `path:"id" doc:"Pipeline ID"`
+	RunID string `path:"runId" doc:"Run ID"`
 }
 
 // ContainerStatsInput defines the path params for stats streaming.
@@ -279,4 +316,118 @@ func parseDockerStats(containerID string, raw *dockerStats) event.ContainerStats
 		PIDs:        raw.PidsStats.Current,
 		Timestamp:   time.Now(),
 	}
+}
+
+// StreamPipelineRun streams events for a specific pipeline run via SSE.
+func (h *SSEHandler) StreamPipelineRun(ctx context.Context, input *PipelineRunSSEInput, send sse.Sender) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return
+	}
+
+	eventCh := make(chan event.Event, 64)
+	runID := input.RunID
+
+	unsub := h.bus.Subscribe(func(evt event.Event) bool {
+		// Filter for events matching this specific run
+		switch e := evt.(type) {
+		case event.PipelineStepStarted:
+			if e.RunID == runID {
+				select {
+				case eventCh <- evt:
+				default:
+				}
+			}
+		case event.PipelineStepFinished:
+			if e.RunID == runID {
+				select {
+				case eventCh <- evt:
+				default:
+				}
+			}
+		case event.PipelineRunFinished:
+			if e.RunID == runID {
+				select {
+				case eventCh <- evt:
+				default:
+				}
+				return false // unsubscribe after run finishes
+			}
+		}
+		return true
+	})
+	defer unsub()
+
+	for {
+		select {
+		case evt := <-eventCh:
+			if err := send.Data(evt); err != nil {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// StreamStackLogs streams aggregated logs from all containers in a stack via SSE.
+func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *StackLogInput, send sse.Sender) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return
+	}
+
+	// List containers for this stack
+	containers, err := h.dockerClient.ListContainers(ctx, input.Name)
+	if err != nil || len(containers) == 0 {
+		return
+	}
+
+	// Stream logs from each container concurrently
+	for _, c := range containers {
+		go func(containerID, containerName string) {
+			reader, err := h.dockerClient.ContainerLogs(ctx, containerID, true, input.Tail, input.Since)
+			if err != nil {
+				return
+			}
+			defer reader.Close()
+
+			buf := make([]byte, 8192)
+			for {
+				n, err := reader.Read(buf)
+				if n > 0 {
+					data := buf[:n]
+					stream := "stdout"
+					if len(data) > 8 {
+						if data[0] == 2 {
+							stream = "stderr"
+						}
+						data = data[8:]
+					}
+
+					lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+					for _, line := range lines {
+						if line == "" {
+							continue
+						}
+						if sendErr := send.Data(event.LogEntry{
+							ContainerID: containerID,
+							Stream:      stream,
+							Message:     "[" + containerName + "] " + line,
+							Timestamp:   time.Now(),
+						}); sendErr != nil {
+							return
+						}
+					}
+				}
+				if err == io.EOF || err == context.Canceled {
+					return
+				}
+				if err != nil {
+					return
+				}
+			}
+		}(c.ID, c.Name)
+	}
+
+	// Block until context is cancelled
+	<-ctx.Done()
 }

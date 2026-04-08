@@ -83,20 +83,20 @@ Go + Astro + Shadcn/ui.
 | **HTTP Framework** | Huma v2.37+ + Chi v5 | Done | Auto OpenAPI 3.1, built-in SSE, RFC9457 errors |
 | **Auth** | Custom (session + API key + RBAC) | Done | Session cookie + API key + role middleware |
 | **Database** | PostgreSQL (`jackc/pgx/v5`) | Done | pgxpool for queries, goose for migrations |
-| **Cache** | Valkey (`valkey-io/valkey-go`) | Phase 4 | Currently in-process event bus. Valkey for multi-instance |
+| **Cache** | Valkey (`valkey-io/valkey-go`) | Done | Session + API key caching. In-process event bus + Valkey |
 | **Migrations** | goose v3.27+ | Done | Embedded SQL via `embed.FS`, Provider API |
 | **Logging** | zap | Done | JSON (prod) + console (dev) encoders |
 | **Docker** | `docker/docker` v28+ | Done | Engine SDK + Podman auto-detect |
 | **Compose** | CLI wrapper (`docker compose`) | Done | Shell out to V2. Programmatic library optional later |
-| **Git** | `go-git/go-git/v5` | Phase 2 | Pure Go git. Directory stubbed, not yet integrated |
-| **IDs** | `oklog/ulid` | Planned | Currently using crypto/rand hex. ULID later |
+| **Git** | `go-git/go-git/v5` | Done | Clone, pull, log, diff, commit, push. Webhook signature validation |
+| **IDs** | crypto/rand hex | Done | 16-byte random hex IDs. ULID possible later |
 | **Frontend** | Astro 6.1 + React 19 | Done | Static output, React islands via `client:load` |
 | **UI Components** | Shadcn/ui + Tailwind CSS 4 | Done | Lovelace theme. button, card, badge, input built |
 | **Terminal** | xterm.js + WebSocket | Backend done | WS handler complete. Frontend xterm.js component pending |
-| **Code Editor** | CodeMirror 6 | Planned | YAML syntax highlighting for compose editing |
+| **Code Editor** | CodeMirror 6 | Done | YAML syntax highlighting, Lovelace theme, save with dirty tracking |
 | **Streaming** | SSE (huma/sse) | Done | Events stream + container logs. Stats pending |
 | **WebSocket** | `coder/websocket` v1.8+ | Done | Terminal sessions only |
-| **TS Client** | openapi-typescript + openapi-fetch | Planned | Generated typed client from OpenAPI spec |
+| **TS Client** | openapi-typescript + openapi-fetch | Done | Generated typed client + generation script |
 
 ---
 
@@ -526,7 +526,7 @@ POST   /api/v1/auth/logout          -- destroy session
 GET    /api/v1/auth/session         -- validate current session, return user info
 ```
 
-#### User Management (admin only) -- NOT YET IMPLEMENTED
+#### User Management (admin only) -- IMPLEMENTED
 
 ```
 GET    /api/v1/users                -- list users
@@ -537,7 +537,7 @@ DELETE /api/v1/users/{id}           -- delete user
 PUT    /api/v1/users/{id}/password  -- change password (admin or self)
 ```
 
-#### API Keys (operator+) -- NOT YET IMPLEMENTED
+#### API Keys (operator+) -- IMPLEMENTED
 
 ```
 GET    /api/v1/keys                 -- list API keys (redacted)
@@ -558,11 +558,11 @@ POST   /api/v1/stacks/{name}/up       -- deploy (docker compose up -d)     [done
 POST   /api/v1/stacks/{name}/down     -- stop (docker compose down)        [done]
 POST   /api/v1/stacks/{name}/restart  -- restart all services              [done]
 POST   /api/v1/stacks/{name}/pull     -- pull latest images                [done]
-POST   /api/v1/stacks/{name}/validate -- validate compose syntax           [not yet]
-GET    /api/v1/stacks/{name}/diff     -- pending changes vs running        [not yet]
+POST   /api/v1/stacks/{name}/validate -- validate compose syntax           [done]
+GET    /api/v1/stacks/{name}/diff     -- pending changes vs running        [done]
 ```
 
-#### Containers (viewer+) -- NOT YET IMPLEMENTED
+#### Containers (viewer+) -- IMPLEMENTED
 
 ```
 GET    /api/v1/containers              -- list all containers across stacks
@@ -614,8 +614,8 @@ POST   /api/v1/hooks/{id}                -- inbound webhook receiver (public, va
 
 ```
 GET    /api/v1/system/health           -- application health check (public)  [done]
-GET    /api/v1/system/info             -- Docker engine info, disk, images   [not yet]
-GET    /api/v1/system/version          -- Composer version info              [not yet]
+GET    /api/v1/system/info             -- Docker engine info, containers     [done]
+GET    /api/v1/system/version          -- Composer version, Go, uptime       [done]
 ```
 
 #### OpenAPI -- IMPLEMENTED
@@ -623,7 +623,7 @@ GET    /api/v1/system/version          -- Composer version info              [no
 ```
 GET    /openapi.json                   -- auto-generated OpenAPI 3.1 spec    [done]
 GET    /openapi.yaml                   -- YAML variant                       [done]
-GET    /docs                           -- Stoplight Elements API docs UI     [not yet]
+GET    /docs                           -- Stoplight Elements API docs UI     [done]
 ```
 
 ### 6.2 SSE Endpoints (Server-Sent Events)
@@ -634,8 +634,8 @@ Each SSE endpoint holds the connection open and pushes events.
 ```
 GET    /api/v1/sse/events              -- global domain events stream        [done]
 GET    /api/v1/sse/containers/{id}/logs    -- live log stream for container  [done]
-GET    /api/v1/sse/stacks/{name}/logs  -- aggregated logs for all services   [not yet]
-GET    /api/v1/sse/containers/{id}/stats   -- live CPU/mem/net/disk stats    [not yet]
+GET    /api/v1/sse/stacks/{name}/logs  -- aggregated logs for all services   [done]
+GET    /api/v1/sse/containers/{id}/stats   -- live CPU/mem/net/disk stats    [done]
 GET    /api/v1/sse/pipelines/{id}/runs/{runId} -- pipeline execution output  [Phase 3]
 ```
 
@@ -1692,7 +1692,7 @@ clean        # Remove build artifacts
 - [ ] Webhook triggers for pipelines
 - [ ] Schedule triggers (cron)
 
-### Phase 4: Polish -- PARTIAL
+### Phase 4: Polish -- COMPLETE
 
 - [ ] Valkey integration (session cache, event pub/sub)
 - [x] Container stats streaming (CPU/mem/net/disk SSE)

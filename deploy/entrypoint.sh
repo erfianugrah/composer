@@ -40,5 +40,5 @@ fi
 # Fix ownership of data directories
 chown -R composer:composer /opt/stacks /opt/composer /home/composer/.ssh 2>/dev/null || true
 
-# Drop privileges and exec
-exec su-exec composer:composer "$@"
+# Drop privileges and exec (su-exec without explicit group picks up supplementary groups from /etc/group)
+exec su-exec composer "$@"

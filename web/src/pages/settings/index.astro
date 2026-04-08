@@ -1,23 +1,16 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+import { UserManagement } from "@/components/layout/UserManagement";
+import { ApiKeyManagement } from "@/components/layout/ApiKeyManagement";
 import { WebhookSettings } from "@/components/layout/WebhookSettings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 ---
 
 <Layout title="Settings" active="settings">
   <div class="space-y-6">
+    <UserManagement client:load />
+    <ApiKeyManagement client:load />
     <WebhookSettings client:load />
-
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">User Management</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p class="text-sm text-muted-foreground">
-          Manage users, roles, and API keys. Coming soon.
-        </p>
-      </CardContent>
-    </Card>
 
     <Card>
       <CardHeader>

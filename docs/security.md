@@ -77,7 +77,7 @@ RBAC is enforced at the handler level via `middleware.CheckRole()`. The WebSocke
 
 ## CSRF Protection
 
-Mutating API requests from cookie-based sessions should include an `X-Requested-With` header (planned -- not yet enforced).
+CSRF protection is enforced via `X-Requested-With` header requirement on mutating requests (POST/PUT/DELETE) that use cookie-based authentication. API key and webhook requests are exempt. `SameSite=Lax` cookie attribute provides additional browser-level protection.
 
 ## OAuth/OIDC Security
 

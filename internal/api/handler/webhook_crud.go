@@ -45,6 +45,11 @@ func (h *WebhookCRUDHandler) Register(api huma.API) {
 		OperationID: "deleteWebhook", Method: http.MethodDelete,
 		Path: "/api/v1/webhooks/{id}", Summary: "Delete a webhook", Tags: []string{"webhooks"},
 	}, h.Delete)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "listWebhookDeliveries", Method: http.MethodGet,
+		Path: "/api/v1/webhooks/{id}/deliveries", Summary: "List webhook delivery history", Tags: []string{"webhooks"},
+	}, h.ListDeliveries)
 }
 
 func (h *WebhookCRUDHandler) List(ctx context.Context, input *struct{}) (*dto.WebhookListOutput, error) {
@@ -139,6 +144,44 @@ func (h *WebhookCRUDHandler) Delete(ctx context.Context, input *dto.WebhookIDInp
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return nil, nil
+}
+
+type DeliveryListOutput struct {
+	Body struct {
+		Deliveries []DeliverySummary `json:"deliveries"`
+	}
+}
+
+type DeliverySummary struct {
+	ID        string `json:"id"`
+	Event     string `json:"event"`
+	Branch    string `json:"branch"`
+	CommitSHA string `json:"commit_sha"`
+	Status    string `json:"status"`
+	Action    string `json:"action"`
+	Error     string `json:"error,omitempty"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (h *WebhookCRUDHandler) ListDeliveries(ctx context.Context, input *dto.WebhookIDInput) (*DeliveryListOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	deliveries, err := h.webhooks.ListDeliveries(ctx, input.ID, 50)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	out := &DeliveryListOutput{}
+	out.Body.Deliveries = make([]DeliverySummary, 0, len(deliveries))
+	for _, d := range deliveries {
+		out.Body.Deliveries = append(out.Body.Deliveries, DeliverySummary{
+			ID: d.ID, Event: d.Event, Branch: d.Branch, CommitSHA: d.CommitSHA,
+			Status: d.Status, Action: d.Action, Error: d.Error, CreatedAt: d.CreatedAt,
+		})
+	}
+	return out, nil
 }
 
 func generateWebhookID() string {

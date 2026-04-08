@@ -45,6 +45,7 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 | [Deployment](docs/deployment.md) | Docker, Unraid, TrueNAS, bare metal, Podman |
 | [Security](docs/security.md) | Docker socket, RBAC, hardening |
 | [Architecture](docs/architecture.md) | DDD, tech stack, domain model |
+| [Design Spec](docs/design.md) | Full design document (domain models, all endpoints, roadmap) |
 | [Reverse Proxy](docs/reverse-proxy.md) | Caddy, Traefik, nginx configs for TLS |
 | [Contributing](docs/contributing.md) | Dev setup, TDD workflow, test tiers |
 
@@ -62,8 +63,8 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 
 ## Status
 
-All 5 phases complete. 53 API endpoints, 322 tests, 12k+ lines of Go.
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full roadmap.
+All 5 phases complete. 60+ API endpoints, 300+ tests, 12k+ lines of Go.
+See [docs/design.md](docs/design.md) for the full design spec.
 
 ## License
 

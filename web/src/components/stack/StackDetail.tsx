@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
 const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
 const ComposeEditor = lazy(() => import("./ComposeEditor").then(m => ({ default: m.ComposeEditor })));
+const ContainerStats = lazy(() => import("@/components/container/ContainerStats").then(m => ({ default: m.ContainerStats })));
 import { GitStatus } from "./GitStatus";
 
 interface StackData {
@@ -46,7 +47,8 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "terminal" | "git">("containers");
+  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "terminal" | "stats" | "git">("containers");
+  const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
 
   const fetchStack = () => {
     fetch(`/api/v1/stacks/${stackName}`, { credentials: "include" })
@@ -126,7 +128,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {(["containers", "compose", "terminal", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
+        {(["containers", "compose", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -165,14 +167,22 @@ export function StackDetail({ stackName }: { stackName: string }) {
                         <Badge className={statusColor[c.health] || statusColor.unknown}>{c.health}</Badge>
                       )}
                       {c.status === "running" && (
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          onClick={() => { setActiveTerminal(c.id); setActiveTab("terminal"); }}
-                          data-testid={`terminal-btn-${c.id}`}
-                        >
-                          Terminal
-                        </Button>
+                        <>
+                          <Button
+                            size="xs" variant="ghost"
+                            onClick={() => { setActiveTerminal(c.id); setActiveTab("terminal"); }}
+                            data-testid={`terminal-btn-${c.id}`}
+                          >
+                            Terminal
+                          </Button>
+                          <Button
+                            size="xs" variant="ghost"
+                            onClick={() => { setStatsContainerId(c.id); setActiveTab("stats"); }}
+                            data-testid={`stats-btn-${c.id}`}
+                          >
+                            Stats
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -218,6 +228,25 @@ export function StackDetail({ stackName }: { stackName: string }) {
           </CardContent>
         </Card>
       )}
+      {activeTab === "stats" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Container Stats</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {statsContainerId ? (
+              <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
+                <ContainerStats containerId={statsContainerId} />
+              </Suspense>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Select a running container from the Containers tab to view stats.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {activeTab === "git" && stack.source === "git" && (
         <GitStatus stackName={stack.name} />
       )}

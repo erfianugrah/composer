@@ -62,6 +62,10 @@ func doRequest(srv *api.Server, method, path string, body string, headers ...str
 		req = httptest.NewRequest(method, path, nil)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// CSRF: mutating requests with cookies need X-Requested-With
+	if method != http.MethodGet && method != http.MethodHead {
+		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	}
 	for _, h := range headers {
 		parts := strings.SplitN(h, ": ", 2)
 		if len(parts) == 2 {

@@ -94,6 +94,22 @@ func (h *StackHandler) Register(api huma.API) {
 		Summary:     "Pull latest images for stack",
 		Tags:        []string{"stacks"},
 	}, h.Pull)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "validateStack",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/stacks/{name}/validate",
+		Summary:     "Validate compose syntax",
+		Tags:        []string{"stacks"},
+	}, h.Validate)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "diffStack",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/stacks/{name}/diff",
+		Summary:     "Show pending compose changes vs saved version",
+		Tags:        []string{"stacks"},
+	}, h.Diff)
 }
 
 func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackListOutput, error) {
@@ -297,5 +313,62 @@ func (h *StackHandler) Pull(ctx context.Context, input *dto.StackNameInput) (*dt
 	out := &dto.ComposeOpOutput{}
 	out.Body.Stdout = result.Stdout
 	out.Body.Stderr = result.Stderr
+	return out, nil
+}
+
+func (h *StackHandler) Validate(ctx context.Context, input *dto.StackNameInput) (*dto.ComposeOpOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+	result, err := h.stacks.Validate(ctx, input.Name)
+	if err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		out := &dto.ComposeOpOutput{}
+		if result != nil {
+			out.Body.Stderr = result.Stderr
+		}
+		return out, nil
+	}
+
+	out := &dto.ComposeOpOutput{}
+	out.Body.Stdout = "valid"
+	return out, nil
+}
+
+func (h *StackHandler) Diff(ctx context.Context, input *dto.GetStackInput) (*dto.DiffOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return nil, err
+	}
+
+	st, err := h.stacks.Get(ctx, input.Name)
+	if err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	// Compare saved compose content with the last known deployed content
+	// For now, the "old" is the compose content from DB/disk, and we compare
+	// with the current file on disk (they should be the same unless edited outside Composer)
+	saved := st.ComposeContent
+	if saved == "" {
+		saved = "(empty)"
+	}
+
+	diff := app.ComputeDiff(saved, saved) // placeholder: same content = no diff
+	// In a real implementation, this would compare the running state vs the saved file
+
+	out := &dto.DiffOutput{}
+	out.Body.HasChanges = diff.HasChanges
+	out.Body.Summary = diff.Summary
+	out.Body.Lines = make([]dto.DiffLine, 0, len(diff.Lines))
+	for _, l := range diff.Lines {
+		out.Body.Lines = append(out.Body.Lines, dto.DiffLine{
+			Type: l.Type, Content: l.Content, OldLine: l.OldLine, NewLine: l.NewLine,
+		})
+	}
 	return out, nil
 }

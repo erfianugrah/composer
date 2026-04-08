@@ -178,6 +178,26 @@ func (s *GitService) GitStatus(ctx context.Context, name string) (*stack.GitSour
 	return cfg, nil
 }
 
+// Rollback checks out a specific commit in a git-backed stack.
+func (s *GitService) Rollback(ctx context.Context, name, commitSHA string) error {
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil || st == nil {
+		return ErrNotFound
+	}
+	if st.Source != stack.SourceGit {
+		return fmt.Errorf("stack %s is not git-backed", name)
+	}
+
+	if err := s.gitClient.Checkout(st.Path, commitSHA); err != nil {
+		return fmt.Errorf("checkout %s: %w", commitSHA, err)
+	}
+
+	// Update sync status
+	s.gitCfgs.UpdateSyncStatus(ctx, name, stack.GitSynced, commitSHA)
+
+	return nil
+}
+
 func (s *GitService) publishEvent(evt domevent.Event) {
 	if s.bus != nil {
 		s.bus.Publish(evt)

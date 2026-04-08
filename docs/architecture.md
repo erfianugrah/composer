@@ -98,10 +98,10 @@ StackService.Deploy()
 
 PostgreSQL with goose migrations. 11 tables in the schema:
 - 5 with full Go implementations: users, sessions, api_keys, stacks, stack_git_configs
-- 6 reserved for future phases: webhooks, webhook_deliveries, pipelines, pipeline_runs, pipeline_step_results, audit_log, settings
+- All 11 tables have Go implementations: users, sessions, api_keys, stacks, stack_git_configs, webhooks, webhook_deliveries, pipelines, pipeline_runs, pipeline_step_results, audit_log
 
 Migrations run automatically on startup with advisory locking.
 
 ## Full Design Document
 
-For the complete design spec including domain models, all planned endpoints, pipeline engine design, and GitOps flows, see [ARCHITECTURE.md](../ARCHITECTURE.md) in the repo root.
+For the complete design spec including domain models, endpoint inventory, pipeline engine design, and GitOps flows, see [docs/design.md](design.md).

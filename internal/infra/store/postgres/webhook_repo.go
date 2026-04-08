@@ -99,3 +99,40 @@ func (r *WebhookRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM webhooks WHERE id = $1`, id)
 	return err
 }
+
+// WebhookDelivery represents a webhook delivery record.
+type WebhookDelivery struct {
+	ID        string
+	WebhookID string
+	Event     string
+	Branch    string
+	CommitSHA string
+	Status    string
+	Action    string
+	Error     string
+	CreatedAt string
+}
+
+func (r *WebhookRepo) ListDeliveries(ctx context.Context, webhookID string, limit int) ([]WebhookDelivery, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, webhook_id, event, branch, commit_sha, status, action, error, created_at
+		 FROM webhook_deliveries WHERE webhook_id = $1 ORDER BY created_at DESC LIMIT $2`, webhookID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deliveries []WebhookDelivery
+	for rows.Next() {
+		d := WebhookDelivery{}
+		if err := rows.Scan(&d.ID, &d.WebhookID, &d.Event, &d.Branch, &d.CommitSHA, &d.Status, &d.Action, &d.Error, &d.CreatedAt); err != nil {
+			return nil, err
+		}
+		deliveries = append(deliveries, d)
+	}
+	return deliveries, rows.Err()
+}

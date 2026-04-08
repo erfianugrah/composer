@@ -38,6 +38,17 @@ type GitStatusInput struct {
 	Name string `path:"name" doc:"Stack name"`
 }
 
+type GitRollbackInput struct {
+	Name string `path:"name" doc:"Stack name"`
+	Body struct {
+		CommitSHA string `json:"commit_sha" minLength:"7" doc:"Commit SHA to rollback to"`
+	}
+}
+
+type GitDiffInput struct {
+	Name string `path:"name" doc:"Stack name"`
+}
+
 type GitStatusOutput struct {
 	Body struct {
 		RepoURL       string     `json:"repo_url"`

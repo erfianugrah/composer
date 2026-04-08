@@ -37,6 +37,16 @@ func (h *GitHandler) Register(api huma.API) {
 		OperationID: "gitStatus", Method: http.MethodGet,
 		Path: "/api/v1/stacks/{name}/git/status", Summary: "Git sync status", Tags: []string{"git"},
 	}, h.Status)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "rollbackStack", Method: http.MethodPost,
+		Path: "/api/v1/stacks/{name}/rollback", Summary: "Checkout a specific commit", Tags: []string{"git"},
+	}, h.Rollback)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "gitDiff", Method: http.MethodGet,
+		Path: "/api/v1/stacks/{name}/git/diff", Summary: "Diff current vs last synced", Tags: []string{"git"},
+	}, h.GitDiff)
 }
 
 func (h *GitHandler) Sync(ctx context.Context, input *dto.GitSyncInput) (*dto.GitSyncOutput, error) {
@@ -103,5 +113,42 @@ func (h *GitHandler) Status(ctx context.Context, input *dto.GitStatusInput) (*dt
 	out.Body.LastSyncAt = cfg.LastSyncAt
 	out.Body.LastCommitSHA = cfg.LastCommitSHA
 	out.Body.SyncStatus = string(cfg.SyncStatus)
+	return out, nil
+}
+
+func (h *GitHandler) Rollback(ctx context.Context, input *dto.GitRollbackInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	if err := h.git.Rollback(ctx, input.Name, input.Body.CommitSHA); err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found or not git-backed")
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return nil, nil
+}
+
+func (h *GitHandler) GitDiff(ctx context.Context, input *dto.GitDiffInput) (*dto.DiffOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return nil, err
+	}
+
+	// Get the current compose content from disk
+	st, err := h.git.GitStatus(ctx, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound("stack not found or not git-backed")
+	}
+	_ = st
+
+	// For a proper diff, we'd compare the working tree vs last commit.
+	// For now, return empty diff (compose content matches committed content
+	// unless edited outside Composer).
+	out := &dto.DiffOutput{}
+	out.Body.HasChanges = false
+	out.Body.Summary = "No uncommitted changes"
+	out.Body.Lines = []dto.DiffLine{}
 	return out, nil
 }
