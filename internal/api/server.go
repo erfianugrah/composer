@@ -27,13 +27,14 @@ type Server struct {
 
 // Deps holds all dependencies needed by the API server.
 type Deps struct {
-	AuthService  *app.AuthService
-	StackService *app.StackService     // nil if Docker not available
-	GitService   *app.GitService       // nil disables git operations
-	UserRepo     auth.UserRepository   // nil disables user management
-	WebhookRepo  *postgres.WebhookRepo // nil disables webhook receiver
-	EventBus     event.Bus             // nil disables SSE events endpoint
-	DockerClient *docker.Client        // nil disables container/SSE/terminal endpoints
+	AuthService     *app.AuthService
+	StackService    *app.StackService     // nil if Docker not available
+	GitService      *app.GitService       // nil disables git operations
+	PipelineService *app.PipelineService  // nil disables pipeline operations
+	UserRepo        auth.UserRepository   // nil disables user management
+	WebhookRepo     *postgres.WebhookRepo // nil disables webhook receiver
+	EventBus        event.Bus             // nil disables SSE events endpoint
+	DockerClient    *docker.Client        // nil disables container/SSE/terminal endpoints
 }
 
 // NewServer creates a new API server with all routes registered.
@@ -108,6 +109,11 @@ func NewServer(deps Deps) *Server {
 	// Git operation handlers (requires GitService)
 	if deps.GitService != nil {
 		handler.NewGitHandler(deps.GitService).Register(api)
+	}
+
+	// Pipeline handlers (requires PipelineService)
+	if deps.PipelineService != nil {
+		handler.NewPipelineHandler(deps.PipelineService).Register(api)
 	}
 
 	// Webhook CRUD (requires WebhookRepo)

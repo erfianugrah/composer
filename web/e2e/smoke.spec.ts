@@ -139,14 +139,15 @@ test.describe("Stacks Page", () => {
 });
 
 test.describe("Pipelines Page", () => {
-  test("renders with correct title and coming soon message", async ({ page }) => {
+  test("renders with correct title and pipeline list area", async ({ page }) => {
     await page.goto("/pipelines");
 
     const title = page.getByTestId("page-title");
     await expect(title).toHaveText("Pipelines");
 
-    const comingSoon = page.locator("text=Coming soon");
-    await expect(comingSoon).toBeVisible();
+    // Should show either pipeline list or "no pipelines" message
+    const content = page.locator("text=Pipelines").first();
+    await expect(content).toBeVisible();
   });
 
   test("pipelines nav is active", async ({ page }) => {

@@ -161,18 +161,29 @@ func main() {
 		gitSvc = app.NewGitService(stackRepo, gitConfigRepo, gitClient, compose, bus, cfg.StacksDir)
 	}
 
+	// --- Pipeline Service ---
+	pipelineRepo := postgres.NewPipelineRepo(db.Pool)
+	runRepo := postgres.NewRunRepo(db.Pool)
+	var pipelineExecutor *app.PipelineExecutor
+	var pipelineSvc *app.PipelineService
+	if compose != nil {
+		pipelineExecutor = app.NewPipelineExecutor(compose, bus)
+		pipelineSvc = app.NewPipelineService(pipelineRepo, runRepo, pipelineExecutor)
+	}
+
 	// --- Webhook Repo ---
 	webhookRepo := postgres.NewWebhookRepo(db.Pool)
 
 	// --- API Server ---
 	srv := api.NewServer(api.Deps{
-		AuthService:  authSvc,
-		StackService: stackSvc,
-		GitService:   gitSvc,
-		UserRepo:     userRepo,
-		WebhookRepo:  webhookRepo,
-		EventBus:     bus,
-		DockerClient: dockerClient,
+		AuthService:     authSvc,
+		StackService:    stackSvc,
+		GitService:      gitSvc,
+		PipelineService: pipelineSvc,
+		UserRepo:        userRepo,
+		WebhookRepo:     webhookRepo,
+		EventBus:        bus,
+		DockerClient:    dockerClient,
 	})
 
 	// --- Embedded frontend (serves web/dist if built) ---
