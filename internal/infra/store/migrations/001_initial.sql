@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     role          TEXT NOT NULL DEFAULT 'viewer'
                   CHECK (role IN ('admin', 'operator', 'viewer')),
-    created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_login_at TEXT
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP
 );
 
 -- Sessions
@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role       TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at TEXT NOT NULL
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
@@ -30,9 +30,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
     hashed_key   TEXT NOT NULL UNIQUE,
     role         TEXT NOT NULL CHECK (role IN ('admin', 'operator', 'viewer')),
     created_by   TEXT NOT NULL REFERENCES users(id),
-    last_used_at TEXT,
-    expires_at   TEXT,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    last_used_at TIMESTAMP,
+    expires_at   TIMESTAMP,
+    created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(hashed_key);
 
@@ -42,8 +42,8 @@ CREATE TABLE IF NOT EXISTS stacks (
     path       TEXT NOT NULL UNIQUE,
     source     TEXT NOT NULL DEFAULT 'local'
                CHECK (source IN ('local', 'git')),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Git configuration for git-backed stacks
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS stack_git_configs (
     auth_method  TEXT NOT NULL DEFAULT 'none'
                  CHECK (auth_method IN ('none', 'token', 'ssh_key', 'basic')),
     credentials  TEXT,
-    last_sync_at TEXT,
+    last_sync_at TIMESTAMP,
     last_commit  TEXT,
     sync_status  TEXT NOT NULL DEFAULT 'synced'
                  CHECK (sync_status IN ('synced', 'behind', 'diverged', 'error', 'syncing'))
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
     auto_redeploy INTEGER NOT NULL DEFAULT 1,
     events        TEXT,
     created_by    TEXT NOT NULL REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_webhooks_stack ON webhooks(stack_name);
 
@@ -89,8 +89,8 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
     action       TEXT,
     error        TEXT,
     payload      TEXT,
-    processed_at TEXT,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    processed_at TIMESTAMP,
+    created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_deliveries_webhook ON webhook_deliveries(webhook_id, created_at DESC);
 
@@ -101,8 +101,8 @@ CREATE TABLE IF NOT EXISTS pipelines (
     description TEXT,
     config      TEXT NOT NULL,
     created_by  TEXT NOT NULL REFERENCES users(id),
-    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Pipeline runs
@@ -112,9 +112,9 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     status       TEXT NOT NULL DEFAULT 'pending'
                  CHECK (status IN ('pending', 'running', 'success', 'failed', 'cancelled')),
     triggered_by TEXT NOT NULL,
-    started_at   TEXT,
-    finished_at  TEXT,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    started_at   TIMESTAMP,
+    finished_at  TIMESTAMP,
+    created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_runs_pipeline ON pipeline_runs(pipeline_id, created_at DESC);
 
@@ -129,8 +129,8 @@ CREATE TABLE IF NOT EXISTS pipeline_step_results (
     output      TEXT,
     error       TEXT,
     duration_ms INTEGER,
-    started_at  TEXT,
-    finished_at TEXT
+    started_at  TIMESTAMP,
+    finished_at TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_step_results_run ON pipeline_step_results(run_id);
 
@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     resource   TEXT NOT NULL,
     detail     TEXT,
     ip_address TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
 
@@ -150,7 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
 CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- +goose Down
