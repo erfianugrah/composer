@@ -7,8 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     role          TEXT NOT NULL DEFAULT 'viewer'
                   CHECK (role IN ('admin', 'operator', 'viewer')),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at TEXT
 );
 
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role       TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_by   TEXT NOT NULL REFERENCES users(id),
     last_used_at TEXT,
     expires_at   TEXT,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(hashed_key);
 
@@ -42,8 +42,8 @@ CREATE TABLE IF NOT EXISTS stacks (
     path       TEXT NOT NULL UNIQUE,
     source     TEXT NOT NULL DEFAULT 'local'
                CHECK (source IN ('local', 'git')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Git configuration for git-backed stacks
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
     auto_redeploy INTEGER NOT NULL DEFAULT 1,
     events        TEXT,
     created_by    TEXT NOT NULL REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_webhooks_stack ON webhooks(stack_name);
 
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
     error        TEXT,
     payload      TEXT,
     processed_at TEXT,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_deliveries_webhook ON webhook_deliveries(webhook_id, created_at DESC);
 
@@ -101,8 +101,8 @@ CREATE TABLE IF NOT EXISTS pipelines (
     description TEXT,
     config      TEXT NOT NULL,
     created_by  TEXT NOT NULL REFERENCES users(id),
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Pipeline runs
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     triggered_by TEXT NOT NULL,
     started_at   TEXT,
     finished_at  TEXT,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_runs_pipeline ON pipeline_runs(pipeline_id, created_at DESC);
 
@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     resource   TEXT NOT NULL,
     detail     TEXT,
     ip_address TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
 
@@ -150,7 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
 CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- +goose Down
