@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>composer</Name>
+  <Repository>ghcr.io/erfianugrah/composer:latest</Repository>
+  <Registry>https://github.com/erfianugrah/composer/pkgs/container/composer</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/erfianugrah/composer</Support>
+  <Project>https://github.com/erfianugrah/composer</Project>
+  <Overview>
+    Lightweight Docker Compose management with GitOps, pipelines, and RBAC.
+    
+    REQUIRES: A running PostgreSQL container. Optionally a Valkey container for caching.
+    
+    1. Create a PostgreSQL container first (use the official postgres:17-alpine template)
+    2. Create this Composer container, pointing COMPOSER_DB_URL at your Postgres
+    3. Open the web UI at http://[IP]:8080 and create your admin account
+  </Overview>
+  <Category>Tools: Docker:</Category>
+  <WebUI>http://[IP]:[PORT:8080]</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/erfianugrah/composer/main/deploy/unraid/composer.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/erfianugrah/composer/main/web/public/favicon.svg</Icon>
+  <ExtraParams>--security-opt no-new-privileges:true</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>PostgreSQL container running on the same network</Requires>
+  <Config Name="Web UI Port" Target="8080" Default="8080" Mode="tcp" Description="Composer web UI port" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Docker socket for container management" Type="Path" Display="always" Required="true" Mask="false">/var/run/docker.sock</Config>
+  <Config Name="Stacks Directory" Target="/opt/stacks" Default="/mnt/user/appdata/composer/stacks" Mode="rw" Description="Directory to store compose stack files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/composer/stacks</Config>
+  <Config Name="SSH Keys" Target="/home/composer/.ssh" Default="/mnt/user/appdata/composer/ssh" Mode="rw" Description="SSH keys for git-backed stacks" Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/composer/ssh</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID (Unraid default: 99)" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID (Unraid default: 100)" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Database URL" Target="COMPOSER_DB_URL" Default="postgres://composer:composer@postgres-ip:5432/composer?sslmode=disable" Mode="" Description="PostgreSQL connection URL. Replace postgres-ip with your Postgres container IP or hostname." Type="Variable" Display="always" Required="true" Mask="false">postgres://composer:composer@172.17.0.2:5432/composer?sslmode=disable</Config>
+  <Config Name="Valkey URL" Target="COMPOSER_VALKEY_URL" Default="" Mode="" Description="Valkey/Redis URL for caching (optional). Leave empty to disable." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Log Level" Target="COMPOSER_LOG_LEVEL" Default="info" Mode="" Description="Log level: debug, info, warn, error" Type="Variable" Display="advanced" Required="false" Mask="false">info</Config>
+  <Config Name="Log Format" Target="COMPOSER_LOG_FORMAT" Default="json" Mode="" Description="Log format: json or console" Type="Variable" Display="advanced" Required="false" Mask="false">json</Config>
+  <Config Name="Cookie Secure" Target="COMPOSER_COOKIE_SECURE" Default="false" Mode="" Description="Set to true if behind HTTPS reverse proxy" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+</Container>

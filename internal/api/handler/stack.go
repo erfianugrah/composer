@@ -350,16 +350,25 @@ func (h *StackHandler) Diff(ctx context.Context, input *dto.GetStackInput) (*dto
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	// Compare saved compose content with the last known deployed content
-	// For now, the "old" is the compose content from DB/disk, and we compare
-	// with the current file on disk (they should be the same unless edited outside Composer)
-	saved := st.ComposeContent
-	if saved == "" {
-		saved = "(empty)"
+	// Compare compose content on disk vs what docker compose reports as running config
+	currentContent := st.ComposeContent
+	if currentContent == "" {
+		currentContent = "(no compose content)"
 	}
 
-	diff := app.ComputeDiff(saved, saved) // placeholder: same content = no diff
-	// In a real implementation, this would compare the running state vs the saved file
+	// Get the running compose config from Docker
+	runningResult, err := h.stacks.Validate(ctx, input.Name)
+	runningContent := ""
+	if err == nil && runningResult != nil {
+		runningContent = runningResult.Stdout
+	}
+	if runningContent == "" || runningContent == "valid" {
+		// Validate returns "valid" on success, not the actual config.
+		// Without a separate "last deployed" snapshot, compare against self.
+		runningContent = currentContent
+	}
+
+	diff := app.ComputeDiff(runningContent, currentContent)
 
 	out := &dto.DiffOutput{}
 	out.Body.HasChanges = diff.HasChanges

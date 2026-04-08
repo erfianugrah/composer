@@ -23,24 +23,83 @@ Includes Composer + PostgreSQL. Access at `http://localhost:8080`.
 
 ## Unraid
 
-### Via Docker Template (Community Apps)
+Unraid doesn't have Docker Compose by default, so you create each container
+individually via the Unraid Docker UI. You need **two containers**: PostgreSQL
+first, then Composer.
 
-1. In the Unraid web UI, go to **Docker > Add Container**
-2. Set:
+### Step 1: Create PostgreSQL Container
+
+1. Go to **Docker > Add Container**
+2. **Template:** Click "Add Container" (or use the XML template from `deploy/unraid/composer-postgres.xml`)
+3. Set:
+   - **Name:** `composer-postgres`
+   - **Repository:** `postgres:17-alpine`
+   - **Network Type:** Bridge
+4. Add port mapping:
+   - Container Port: `5432`, Host Port: `5432`, Connection Type: TCP
+5. Add path:
+   - **Container Path:** `/var/lib/postgresql/data`
+   - **Host Path:** `/mnt/user/appdata/composer/postgres`
+6. Add variables:
+   - `POSTGRES_USER` = `composer`
+   - `POSTGRES_PASSWORD` = `changeme` (use a strong password!)
+   - `POSTGRES_DB` = `composer`
+7. Click **Apply**
+8. Wait for the container to start, then **note its IP address** (visible in the Docker tab)
+
+### Step 2: Create Composer Container
+
+1. Go to **Docker > Add Container**
+2. **Template:** Use the XML template from `deploy/unraid/composer.xml` if available
+3. Set:
+   - **Name:** `composer`
    - **Repository:** `ghcr.io/erfianugrah/composer:latest`
    - **Network Type:** Bridge
-   - **Port:** `8080` -> `8080`
-3. Add paths:
-   - **Docker Socket:** Host: `/var/run/docker.sock`, Container: `/var/run/docker.sock`, Mode: `rw`
-   - **Stacks:** Host: `/mnt/user/appdata/composer/stacks`, Container: `/opt/stacks`, Mode: `rw`
-4. Add variables:
+   - **Extra Parameters:** `--security-opt no-new-privileges:true`
+4. Add port mapping:
+   - Container Port: `8080`, Host Port: `8080`, Connection Type: TCP
+5. Add paths:
+   - `/var/run/docker.sock` -> `/var/run/docker.sock` (Mode: `rw`) -- Docker socket
+   - `/mnt/user/appdata/composer/stacks` -> `/opt/stacks` (Mode: `rw`) -- Stack files
+   - `/mnt/user/appdata/composer/ssh` -> `/home/composer/.ssh` (Mode: `rw`) -- SSH keys (optional)
+6. Add variables:
    - `PUID` = `99`
    - `PGID` = `100`
-   - `COMPOSER_DB_URL` = `postgres://composer:password@postgres-container-ip:5432/composer?sslmode=disable`
+   - `COMPOSER_DB_URL` = `postgres://composer:changeme@172.17.0.X:5432/composer?sslmode=disable`
+     (replace `172.17.0.X` with the Postgres container's IP from Step 1,
+     and `changeme` with the password you set)
    - `COMPOSER_LOG_LEVEL` = `info`
-5. Click **Apply**
+   - `COMPOSER_COOKIE_SECURE` = `false` (set to `true` if behind Caddy/nginx with HTTPS)
+7. Click **Apply**
+8. Open `http://[UNRAID-IP]:8080` and create your admin account
 
-### Via Docker Compose (requires Compose Manager plugin or CLI)
+### Step 3: Create Valkey Container (cache)
+
+1. Go to **Docker > Add Container**
+2. Set:
+   - **Name:** `composer-valkey`
+   - **Repository:** `valkey/valkey:8-alpine`
+   - **Network Type:** Bridge
+3. Add port mapping:
+   - Container Port: `6379`, Host Port: `6379`, Connection Type: TCP
+4. Add path:
+   - `/mnt/user/appdata/composer/valkey` -> `/data`
+5. Click **Apply**
+6. Note the container's IP address, then **edit the Composer container** and add:
+   - `COMPOSER_VALKEY_URL` = `valkey://[VALKEY-IP]:6379`
+7. Restart the Composer container
+
+### XML Templates
+
+Pre-built Unraid XML templates are in `deploy/unraid/`:
+- `composer.xml` -- Composer container
+- `composer-postgres.xml` -- PostgreSQL for Composer
+
+Download and place in `/boot/config/plugins/dockerMan/templates-user/` on your Unraid server.
+
+### Via Docker Compose (if Compose Manager plugin is installed)
+
+If you have the Docker Compose Manager plugin:
 
 ```yaml
 services:
@@ -55,17 +114,17 @@ services:
     environment:
       PUID: "99"
       PGID: "100"
-      COMPOSER_DB_URL: "postgres://composer:password@postgres:5432/composer?sslmode=disable"
+      COMPOSER_DB_URL: "postgres://composer:changeme@composer-postgres:5432/composer?sslmode=disable"
     depends_on:
-      - postgres
+      - composer-postgres
 
-  postgres:
+  composer-postgres:
     image: postgres:17-alpine
     volumes:
       - /mnt/user/appdata/composer/postgres:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: composer
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: changeme
       POSTGRES_DB: composer
 ```
 
