@@ -1,10 +1,13 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+import { WebhookSettings } from "@/components/layout/WebhookSettings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 ---
 
 <Layout title="Settings" active="settings">
   <div class="space-y-6">
+    <WebhookSettings client:load />
+
     <Card>
       <CardHeader>
         <CardTitle className="text-sm">User Management</CardTitle>

@@ -165,11 +165,44 @@ test.describe("Settings Page", () => {
     const title = page.getByTestId("page-title");
     await expect(title).toHaveText("Settings");
 
-    // Should have user management and system sections
     await expect(page.locator("text=User Management")).toBeVisible();
     await expect(page.locator("text=System")).toBeVisible();
-    // Version shown in settings card (use main content area to avoid sidebar match)
     await expect(page.locator("main").locator("text=Composer v0.1.0")).toBeVisible();
+  });
+
+  test("webhook configuration form is visible", async ({ page }) => {
+    await page.goto("/settings");
+
+    await expect(page.getByRole("heading", { name: "Create Webhook" })).toBeVisible();
+    await expect(page.getByTestId("webhook-stack-name")).toBeVisible();
+    await expect(page.getByTestId("webhook-provider")).toBeVisible();
+    await expect(page.getByTestId("webhook-branch")).toBeVisible();
+    await expect(page.getByTestId("webhook-create-btn")).toBeVisible();
+  });
+
+  test("webhook provider dropdown has correct options", async ({ page }) => {
+    await page.goto("/settings");
+
+    const select = page.getByTestId("webhook-provider");
+    const options = await select.locator("option").allTextContents();
+    expect(options).toEqual(["GitHub", "GitLab", "Gitea", "Generic"]);
+  });
+
+  test("webhook create button disabled without stack name", async ({ page }) => {
+    await page.goto("/settings");
+
+    const btn = page.getByTestId("webhook-create-btn");
+    await expect(btn).toBeDisabled();
+
+    // Fill in stack name -> button enabled
+    await page.getByTestId("webhook-stack-name").fill("test-stack");
+    await expect(btn).toBeEnabled();
+  });
+
+  test("active webhooks section shows", async ({ page }) => {
+    await page.goto("/settings");
+
+    await expect(page.locator("text=Active Webhooks")).toBeVisible();
   });
 });
 

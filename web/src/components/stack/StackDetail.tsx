@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
 const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
 const ComposeEditor = lazy(() => import("./ComposeEditor").then(m => ({ default: m.ComposeEditor })));
+import { GitStatus } from "./GitStatus";
 
 interface StackData {
   name: string;
@@ -45,7 +46,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "terminal">("containers");
+  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "terminal" | "git">("containers");
 
   const fetchStack = () => {
     fetch(`/api/v1/stacks/${stackName}`, { credentials: "include" })
@@ -125,7 +126,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {(["containers", "compose", "terminal"] as const).map((tab) => (
+        {(["containers", "compose", "terminal", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -216,6 +217,9 @@ export function StackDetail({ stackName }: { stackName: string }) {
             )}
           </CardContent>
         </Card>
+      )}
+      {activeTab === "git" && stack.source === "git" && (
+        <GitStatus stackName={stack.name} />
       )}
     </div>
   );
