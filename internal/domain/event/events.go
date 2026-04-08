@@ -83,6 +83,50 @@ type ContainerHealthChanged struct {
 func (e ContainerHealthChanged) EventType() string    { return "container.health" }
 func (e ContainerHealthChanged) EventTime() time.Time { return e.Timestamp }
 
+// --- Pipeline Events ---
+
+type PipelineRunStarted struct {
+	PipelineID string    `json:"pipeline_id"`
+	RunID      string    `json:"run_id"`
+	Timestamp  time.Time `json:"ts"`
+}
+
+func (e PipelineRunStarted) EventType() string    { return "pipeline.run.started" }
+func (e PipelineRunStarted) EventTime() time.Time { return e.Timestamp }
+
+type PipelineStepStarted struct {
+	PipelineID string    `json:"pipeline_id"`
+	RunID      string    `json:"run_id"`
+	StepID     string    `json:"step_id"`
+	Timestamp  time.Time `json:"ts"`
+}
+
+func (e PipelineStepStarted) EventType() string    { return "pipeline.step.started" }
+func (e PipelineStepStarted) EventTime() time.Time { return e.Timestamp }
+
+type PipelineStepFinished struct {
+	PipelineID string    `json:"pipeline_id"`
+	RunID      string    `json:"run_id"`
+	StepID     string    `json:"step_id"`
+	Status     string    `json:"status"`
+	Duration   string    `json:"duration"`
+	Timestamp  time.Time `json:"ts"`
+}
+
+func (e PipelineStepFinished) EventType() string    { return "pipeline.step.finished" }
+func (e PipelineStepFinished) EventTime() time.Time { return e.Timestamp }
+
+type PipelineRunFinished struct {
+	PipelineID string    `json:"pipeline_id"`
+	RunID      string    `json:"run_id"`
+	Status     string    `json:"status"`
+	Duration   string    `json:"duration"`
+	Timestamp  time.Time `json:"ts"`
+}
+
+func (e PipelineRunFinished) EventType() string    { return "pipeline.run.finished" }
+func (e PipelineRunFinished) EventTime() time.Time { return e.Timestamp }
+
 // --- Log Event (for SSE streaming) ---
 
 type LogEntry struct {
