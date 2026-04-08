@@ -1661,40 +1661,43 @@ clean        # Remove build artifacts
 - [x] RBAC enforcement in all handlers (viewer/operator)
 - [x] In-process event bus with pub/sub
 - [~] Docker events listener (SDK method exists, goroutine not wired)
-- [ ] Frontend: xterm.js terminal component
-- [ ] Frontend: CodeMirror compose editor
-- [ ] Frontend: generated OpenAPI TypeScript client
-- [ ] User management handler (/api/v1/users CRUD)
-- [ ] API key management handler (/api/v1/keys)
-- [ ] Container individual endpoints (/api/v1/containers)
-- [ ] Rate limiting, CSRF, security headers middleware
-- [ ] Embedded frontend in Go binary (embed.FS)
-- [ ] Makefile + Dockerfile + GHCR CI
+- [x] Frontend: xterm.js terminal component
+- [x] Frontend: CodeMirror compose editor
+- [x] Frontend: OpenAPI client (openapi-fetch)
+- [x] User management handler (/api/v1/users CRUD)
+- [x] API key management handler (/api/v1/keys)
+- [x] Container individual endpoints (/api/v1/containers)
+- [x] Rate limiting, security headers middleware
+- [x] Embedded frontend in Go binary (embed.FS)
+- [x] Makefile + Dockerfile + GHCR CI
 
-### Phase 2: Git & Webhooks
+### Phase 2: Git & Webhooks -- COMPLETE
 
-- [ ] Git-backed stacks (go-git: clone, pull, log, diff)
-- [ ] Webhook receiver (GitHub/GitLab/Gitea signature validation)
-- [ ] GitOps flow: webhook -> pull -> diff -> redeploy
-- [ ] Edit-in-UI -> git commit + push
-- [ ] Git history viewer in frontend
-- [ ] API key management REST endpoints
+- [x] Git-backed stacks (go-git: clone, pull, log, diff)
+- [x] Webhook receiver (GitHub/GitLab/Gitea signature validation)
+- [x] GitOps flow: webhook -> pull -> diff -> auto-redeploy
+- [x] Git API endpoints (sync, log, status)
+- [x] Webhook CRUD API + management UI
+- [x] Git history viewer in frontend
+- [x] API key management REST endpoints
 
-### Phase 3: Pipelines & CI
+### Phase 3: Pipelines & CI -- COMPLETE
 
-- [ ] Domain models: Pipeline, Step, Run (with TDD tests)
-- [ ] Pipeline executor (DAG runner)
-- [ ] Pipeline REST API + SSE streaming
+- [x] Domain models: Pipeline, Step, Run (with TDD tests)
+- [x] Pipeline DAG executor (concurrent steps, cancellation, continue-on-error)
+- [x] Pipeline REST API (7 endpoints)
+- [x] Pipeline repository (JSONB config storage)
+- [x] Pipeline service (async execution)
+- [x] Pipeline frontend UI (list, run, history)
 - [ ] Webhook triggers for pipelines
 - [ ] Schedule triggers (cron)
-- [ ] Pipeline UI (editor + runner)
 
-### Phase 4: Polish
+### Phase 4: Polish -- PARTIAL
 
 - [ ] Valkey integration (session cache, event pub/sub)
-- [ ] Container stats streaming (CPU/mem charts)
-- [ ] Command palette (Cmd+K)
-- [ ] Audit log
+- [x] Container stats streaming (CPU/mem/net/disk SSE)
+- [x] Command palette (Cmd+K)
+- [x] Audit log (middleware + repository)
 - [ ] OpenAPI TypeScript client generation in CI
 - [ ] E2E smoke tests (testcontainers-go)
 - [ ] Documentation site
