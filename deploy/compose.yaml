@@ -30,12 +30,15 @@ services:
       # Application config
       COMPOSER_PORT: "8080"
       COMPOSER_DB_URL: "postgres://composer:${POSTGRES_PASSWORD:-composer}@postgres:5432/composer?sslmode=disable"
+      COMPOSER_VALKEY_URL: "valkey://valkey:6379"
       COMPOSER_STACKS_DIR: "/opt/stacks"
       COMPOSER_LOG_FORMAT: "${LOG_FORMAT:-json}"
       COMPOSER_LOG_LEVEL: "${LOG_LEVEL:-info}"
     depends_on:
       postgres:
         condition: service_healthy
+      valkey:
+        condition: service_started
     restart: unless-stopped
     # Security hardening
     read_only: true
@@ -67,8 +70,15 @@ services:
       retries: 5
     restart: unless-stopped
 
+  valkey:
+    image: valkey/valkey:8-alpine
+    volumes:
+      - valkey_data:/data
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  valkey_data:
   stacks:
   composer_data:
   composer_ssh:

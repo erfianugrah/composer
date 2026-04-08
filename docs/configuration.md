@@ -8,10 +8,13 @@ All configuration is via `COMPOSER_*` environment variables. No config files, no
 |----------|---------|-------------|
 | `COMPOSER_PORT` | `8080` | HTTP listen port |
 | `COMPOSER_DB_URL` | `postgres://composer:composer@localhost:5432/composer?sslmode=disable` | PostgreSQL connection URL |
+| `COMPOSER_VALKEY_URL` | `valkey://localhost:6379` | Valkey/Redis connection URL for session caching. Empty = caching disabled |
 | `COMPOSER_STACKS_DIR` | `/opt/stacks` | Directory where compose stack files are stored |
+| `COMPOSER_DATA_DIR` | `/opt/composer` | Directory for app data (SSH keys, encryption keys) |
 | `COMPOSER_DOCKER_HOST` | (auto-detect) | Docker/Podman socket path. Empty = auto-detect |
 | `COMPOSER_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `COMPOSER_LOG_FORMAT` | `json` | Log format: `json` (production), `console` (development) |
+| `COMPOSER_COOKIE_SECURE` | `true` | Set session cookie Secure flag. Set to `false` for local dev without TLS |
 
 ## Container User Mapping (PUID/PGID)
 

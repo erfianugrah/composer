@@ -39,7 +39,8 @@ Pure business logic with zero external dependencies. Contains:
 - **auth/** -- User aggregate, Session, APIKey, Role hierarchy, repository interfaces
 - **stack/** -- Stack aggregate with git source support, compose content, status tracking
 - **container/** -- Container entity with status and health enums
-- **event/** -- Event bus interface + all domain event types
+- **pipeline/** -- Pipeline aggregate, Step, Run, DAG validation, topological ordering
+- **event/** -- Event bus interface + all domain event types (stack, container, pipeline)
 
 The domain layer imports only the Go standard library (+ `golang.org/x/crypto/bcrypt`).
 
@@ -48,21 +49,26 @@ The domain layer imports only the Go standard library (+ `golang.org/x/crypto/bc
 Orchestrates domain objects and infrastructure:
 - **AuthService** -- Bootstrap, login/logout, session validation, API key management
 - **StackService** -- CRUD, deploy/stop/restart/pull, event publishing
+- **GitService** -- Git-backed stack creation, sync, sync+redeploy (GitOps flow)
+- **PipelineService** -- Pipeline CRUD, async run execution
+- **PipelineExecutor** -- DAG step executor with concurrency, timeouts, cancellation
 
 ### Infrastructure (internal/infra/)
 
 Implements domain interfaces with real technology:
-- **docker/** -- Docker Engine SDK client (container ops) + compose CLI wrapper
-- **store/postgres/** -- pgx repository implementations for all entities
+- **docker/** -- Docker Engine SDK client (container ops) + compose CLI wrapper + event listener
+- **store/postgres/** -- pgx repository implementations (users, sessions, keys, stacks, git configs, webhooks, pipelines, runs, audit)
 - **eventbus/** -- In-memory pub/sub event bus
-- **git/** -- (Phase 2) go-git wrapper for git-backed stacks
-- **cache/** -- (Phase 4) Valkey client for session caching
+- **git/** -- go-git wrapper (clone, pull, log, diff, commit, push) + webhook signature validation (GitHub, GitLab, Gitea)
+- **cache/** -- Valkey client for session and API key caching
+- **notify/** -- Notification dispatcher (webhook, Slack) [Phase 5]
 
 ### API (internal/api/)
 
 HTTP layer translating between the web and application services:
-- **server.go** -- Huma API setup, route registration, dependency wiring
-- **handler/** -- Auth, Stack, SSE endpoint handlers
+- **server.go** -- Huma API setup, route registration, dependency wiring (12 handler groups)
+- **handler/** -- Auth, User, Key, Stack, Container, Git, Pipeline, Webhook CRUD, Webhook receiver, SSE handlers
+- **middleware/** -- Auth (session+key), RBAC, security headers, rate limiting, audit logging
 - **middleware/** -- Session/API key auth, RBAC enforcement
 - **ws/** -- WebSocket terminal handler (raw chi, not huma-managed)
 - **dto/** -- Request/response types that become OpenAPI schemas
