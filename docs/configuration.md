@@ -15,6 +15,8 @@ All configuration is via `COMPOSER_*` environment variables. No config files, no
 | `COMPOSER_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `COMPOSER_LOG_FORMAT` | `json` | Log format: `json` (production), `console` (development) |
 | `COMPOSER_COOKIE_SECURE` | `true` | Set session cookie Secure flag. Set to `false` for local dev without TLS |
+| `COMPOSER_NOTIFY_URL` | (empty) | Webhook URL for deploy/failure notifications. Empty = disabled |
+| `COMPOSER_SLACK_WEBHOOK` | (empty) | Slack incoming webhook URL. Empty = disabled |
 
 ## Container User Mapping (PUID/PGID)
 

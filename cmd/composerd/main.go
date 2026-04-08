@@ -19,32 +19,37 @@ import (
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	"github.com/erfianugrah/composer/internal/infra/eventbus"
 	infraGit "github.com/erfianugrah/composer/internal/infra/git"
+	"github.com/erfianugrah/composer/internal/infra/notify"
 	"github.com/erfianugrah/composer/internal/infra/store/postgres"
 )
 
 // Config holds all configuration, resolved from environment variables with defaults.
 type Config struct {
-	Port       int
-	DBUrl      string
-	ValkeyURL  string
-	StacksDir  string
-	DataDir    string
-	DockerHost string
-	LogLevel   string
-	LogFormat  string
+	Port         int
+	DBUrl        string
+	ValkeyURL    string
+	StacksDir    string
+	DataDir      string
+	DockerHost   string
+	LogLevel     string
+	LogFormat    string
+	NotifyURL    string
+	SlackWebhook string
 }
 
 // loadConfig reads configuration from COMPOSER_* environment variables with defaults.
 func loadConfig() Config {
 	return Config{
-		Port:       envInt("COMPOSER_PORT", 8080),
-		DBUrl:      envStr("COMPOSER_DB_URL", "postgres://composer:composer@localhost:5432/composer?sslmode=disable"),
-		ValkeyURL:  envStr("COMPOSER_VALKEY_URL", "valkey://localhost:6379"),
-		StacksDir:  envStr("COMPOSER_STACKS_DIR", "/opt/stacks"),
-		DataDir:    envStr("COMPOSER_DATA_DIR", "/opt/composer"),
-		DockerHost: envStr("COMPOSER_DOCKER_HOST", ""),
-		LogLevel:   envStr("COMPOSER_LOG_LEVEL", "info"),
-		LogFormat:  envStr("COMPOSER_LOG_FORMAT", "json"),
+		Port:         envInt("COMPOSER_PORT", 8080),
+		DBUrl:        envStr("COMPOSER_DB_URL", "postgres://composer:composer@localhost:5432/composer?sslmode=disable"),
+		ValkeyURL:    envStr("COMPOSER_VALKEY_URL", "valkey://localhost:6379"),
+		StacksDir:    envStr("COMPOSER_STACKS_DIR", "/opt/stacks"),
+		DataDir:      envStr("COMPOSER_DATA_DIR", "/opt/composer"),
+		DockerHost:   envStr("COMPOSER_DOCKER_HOST", ""),
+		LogLevel:     envStr("COMPOSER_LOG_LEVEL", "info"),
+		LogFormat:    envStr("COMPOSER_LOG_FORMAT", "json"),
+		NotifyURL:    envStr("COMPOSER_NOTIFY_URL", ""),
+		SlackWebhook: envStr("COMPOSER_SLACK_WEBHOOK", ""),
 	}
 }
 
@@ -148,6 +153,21 @@ func main() {
 	// --- Event Bus ---
 	bus := eventbus.NewMemoryBus(256)
 
+	// --- Notifications (optional) ---
+	var notifyConfigs []notify.Config
+	if cfg.NotifyURL != "" {
+		notifyConfigs = append(notifyConfigs, notify.Config{Type: "webhook", URL: cfg.NotifyURL, Enabled: true})
+		logger.Info("notifications enabled", zap.String("type", "webhook"), zap.String("url", cfg.NotifyURL))
+	}
+	if cfg.SlackWebhook != "" {
+		notifyConfigs = append(notifyConfigs, notify.Config{Type: "slack", URL: cfg.SlackWebhook, Enabled: true})
+		logger.Info("notifications enabled", zap.String("type", "slack"))
+	}
+	if len(notifyConfigs) > 0 {
+		notifier := notify.NewNotifier(notifyConfigs, logger)
+		notifier.Subscribe(bus)
+	}
+
 	// --- Stacks directory ---
 	if err := os.MkdirAll(cfg.StacksDir, 0755); err != nil {
 		logger.Fatal("failed to create stacks directory", zap.Error(err))
@@ -180,6 +200,14 @@ func main() {
 	if compose != nil {
 		pipelineExecutor = app.NewPipelineExecutor(compose, bus)
 		pipelineSvc = app.NewPipelineService(pipelineRepo, runRepo, pipelineExecutor)
+	}
+
+	// --- Cron Scheduler (for pipeline schedule triggers) ---
+	if pipelineSvc != nil {
+		cronScheduler := app.NewCronScheduler(pipelineSvc, pipelineRepo, logger)
+		cronScheduler.Start(ctx)
+		defer cronScheduler.Stop()
+		logger.Info("cron scheduler started")
 	}
 
 	// --- Webhook + Audit Repos ---
