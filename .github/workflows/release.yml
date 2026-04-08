@@ -20,11 +20,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # Create web/dist placeholder for go:embed (Docker build creates the real one)
+      - run: mkdir -p web/dist && echo '<!-- placeholder -->' > web/dist/index.html
+
       # Run tests before releasing
       - name: Unit tests
         run: go test -count=1 -timeout=2m ./internal/domain/... ./internal/infra/eventbus/...
 
-      # Build Go binaries for release artifacts
+      # Build Go binaries for release artifacts (standalone, without embedded frontend)
       - name: Build linux/amd64
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o composerd-linux-amd64 ./cmd/composerd/
 
