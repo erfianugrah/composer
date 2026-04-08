@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+
+// Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
+const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
+const ComposeEditor = lazy(() => import("./ComposeEditor").then(m => ({ default: m.ComposeEditor })));
 
 interface StackData {
   name: string;
@@ -40,6 +44,8 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [stack, setStack] = useState<StackData | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
+  const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "terminal">("containers");
 
   const fetchStack = () => {
     fetch(`/api/v1/stacks/${stackName}`, { credentials: "include" })
@@ -58,14 +64,26 @@ export function StackDetail({ stackName }: { stackName: string }) {
     setActionLoading(action);
     try {
       await fetch(`/api/v1/stacks/${stackName}/${action}`, {
-        method: "POST",
-        credentials: "include",
+        method: "POST", credentials: "include",
       });
-      // Refresh after action
       setTimeout(fetchStack, 1000);
     } finally {
       setActionLoading("");
     }
+  }
+
+  async function handleSaveCompose(content: string) {
+    const res = await fetch(`/api/v1/stacks/${stackName}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ compose: content }),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Save failed");
+    }
+    fetchStack();
   }
 
   if (loading) {
@@ -105,46 +123,100 @@ export function StackDetail({ stackName }: { stackName: string }) {
         </div>
       </div>
 
-      {/* Containers */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Containers</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {stack.containers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No containers running</p>
-          ) : (
-            <div className="space-y-2" data-testid="container-list">
-              {stack.containers.map((c) => (
-                <div key={c.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div>
-                    <div className="font-medium text-sm">{c.name}</div>
-                    <div className="text-xs text-muted-foreground font-data">{c.image}</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Badge className={statusColor[c.status] || statusColor.unknown}>{c.status}</Badge>
-                    {c.health !== "none" && (
-                      <Badge className={statusColor[c.health] || statusColor.unknown}>{c.health}</Badge>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-border">
+        {(["containers", "compose", "terminal"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === tab
+                ? "border-cp-purple text-cp-purple"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid={`tab-${tab}`}
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        ))}
+      </div>
 
-      {/* Compose content */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">compose.yaml</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="p-4 rounded-lg bg-cp-950 border border-border overflow-x-auto text-xs font-data leading-relaxed" data-testid="compose-content">
-            {stack.compose_content}
-          </pre>
-        </CardContent>
-      </Card>
+      {/* Tab content */}
+      {activeTab === "containers" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Containers</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {stack.containers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No containers running</p>
+            ) : (
+              <div className="space-y-2" data-testid="container-list">
+                {stack.containers.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                    <div>
+                      <div className="font-medium text-sm">{c.name}</div>
+                      <div className="text-xs text-muted-foreground font-data">{c.image}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className={statusColor[c.status] || statusColor.unknown}>{c.status}</Badge>
+                      {c.health !== "none" && (
+                        <Badge className={statusColor[c.health] || statusColor.unknown}>{c.health}</Badge>
+                      )}
+                      {c.status === "running" && (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => { setActiveTerminal(c.id); setActiveTab("terminal"); }}
+                          data-testid={`terminal-btn-${c.id}`}
+                        >
+                          Terminal
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === "compose" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">compose.yaml</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
+              <ComposeEditor
+                content={stack.compose_content}
+                stackName={stack.name}
+                onSave={handleSaveCompose}
+              />
+            </Suspense>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === "terminal" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Terminal</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {activeTerminal ? (
+              <Suspense fallback={<div className="h-96 animate-pulse bg-muted rounded" />}>
+                <Terminal containerId={activeTerminal} />
+              </Suspense>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Select a running container from the Containers tab to open a terminal.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
