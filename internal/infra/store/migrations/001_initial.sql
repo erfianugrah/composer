@@ -1,86 +1,84 @@
 -- +goose Up
 
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
 -- Users
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id            TEXT PRIMARY KEY,
     email         TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     role          TEXT NOT NULL DEFAULT 'viewer'
                   CHECK (role IN ('admin', 'operator', 'viewer')),
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_login_at TIMESTAMPTZ
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    last_login_at TEXT
 );
 
 -- Sessions
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role       TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPTZ NOT NULL
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
 );
-CREATE INDEX idx_sessions_expires ON sessions(expires_at);
-CREATE INDEX idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 -- API Keys
-CREATE TABLE api_keys (
+CREATE TABLE IF NOT EXISTS api_keys (
     id           TEXT PRIMARY KEY,
     name         TEXT NOT NULL,
     hashed_key   TEXT NOT NULL UNIQUE,
     role         TEXT NOT NULL CHECK (role IN ('admin', 'operator', 'viewer')),
     created_by   TEXT NOT NULL REFERENCES users(id),
-    last_used_at TIMESTAMPTZ,
-    expires_at   TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    last_used_at TEXT,
+    expires_at   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX idx_api_keys_hash ON api_keys(hashed_key);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(hashed_key);
 
 -- Stacks
-CREATE TABLE stacks (
+CREATE TABLE IF NOT EXISTS stacks (
     name       TEXT PRIMARY KEY,
     path       TEXT NOT NULL UNIQUE,
     source     TEXT NOT NULL DEFAULT 'local'
                CHECK (source IN ('local', 'git')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Git configuration for git-backed stacks
-CREATE TABLE stack_git_configs (
+CREATE TABLE IF NOT EXISTS stack_git_configs (
     stack_name   TEXT PRIMARY KEY REFERENCES stacks(name) ON DELETE CASCADE,
     repo_url     TEXT NOT NULL,
     branch       TEXT NOT NULL DEFAULT 'main',
     compose_path TEXT NOT NULL DEFAULT 'compose.yaml',
-    auto_sync    BOOLEAN NOT NULL DEFAULT true,
+    auto_sync    INTEGER NOT NULL DEFAULT 1,
     auth_method  TEXT NOT NULL DEFAULT 'none'
                  CHECK (auth_method IN ('none', 'token', 'ssh_key', 'basic')),
     credentials  TEXT,
-    last_sync_at TIMESTAMPTZ,
+    last_sync_at TEXT,
     last_commit  TEXT,
     sync_status  TEXT NOT NULL DEFAULT 'synced'
                  CHECK (sync_status IN ('synced', 'behind', 'diverged', 'error', 'syncing'))
 );
 
 -- Webhooks
-CREATE TABLE webhooks (
+CREATE TABLE IF NOT EXISTS webhooks (
     id            TEXT PRIMARY KEY,
     stack_name    TEXT NOT NULL REFERENCES stacks(name) ON DELETE CASCADE,
     provider      TEXT NOT NULL DEFAULT 'generic'
                   CHECK (provider IN ('github', 'gitlab', 'gitea', 'bitbucket', 'generic')),
     secret        TEXT NOT NULL,
     branch_filter TEXT,
-    auto_redeploy BOOLEAN NOT NULL DEFAULT true,
-    events        JSONB,
+    auto_redeploy INTEGER NOT NULL DEFAULT 1,
+    events        TEXT,
     created_by    TEXT NOT NULL REFERENCES users(id),
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX idx_webhooks_stack ON webhooks(stack_name);
+CREATE INDEX IF NOT EXISTS idx_webhooks_stack ON webhooks(stack_name);
 
 -- Webhook deliveries
-CREATE TABLE webhook_deliveries (
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
     id           TEXT PRIMARY KEY,
     webhook_id   TEXT NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
     event        TEXT NOT NULL,
@@ -90,38 +88,38 @@ CREATE TABLE webhook_deliveries (
                  CHECK (status IN ('received', 'processing', 'success', 'failed', 'skipped')),
     action       TEXT,
     error        TEXT,
-    payload      JSONB,
-    processed_at TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    payload      TEXT,
+    processed_at TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX idx_deliveries_webhook ON webhook_deliveries(webhook_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_deliveries_webhook ON webhook_deliveries(webhook_id, created_at DESC);
 
 -- Pipelines
-CREATE TABLE pipelines (
+CREATE TABLE IF NOT EXISTS pipelines (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
     description TEXT,
-    config      JSONB NOT NULL,
+    config      TEXT NOT NULL,
     created_by  TEXT NOT NULL REFERENCES users(id),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Pipeline runs
-CREATE TABLE pipeline_runs (
+CREATE TABLE IF NOT EXISTS pipeline_runs (
     id           TEXT PRIMARY KEY,
     pipeline_id  TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
     status       TEXT NOT NULL DEFAULT 'pending'
                  CHECK (status IN ('pending', 'running', 'success', 'failed', 'cancelled')),
     triggered_by TEXT NOT NULL,
-    started_at   TIMESTAMPTZ,
-    finished_at  TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    started_at   TEXT,
+    finished_at  TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX idx_runs_pipeline ON pipeline_runs(pipeline_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_pipeline ON pipeline_runs(pipeline_id, created_at DESC);
 
 -- Pipeline step results
-CREATE TABLE pipeline_step_results (
+CREATE TABLE IF NOT EXISTS pipeline_step_results (
     id          TEXT PRIMARY KEY,
     run_id      TEXT NOT NULL REFERENCES pipeline_runs(id) ON DELETE CASCADE,
     step_id     TEXT NOT NULL,
@@ -131,28 +129,28 @@ CREATE TABLE pipeline_step_results (
     output      TEXT,
     error       TEXT,
     duration_ms INTEGER,
-    started_at  TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ
+    started_at  TEXT,
+    finished_at TEXT
 );
-CREATE INDEX idx_step_results_run ON pipeline_step_results(run_id);
+CREATE INDEX IF NOT EXISTS idx_step_results_run ON pipeline_step_results(run_id);
 
 -- Audit log
-CREATE TABLE audit_log (
+CREATE TABLE IF NOT EXISTS audit_log (
     id         TEXT PRIMARY KEY,
     user_id    TEXT,
     action     TEXT NOT NULL,
     resource   TEXT NOT NULL,
-    detail     JSONB,
+    detail     TEXT,
     ip_address TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX idx_audit_created ON audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
 
 -- Settings
-CREATE TABLE settings (
+CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- +goose Down

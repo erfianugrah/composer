@@ -46,7 +46,7 @@ func (h *KeyHandler) List(ctx context.Context, input *struct{}) (*dto.KeyListOut
 
 	keys, err := h.auth.ListAPIKeys(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.KeyListOutput{}
@@ -83,7 +83,7 @@ func (h *KeyHandler) Create(ctx context.Context, input *dto.CreateKeyInput) (*dt
 
 	result, err := h.auth.CreateAPIKey(ctx, input.Body.Name, role, callerID, expiresAt)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.KeyCreatedOutput{}
@@ -102,7 +102,7 @@ func (h *KeyHandler) Delete(ctx context.Context, input *dto.KeyIDInput) (*struct
 	}
 
 	if err := h.auth.DeleteAPIKey(ctx, input.ID); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	return nil, nil
 }

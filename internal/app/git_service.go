@@ -78,6 +78,9 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 	now := time.Now()
 	gitCfg.LastSyncAt = &now
 	if err := s.gitCfgs.Upsert(ctx, name, gitCfg); err != nil {
+		// Rollback: remove the stack record since git config failed
+		s.stacks.Delete(ctx, name)
+		os.RemoveAll(stackPath)
 		return nil, fmt.Errorf("saving git config: %w", err)
 	}
 
@@ -105,7 +108,7 @@ func (s *GitService) Sync(ctx context.Context, name string) (changed bool, newSH
 	// Update sync status
 	s.gitCfgs.UpdateSyncStatus(ctx, name, stack.GitSyncing, cfg.LastCommitSHA)
 
-	changed, newSHA, err = s.gitClient.Pull(st.Path, cfg.ComposePath)
+	changed, newSHA, err = s.gitClient.Pull(st.Path, cfg.ComposePath, cfg.Credentials)
 	if err != nil {
 		s.gitCfgs.UpdateSyncStatus(ctx, name, stack.GitSyncErr, cfg.LastCommitSHA)
 		return false, "", fmt.Errorf("pulling: %w", err)

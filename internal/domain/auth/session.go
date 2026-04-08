@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"time"
 )
 
@@ -22,6 +23,16 @@ type Session struct {
 
 // NewSession creates a new session with a cryptographically random token.
 func NewSession(userID string, role Role, ttl time.Duration) (*Session, error) {
+	if userID == "" {
+		return nil, errors.New("userID is required for session")
+	}
+	if role == "" {
+		return nil, errors.New("role is required for session")
+	}
+	if ttl <= 0 {
+		return nil, errors.New("session TTL must be positive")
+	}
+
 	token, err := generateSessionToken()
 	if err != nil {
 		return nil, err

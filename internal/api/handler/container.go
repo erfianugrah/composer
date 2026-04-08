@@ -55,7 +55,7 @@ func (h *ContainerHandler) List(ctx context.Context, input *struct{}) (*dto.Cont
 
 	containers, err := h.docker.ListContainers(ctx, "")
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.ContainerListOutput{}
@@ -76,7 +76,7 @@ func (h *ContainerHandler) Get(ctx context.Context, input *dto.ContainerIDInput)
 
 	c, err := h.docker.InspectContainer(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.ContainerDetailOutput{}
@@ -92,7 +92,7 @@ func (h *ContainerHandler) Start(ctx context.Context, input *dto.ContainerIDInpu
 		return nil, err
 	}
 	if err := h.docker.StartContainer(ctx, input.ID); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	return nil, nil
 }
@@ -102,7 +102,7 @@ func (h *ContainerHandler) Stop(ctx context.Context, input *dto.ContainerIDInput
 		return nil, err
 	}
 	if err := h.docker.StopContainer(ctx, input.ID); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	return nil, nil
 }
@@ -112,7 +112,7 @@ func (h *ContainerHandler) Restart(ctx context.Context, input *dto.ContainerIDIn
 		return nil, err
 	}
 	if err := h.docker.RestartContainer(ctx, input.ID); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	return nil, nil
 }

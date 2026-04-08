@@ -13,7 +13,7 @@ import (
 
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
-	"github.com/erfianugrah/composer/internal/infra/store/postgres"
+	"github.com/erfianugrah/composer/internal/infra/store"
 )
 
 func setupAuthService(t *testing.T) *app.AuthService {
@@ -34,13 +34,13 @@ func setupAuthService(t *testing.T) *app.AuthService {
 	connStr, err := pgCtr.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
-	db, err := postgres.New(ctx, connStr)
+	db, err := store.New(ctx, connStr, "")
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	users := postgres.NewUserRepo(db.Pool)
-	sessions := postgres.NewSessionRepo(db.Pool)
-	keys := postgres.NewAPIKeyRepo(db.Pool)
+	users := store.NewUserRepo(db.SQL)
+	sessions := store.NewSessionRepo(db.SQL)
+	keys := store.NewAPIKeyRepo(db.SQL)
 
 	return app.NewAuthService(users, sessions, keys)
 }

@@ -109,13 +109,20 @@ func TestNewSession_TokenUniqueness(t *testing.T) {
 }
 
 func TestSession_ExpiryBoundary(t *testing.T) {
-	// Session with zero TTL should be immediately expired
-	s, _ := auth.NewSession("user1", auth.RoleViewer, 0)
-	// ExpiresAt == CreatedAt, so IsExpired() depends on time.Now() > ExpiresAt
-	// With 0 TTL, it should be expired almost immediately
-	time.Sleep(time.Millisecond)
+	// Session with zero TTL should be rejected
+	_, err := auth.NewSession("user1", auth.RoleViewer, 0)
+	if err == nil {
+		t.Error("session with 0 TTL should return an error")
+	}
+
+	// Session with very short TTL should expire quickly
+	s, err := auth.NewSession("user1", auth.RoleViewer, time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
 	if !s.IsExpired() {
-		t.Error("session with 0 TTL should be expired after 1ms")
+		t.Error("session with 1ms TTL should be expired after 2ms")
 	}
 }
 

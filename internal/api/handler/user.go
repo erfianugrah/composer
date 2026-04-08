@@ -13,11 +13,17 @@ import (
 
 // UserHandler registers user management endpoints (admin only).
 type UserHandler struct {
-	users auth.UserRepository
+	users    auth.UserRepository
+	sessions auth.SessionRepository // optional, for session invalidation on role change
 }
 
 func NewUserHandler(users auth.UserRepository) *UserHandler {
 	return &UserHandler{users: users}
+}
+
+// SetSessionRepo enables session invalidation on role changes.
+func (h *UserHandler) SetSessionRepo(sessions auth.SessionRepository) {
+	h.sessions = sessions
 }
 
 func (h *UserHandler) Register(api huma.API) {
@@ -59,7 +65,7 @@ func (h *UserHandler) List(ctx context.Context, input *struct{}) (*dto.UserListO
 
 	users, err := h.users.List(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.UserListOutput{}
@@ -89,7 +95,7 @@ func (h *UserHandler) Create(ctx context.Context, input *dto.CreateUserInput) (*
 	}
 
 	if err := h.users.Create(ctx, user); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	return userToOutput(user), nil
@@ -102,7 +108,7 @@ func (h *UserHandler) Get(ctx context.Context, input *dto.UserIDInput) (*dto.Use
 
 	user, err := h.users.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	if user == nil {
 		return nil, huma.Error404NotFound("user not found")
@@ -117,7 +123,7 @@ func (h *UserHandler) Update(ctx context.Context, input *dto.UpdateUserInput) (*
 
 	user, err := h.users.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	if user == nil {
 		return nil, huma.Error404NotFound("user not found")
@@ -126,16 +132,25 @@ func (h *UserHandler) Update(ctx context.Context, input *dto.UpdateUserInput) (*
 	if input.Body.Email != "" {
 		user.Email = input.Body.Email
 	}
+	roleChanged := false
 	if input.Body.Role != "" {
 		role, err := auth.ParseRole(input.Body.Role)
 		if err != nil {
 			return nil, huma.Error422UnprocessableEntity(err.Error())
 		}
+		if role != user.Role {
+			roleChanged = true
+		}
 		user.UpdateRole(role)
 	}
 
 	if err := h.users.Update(ctx, user); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
+	}
+
+	// Invalidate sessions when role changes so they pick up the new role
+	if roleChanged && h.sessions != nil {
+		_ = h.sessions.DeleteByUserID(ctx, user.ID) // best-effort
 	}
 
 	return userToOutput(user), nil
@@ -146,7 +161,7 @@ func (h *UserHandler) Delete(ctx context.Context, input *dto.UserIDInput) (*stru
 		return nil, err
 	}
 	if err := h.users.Delete(ctx, input.ID); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	return nil, nil
 }
@@ -169,7 +184,7 @@ func (h *UserHandler) ChangePassword(ctx context.Context, input *dto.ChangePassw
 	}
 
 	if err := h.users.Update(ctx, user); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	return nil, nil

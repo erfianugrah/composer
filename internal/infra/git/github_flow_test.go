@@ -104,7 +104,7 @@ func TestGitHubWebhookFlow(t *testing.T) {
 	t.Logf("Parsed webhook: event=%s branch=%s commit=%s", parsed.Event, parsed.Branch, parsed.CommitSHA[:7])
 
 	// --- Step 6: Pull and detect change ---
-	changed, newSHA, err := client.Pull(composerDir, "compose.yaml")
+	changed, newSHA, err := client.Pull(composerDir, "compose.yaml", nil)
 	require.NoError(t, err)
 	assert.True(t, changed, "compose.yaml should have changed")
 	assert.Equal(t, pushSHA, newSHA, "new SHA should match pushed commit")
@@ -117,7 +117,7 @@ func TestGitHubWebhookFlow(t *testing.T) {
 	assert.Contains(t, string(content), "8080:80")
 
 	// --- Step 7: Second pull should show no changes ---
-	changed2, _, err := client.Pull(composerDir, "compose.yaml")
+	changed2, _, err := client.Pull(composerDir, "compose.yaml", nil)
 	require.NoError(t, err)
 	assert.False(t, changed2, "no changes on second pull")
 }

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"time"
@@ -77,7 +78,7 @@ func NewPipeline(name, description, createdBy string) (*Pipeline, error) {
 
 	now := time.Now().UTC()
 	return &Pipeline{
-		ID:          fmt.Sprintf("pl_%x", now.UnixNano()),
+		ID:          generatePipelineID(now),
 		Name:        name,
 		Description: description,
 		Steps:       []Step{},
@@ -212,4 +213,11 @@ func (p *Pipeline) ExecutionOrder() [][]Step {
 	}
 
 	return result
+}
+
+// generatePipelineID creates a unique pipeline ID with random component.
+func generatePipelineID(now time.Time) string {
+	var buf [4]byte
+	rand.Read(buf[:])
+	return fmt.Sprintf("pl_%x_%x", now.UnixNano(), buf)
 }

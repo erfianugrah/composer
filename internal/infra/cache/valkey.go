@@ -2,8 +2,11 @@ package cache
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/valkey-io/valkey-go"
@@ -17,14 +20,14 @@ type Valkey struct {
 }
 
 // New creates a new Valkey cache client. Returns nil if URL is empty (cache disabled).
-func New(ctx context.Context, url string) (*Valkey, error) {
-	if url == "" {
+// Supports valkey://, redis://, and rediss:// (TLS) URLs with optional user:password auth.
+func New(ctx context.Context, rawURL string) (*Valkey, error) {
+	if rawURL == "" {
 		return nil, nil
 	}
 
-	client, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress: []string{parseValkeyAddr(url)},
-	})
+	opts := parseValkeyURL(rawURL)
+	client, err := valkey.NewClient(opts)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to valkey: %w", err)
 	}
@@ -128,27 +131,40 @@ func (v *Valkey) DeleteAPIKey(ctx context.Context, hashedKey string) error {
 
 // --- Helpers ---
 
-func parseValkeyAddr(url string) string {
-	// Strip valkey:// or redis:// prefix
-	addr := url
-	for _, prefix := range []string{"valkey://", "redis://", "rediss://"} {
-		if len(addr) > len(prefix) && addr[:len(prefix)] == prefix {
-			addr = addr[len(prefix):]
-			break
-		}
-	}
-	// Default port
-	if !contains(addr, ":") {
-		addr += ":6379"
-	}
-	return addr
-}
+// parseValkeyURL parses a valkey/redis URL into client options.
+// Supports: valkey://host:port, redis://user:pass@host:port, rediss://host:port (TLS).
+func parseValkeyURL(rawURL string) valkey.ClientOption {
+	opts := valkey.ClientOption{}
 
-func contains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+	useTLS := strings.HasPrefix(rawURL, "rediss://")
+
+	// Try standard URL parsing
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		// Fallback: treat as host:port
+		opts.InitAddress = []string{rawURL}
+		return opts
+	}
+
+	host := u.Hostname()
+	port := u.Port()
+	if port == "" {
+		port = "6379"
+	}
+	opts.InitAddress = []string{host + ":" + port}
+
+	// Auth
+	if u.User != nil {
+		opts.Username = u.User.Username()
+		opts.Password, _ = u.User.Password()
+	}
+
+	// TLS for rediss:// scheme
+	if useTLS {
+		opts.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
 		}
 	}
-	return false
+
+	return opts
 }

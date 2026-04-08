@@ -1,17 +1,18 @@
 package middleware
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/erfianugrah/composer/internal/infra/store/postgres"
+	"github.com/erfianugrah/composer/internal/infra/store"
 )
 
 // Audit returns middleware that logs mutating API operations.
-func Audit(repo *postgres.AuditRepo) func(http.Handler) http.Handler {
+func Audit(repo *store.AuditRepo) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only audit mutating requests on API paths
@@ -28,7 +29,8 @@ func Audit(repo *postgres.AuditRepo) func(http.Handler) http.Handler {
 			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(sw, r)
 
-			// Log the action asynchronously (fire-and-forget)
+			// Log the action asynchronously (fire-and-forget).
+			// Use a detached context because r.Context() is cancelled after the handler returns.
 			go func() {
 				userID := UserIDFromContext(r.Context())
 				action := deriveAction(r.Method, r.URL.Path)
@@ -41,7 +43,9 @@ func Audit(repo *postgres.AuditRepo) func(http.Handler) http.Handler {
 				rand.Read(buf[:])
 				id := fmt.Sprintf("aud_%x", buf)
 
-				repo.Log(r.Context(), postgres.AuditEntry{
+				auditCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				repo.Log(auditCtx, store.AuditEntry{
 					ID:        id,
 					UserID:    userID,
 					Action:    action,

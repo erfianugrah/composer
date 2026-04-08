@@ -8,10 +8,40 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 
 	domstack "github.com/erfianugrah/composer/internal/domain/stack"
 )
+
+// buildAuth creates the transport.AuthMethod from git credentials.
+func buildAuth(creds *domstack.GitCredentials) transport.AuthMethod {
+	if creds == nil {
+		return nil
+	}
+	if creds.SSHKey != "" {
+		// SSH key auth: the key content is stored in the credentials
+		keys, err := ssh.NewPublicKeys("git", []byte(creds.SSHKey), creds.SSHKeyPassphrase)
+		if err != nil {
+			return nil // fall back to no auth
+		}
+		return keys
+	}
+	if creds.Token != "" {
+		return &http.BasicAuth{
+			Username: "x-access-token", // works for GitHub, GitLab, Gitea
+			Password: creds.Token,
+		}
+	}
+	if creds.Username != "" {
+		return &http.BasicAuth{
+			Username: creds.Username,
+			Password: creds.Password,
+		}
+	}
+	return nil
+}
 
 // Client wraps go-git for stack git operations.
 type Client struct{}
@@ -27,18 +57,7 @@ func (c *Client) Clone(repoURL, branch, targetDir string, creds *domstack.GitCre
 		ReferenceName: plumbing.NewBranchReferenceName(branch),
 		SingleBranch:  true,
 		Depth:         0, // full clone for log/diff
-	}
-
-	if creds != nil && creds.Token != "" {
-		opts.Auth = &http.BasicAuth{
-			Username: "x-access-token", // works for GitHub, GitLab, Gitea
-			Password: creds.Token,
-		}
-	} else if creds != nil && creds.Username != "" {
-		opts.Auth = &http.BasicAuth{
-			Username: creds.Username,
-			Password: creds.Password,
-		}
+		Auth:          buildAuth(creds),
 	}
 
 	_, err := git.PlainClone(targetDir, false, opts)
@@ -49,7 +68,7 @@ func (c *Client) Clone(repoURL, branch, targetDir string, creds *domstack.GitCre
 }
 
 // Pull pulls the latest changes from the remote. Returns whether compose file changed.
-func (c *Client) Pull(stackDir, composePath string) (changed bool, newSHA string, err error) {
+func (c *Client) Pull(stackDir, composePath string, creds *domstack.GitCredentials) (changed bool, newSHA string, err error) {
 	repo, err := git.PlainOpen(stackDir)
 	if err != nil {
 		return false, "", fmt.Errorf("opening repo: %w", err)
@@ -67,8 +86,12 @@ func (c *Client) Pull(stackDir, composePath string) (changed bool, newSHA string
 	}
 	oldSHA := oldHead.Hash().String()
 
-	// Pull
-	err = wt.Pull(&git.PullOptions{RemoteName: "origin"})
+	// Pull with credentials
+	pullOpts := &git.PullOptions{
+		RemoteName: "origin",
+		Auth:       buildAuth(creds),
+	}
+	err = wt.Pull(pullOpts)
 	if err == git.NoErrAlreadyUpToDate {
 		return false, oldSHA, nil
 	}
@@ -182,18 +205,7 @@ func (c *Client) CommitAndPush(stackDir, composePath, message, authorName, autho
 	}
 
 	// Push
-	pushOpts := &git.PushOptions{}
-	if creds != nil && creds.Token != "" {
-		pushOpts.Auth = &http.BasicAuth{
-			Username: "x-access-token",
-			Password: creds.Token,
-		}
-	} else if creds != nil && creds.Username != "" {
-		pushOpts.Auth = &http.BasicAuth{
-			Username: creds.Username,
-			Password: creds.Password,
-		}
-	}
+	pushOpts := &git.PushOptions{Auth: buildAuth(creds)}
 
 	if err := repo.Push(pushOpts); err != nil && err != git.NoErrAlreadyUpToDate {
 		return commit.String(), fmt.Errorf("pushing: %w", err)

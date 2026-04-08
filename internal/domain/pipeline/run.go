@@ -1,6 +1,10 @@
 package pipeline
 
-import "time"
+import (
+	"crypto/rand"
+	"fmt"
+	"time"
+)
 
 // RunStatus tracks the execution state of a pipeline run.
 type RunStatus string
@@ -40,8 +44,10 @@ type StepResult struct {
 // NewRun creates a new pipeline run in pending state.
 func NewRun(pipelineID, triggeredBy string) *Run {
 	now := time.Now().UTC()
+	var buf [4]byte
+	rand.Read(buf[:])
 	return &Run{
-		ID:          "run_" + now.Format("20060102150405"),
+		ID:          fmt.Sprintf("run_%s_%x", now.Format("20060102150405"), buf),
 		PipelineID:  pipelineID,
 		Status:      RunPending,
 		TriggeredBy: triggeredBy,
@@ -50,8 +56,11 @@ func NewRun(pipelineID, triggeredBy string) *Run {
 	}
 }
 
-// Start marks the run as started.
+// Start marks the run as started. No-op if not in pending state.
 func (r *Run) Start() {
+	if r.Status != RunPending {
+		return
+	}
 	now := time.Now().UTC()
 	r.Status = RunRunning
 	r.StartedAt = &now
@@ -70,22 +79,31 @@ func (r *Run) RecordStepResult(result StepResult) {
 	}
 }
 
-// Complete marks the run as successfully finished.
+// Complete marks the run as successfully finished. No-op if already in a terminal state.
 func (r *Run) Complete() {
+	if r.Status != RunRunning {
+		return
+	}
 	r.Status = RunSuccess
 	now := time.Now().UTC()
 	r.FinishedAt = &now
 }
 
-// Cancel marks the run as cancelled.
+// Cancel marks the run as cancelled. No-op if already in a terminal state.
 func (r *Run) Cancel() {
+	if r.Status != RunPending && r.Status != RunRunning {
+		return
+	}
 	r.Status = RunCancelled
 	now := time.Now().UTC()
 	r.FinishedAt = &now
 }
 
-// Fail marks the run as failed.
+// Fail marks the run as failed. No-op if already in a terminal state.
 func (r *Run) Fail() {
+	if r.Status != RunPending && r.Status != RunRunning {
+		return
+	}
 	r.Status = RunFailed
 	now := time.Now().UTC()
 	r.FinishedAt = &now

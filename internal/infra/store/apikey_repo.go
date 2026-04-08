@@ -1,28 +1,26 @@
-package postgres
+package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/erfianugrah/composer/internal/domain/auth"
 )
 
-// APIKeyRepo implements auth.APIKeyRepository using Postgres.
+// APIKeyRepo implements auth.APIKeyRepository using database/sql.
 type APIKeyRepo struct {
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-func NewAPIKeyRepo(pool *pgxpool.Pool) *APIKeyRepo {
-	return &APIKeyRepo{pool: pool}
+func NewAPIKeyRepo(db *sql.DB) *APIKeyRepo {
+	return &APIKeyRepo{db: db}
 }
 
 func (r *APIKeyRepo) Create(ctx context.Context, k *auth.APIKey) error {
-	_, err := r.pool.Exec(ctx,
+	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO api_keys (id, name, hashed_key, role, created_by, last_used_at, expires_at, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		k.ID, k.Name, k.HashedKey, string(k.Role), k.CreatedBy, k.LastUsedAt, k.ExpiresAt, k.CreatedAt,
@@ -36,11 +34,11 @@ func (r *APIKeyRepo) Create(ctx context.Context, k *auth.APIKey) error {
 func (r *APIKeyRepo) GetByHashedKey(ctx context.Context, hashedKey string) (*auth.APIKey, error) {
 	k := &auth.APIKey{}
 	var role string
-	err := r.pool.QueryRow(ctx,
+	err := r.db.QueryRowContext(ctx,
 		`SELECT id, name, hashed_key, role, created_by, last_used_at, expires_at, created_at
 		 FROM api_keys WHERE hashed_key = $1`, hashedKey,
 	).Scan(&k.ID, &k.Name, &k.HashedKey, &role, &k.CreatedBy, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -51,7 +49,7 @@ func (r *APIKeyRepo) GetByHashedKey(ctx context.Context, hashedKey string) (*aut
 }
 
 func (r *APIKeyRepo) List(ctx context.Context) ([]*auth.APIKey, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, name, hashed_key, role, created_by, last_used_at, expires_at, created_at
 		 FROM api_keys ORDER BY created_at ASC`)
 	if err != nil {
@@ -73,12 +71,12 @@ func (r *APIKeyRepo) List(ctx context.Context) ([]*auth.APIKey, error) {
 }
 
 func (r *APIKeyRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
+	_, err := r.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
 	return err
 }
 
 func (r *APIKeyRepo) UpdateLastUsed(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx,
+	_, err := r.db.ExecContext(ctx,
 		`UPDATE api_keys SET last_used_at = $2 WHERE id = $1`,
 		id, time.Now().UTC())
 	return err

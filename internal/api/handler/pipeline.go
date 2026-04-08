@@ -69,7 +69,7 @@ func (h *PipelineHandler) List(ctx context.Context, input *struct{}) (*dto.Pipel
 
 	pipelines, err := h.svc.List(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.PipelineListOutput{}
@@ -136,7 +136,7 @@ func (h *PipelineHandler) Get(ctx context.Context, input *dto.PipelineIDInput) (
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("pipeline not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.PipelineDetailOutput{}
@@ -184,7 +184,7 @@ func (h *PipelineHandler) Run(ctx context.Context, input *dto.RunPipelineInput) 
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("pipeline not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	return runToOutput(run), nil
@@ -197,7 +197,7 @@ func (h *PipelineHandler) ListRuns(ctx context.Context, input *dto.PipelineIDInp
 
 	runs, err := h.svc.ListRuns(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.RunListOutput{}
@@ -221,20 +221,72 @@ func (h *PipelineHandler) GetRun(ctx context.Context, input *dto.RunIDInput) (*d
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("run not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	return runToOutput(run), nil
 }
 
-func (h *PipelineHandler) Update(ctx context.Context, input *dto.CreatePipelineInput) (*dto.PipelineCreatedOutput, error) {
+// UpdatePipelineInput combines the path ID with the create body fields.
+type UpdatePipelineInput struct {
+	ID   string `path:"id" doc:"Pipeline ID"`
+	Body struct {
+		Name        string                `json:"name" minLength:"1" doc:"Pipeline name"`
+		Description string                `json:"description,omitempty" doc:"Pipeline description"`
+		Steps       []dto.PipelineStepDTO `json:"steps" minItems:"1" doc:"Pipeline steps"`
+		Triggers    []dto.TriggerDTO      `json:"triggers,omitempty" doc:"Pipeline triggers"`
+	}
+}
+
+func (h *PipelineHandler) Update(ctx context.Context, input *UpdatePipelineInput) (*dto.PipelineCreatedOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	// Reuse Create logic with update semantics
-	// For a proper update, we'd need a PipelineIDInput + body, but for now
-	// this registers the endpoint. Full update would delete + recreate.
-	return h.Create(ctx, input)
+
+	existing, err := h.svc.Get(ctx, input.ID)
+	if err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("pipeline not found")
+		}
+		return nil, internalError()
+	}
+
+	// Update fields from the request body
+	existing.Name = input.Body.Name
+	existing.Description = input.Body.Description
+	existing.Steps = make([]pipeline.Step, 0, len(input.Body.Steps))
+	for _, s := range input.Body.Steps {
+		step := pipeline.Step{
+			ID:              s.ID,
+			Name:            s.Name,
+			Type:            pipeline.StepType(s.Type),
+			Config:          s.Config,
+			DependsOn:       s.DependsOn,
+			ContinueOnError: s.ContinueOnError,
+		}
+		if s.Timeout != "" {
+			if d, err := time.ParseDuration(s.Timeout); err == nil {
+				step.Timeout = d
+			}
+		}
+		existing.Steps = append(existing.Steps, step)
+	}
+	existing.Triggers = make([]pipeline.Trigger, 0, len(input.Body.Triggers))
+	for _, t := range input.Body.Triggers {
+		existing.Triggers = append(existing.Triggers, pipeline.Trigger{
+			Type:   pipeline.TriggerType(t.Type),
+			Config: t.Config,
+		})
+	}
+
+	if err := h.svc.Update(ctx, existing); err != nil {
+		return nil, internalError()
+	}
+
+	out := &dto.PipelineCreatedOutput{}
+	out.Body.ID = existing.ID
+	out.Body.Name = existing.Name
+	return out, nil
 }
 
 func (h *PipelineHandler) Cancel(ctx context.Context, input *dto.PipelineIDInput) (*struct{}, error) {
@@ -245,13 +297,16 @@ func (h *PipelineHandler) Cancel(ctx context.Context, input *dto.PipelineIDInput
 	// Get the latest running run for this pipeline and cancel it
 	runs, err := h.svc.ListRuns(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	for _, run := range runs {
 		if run.Status == pipeline.RunRunning || run.Status == pipeline.RunPending {
 			run.Cancel()
-			// Persist cancellation -- the executor checks context
+			// Persist the cancellation to the database
+			if err := h.svc.UpdateRun(ctx, run); err != nil {
+				return nil, internalError()
+			}
 			return nil, nil
 		}
 	}

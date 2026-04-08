@@ -1,12 +1,10 @@
-package postgres
+package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Webhook represents a stored webhook configuration.
@@ -20,17 +18,17 @@ type Webhook struct {
 	CreatedBy    string
 }
 
-// WebhookRepo implements webhook persistence.
+// WebhookRepo implements webhook persistence using database/sql.
 type WebhookRepo struct {
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-func NewWebhookRepo(pool *pgxpool.Pool) *WebhookRepo {
-	return &WebhookRepo{pool: pool}
+func NewWebhookRepo(db *sql.DB) *WebhookRepo {
+	return &WebhookRepo{db: db}
 }
 
 func (r *WebhookRepo) Create(ctx context.Context, w *Webhook) error {
-	_, err := r.pool.Exec(ctx,
+	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO webhooks (id, stack_name, provider, secret, branch_filter, auto_redeploy, created_by)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		w.ID, w.StackName, w.Provider, w.Secret, w.BranchFilter, w.AutoRedeploy, w.CreatedBy,
@@ -40,11 +38,11 @@ func (r *WebhookRepo) Create(ctx context.Context, w *Webhook) error {
 
 func (r *WebhookRepo) GetByID(ctx context.Context, id string) (*Webhook, error) {
 	w := &Webhook{}
-	err := r.pool.QueryRow(ctx,
+	err := r.db.QueryRowContext(ctx,
 		`SELECT id, stack_name, provider, secret, branch_filter, auto_redeploy, created_by
 		 FROM webhooks WHERE id = $1`, id,
 	).Scan(&w.ID, &w.StackName, &w.Provider, &w.Secret, &w.BranchFilter, &w.AutoRedeploy, &w.CreatedBy)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -54,7 +52,7 @@ func (r *WebhookRepo) GetByID(ctx context.Context, id string) (*Webhook, error) 
 }
 
 func (r *WebhookRepo) ListByStack(ctx context.Context, stackName string) ([]*Webhook, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, stack_name, provider, secret, branch_filter, auto_redeploy, created_by
 		 FROM webhooks WHERE stack_name = $1 ORDER BY created_at ASC`, stackName,
 	)
@@ -75,7 +73,7 @@ func (r *WebhookRepo) ListByStack(ctx context.Context, stackName string) ([]*Web
 }
 
 func (r *WebhookRepo) ListAll(ctx context.Context) ([]*Webhook, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, stack_name, provider, secret, branch_filter, auto_redeploy, created_by
 		 FROM webhooks ORDER BY created_at ASC`,
 	)
@@ -96,7 +94,7 @@ func (r *WebhookRepo) ListAll(ctx context.Context) ([]*Webhook, error) {
 }
 
 func (r *WebhookRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM webhooks WHERE id = $1`, id)
+	_, err := r.db.ExecContext(ctx, `DELETE FROM webhooks WHERE id = $1`, id)
 	return err
 }
 
@@ -117,7 +115,7 @@ func (r *WebhookRepo) ListDeliveries(ctx context.Context, webhookID string, limi
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, webhook_id, event, branch, commit_sha, status, action, error, created_at
 		 FROM webhook_deliveries WHERE webhook_id = $1 ORDER BY created_at DESC LIMIT $2`, webhookID, limit,
 	)

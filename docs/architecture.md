@@ -57,7 +57,7 @@ Orchestrates domain objects and infrastructure:
 
 Implements domain interfaces with real technology:
 - **docker/** -- Docker Engine SDK client (container ops) + compose CLI wrapper + event listener
-- **store/postgres/** -- pgx repository implementations (users, sessions, keys, stacks, git configs, webhooks, pipelines, runs, audit)
+- **store/** -- database/sql repository implementations supporting both PostgreSQL and SQLite (users, sessions, keys, stacks, git configs, webhooks, pipelines, runs, audit)
 - **eventbus/** -- In-memory pub/sub event bus
 - **git/** -- go-git wrapper (clone, pull, log, diff, commit, push) + webhook signature validation (GitHub, GitLab, Gitea)
 - **cache/** -- Valkey client for session and API key caching

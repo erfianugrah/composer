@@ -19,20 +19,23 @@ cd web && bun install && cd ..
 ## Development
 
 ```bash
-# Terminal 1: Start Postgres
-docker compose -f deploy/compose.yaml up -d postgres valkey
+# Quickstart (SQLite -- no external dependencies)
+COMPOSER_LOG_FORMAT=console go run ./cmd/composerd/
 
-# Terminal 2: Go backend
+# Or with Postgres + Valkey for full production setup:
+docker compose -f deploy/compose.yaml up -d postgres valkey
 COMPOSER_PORT=8080 \
 COMPOSER_DB_URL="postgres://composer:composer@localhost:5432/composer?sslmode=disable" \
+COMPOSER_VALKEY_URL="valkey://localhost:6379" \
 COMPOSER_LOG_FORMAT=console \
 go run ./cmd/composerd/
 
-# Terminal 3: Astro frontend
+# Frontend dev server (separate terminal):
 cd web && bun run dev
 ```
 
 Backend on `:8080`, frontend dev server on `:4321`.
+Leave `COMPOSER_DB_URL` empty for SQLite (stored in `/opt/composer/composer.db`).
 
 See [configuration.md](configuration.md) for all environment variables.
 
@@ -59,7 +62,7 @@ composer/
 │   │   └── diff.go                # Compose diff algorithm
 │   ├── infra/                     # Infrastructure implementations
 │   │   ├── docker/                # Docker SDK client + compose CLI + event listener
-│   │   ├── store/postgres/        # pgx repos + goose migrations
+│   │   ├── store/                 # database/sql repos (Postgres+SQLite) + goose migrations
 │   │   ├── eventbus/              # In-memory event bus
 │   │   ├── git/                   # go-git + webhook signature validation
 │   │   ├── cache/                 # Valkey session/key caching

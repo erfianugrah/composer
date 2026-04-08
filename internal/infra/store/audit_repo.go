@@ -1,10 +1,10 @@
-package postgres
+package store
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // AuditEntry represents a single audit log entry.
@@ -18,21 +18,31 @@ type AuditEntry struct {
 	CreatedAt time.Time
 }
 
-// AuditRepo persists audit log entries.
+// AuditRepo persists audit log entries using database/sql.
 type AuditRepo struct {
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-func NewAuditRepo(pool *pgxpool.Pool) *AuditRepo {
-	return &AuditRepo{pool: pool}
+func NewAuditRepo(db *sql.DB) *AuditRepo {
+	return &AuditRepo{db: db}
 }
 
 // Log writes an audit entry. Fire-and-forget -- errors are swallowed.
 func (r *AuditRepo) Log(ctx context.Context, entry AuditEntry) {
-	r.pool.Exec(ctx,
+	// Serialize detail map to JSON string for database/sql compatibility.
+	var detailStr *string
+	if entry.Detail != nil {
+		b, err := json.Marshal(entry.Detail)
+		if err == nil {
+			s := string(b)
+			detailStr = &s
+		}
+	}
+
+	r.db.ExecContext(ctx,
 		`INSERT INTO audit_log (id, user_id, action, resource, detail, ip_address, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		entry.ID, entry.UserID, entry.Action, entry.Resource, entry.Detail, entry.IPAddress, entry.CreatedAt,
+		entry.ID, entry.UserID, entry.Action, entry.Resource, detailStr, entry.IPAddress, entry.CreatedAt,
 	)
 }
 
@@ -42,7 +52,7 @@ func (r *AuditRepo) Recent(ctx context.Context, limit int) ([]AuditEntry, error)
 		limit = 50
 	}
 
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, user_id, action, resource, detail, ip_address, created_at
 		 FROM audit_log ORDER BY created_at DESC LIMIT $1`, limit,
 	)
@@ -54,8 +64,12 @@ func (r *AuditRepo) Recent(ctx context.Context, limit int) ([]AuditEntry, error)
 	var entries []AuditEntry
 	for rows.Next() {
 		e := AuditEntry{}
-		if err := rows.Scan(&e.ID, &e.UserID, &e.Action, &e.Resource, &e.Detail, &e.IPAddress, &e.CreatedAt); err != nil {
+		var detailStr sql.NullString
+		if err := rows.Scan(&e.ID, &e.UserID, &e.Action, &e.Resource, &detailStr, &e.IPAddress, &e.CreatedAt); err != nil {
 			return nil, err
+		}
+		if detailStr.Valid && detailStr.String != "" {
+			_ = json.Unmarshal([]byte(detailStr.String), &e.Detail) // best-effort; corrupt JSON returns nil Detail
 		}
 		entries = append(entries, e)
 	}

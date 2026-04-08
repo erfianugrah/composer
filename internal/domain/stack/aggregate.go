@@ -44,10 +44,11 @@ type GitSource struct {
 
 // GitCredentials holds encrypted credential data for git authentication.
 type GitCredentials struct {
-	Token    string
-	SSHKeyID string
-	Username string
-	Password string
+	Token            string
+	SSHKey           string // PEM-encoded private key content
+	SSHKeyPassphrase string // optional passphrase for the SSH key
+	Username         string
+	Password         string
 }
 
 // NewStack creates a new local stack.

@@ -1,48 +1,46 @@
-package postgres
+package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/erfianugrah/composer/internal/domain/pipeline"
 )
 
-// PipelineRepo implements pipeline.PipelineRepository.
+// PipelineRepo implements pipeline.PipelineRepository using database/sql.
 type PipelineRepo struct {
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-func NewPipelineRepo(pool *pgxpool.Pool) *PipelineRepo {
-	return &PipelineRepo{pool: pool}
+func NewPipelineRepo(db *sql.DB) *PipelineRepo {
+	return &PipelineRepo{db: db}
 }
 
 func (r *PipelineRepo) Create(ctx context.Context, p *pipeline.Pipeline) error {
 	config, err := json.Marshal(pipelineConfig{Steps: p.Steps, Triggers: p.Triggers})
 	if err != nil {
-		return fmt.Errorf("marshaling config: %w", err)
+		return fmt.Errorf("marshaling pipeline config: %w", err)
 	}
-	_, err = r.pool.Exec(ctx,
+	_, err = r.db.ExecContext(ctx, //nolint:reassign
 		`INSERT INTO pipelines (id, name, description, config, created_by, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		p.ID, p.Name, p.Description, config, p.CreatedBy, p.CreatedAt, p.UpdatedAt,
+		p.ID, p.Name, p.Description, string(config), p.CreatedBy, p.CreatedAt, p.UpdatedAt,
 	)
 	return err
 }
 
 func (r *PipelineRepo) GetByID(ctx context.Context, id string) (*pipeline.Pipeline, error) {
 	p := &pipeline.Pipeline{}
-	var configJSON []byte
-	err := r.pool.QueryRow(ctx,
+	var configStr string
+	err := r.db.QueryRowContext(ctx,
 		`SELECT id, name, description, config, created_by, created_at, updated_at
 		 FROM pipelines WHERE id = $1`, id,
-	).Scan(&p.ID, &p.Name, &p.Description, &configJSON, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	).Scan(&p.ID, &p.Name, &p.Description, &configStr, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -50,7 +48,7 @@ func (r *PipelineRepo) GetByID(ctx context.Context, id string) (*pipeline.Pipeli
 	}
 
 	var cfg pipelineConfig
-	if err := json.Unmarshal(configJSON, &cfg); err != nil {
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshaling config: %w", err)
 	}
 	p.Steps = cfg.Steps
@@ -59,7 +57,7 @@ func (r *PipelineRepo) GetByID(ctx context.Context, id string) (*pipeline.Pipeli
 }
 
 func (r *PipelineRepo) List(ctx context.Context) ([]*pipeline.Pipeline, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, name, description, config, created_by, created_at, updated_at
 		 FROM pipelines ORDER BY name ASC`)
 	if err != nil {
@@ -70,12 +68,14 @@ func (r *PipelineRepo) List(ctx context.Context) ([]*pipeline.Pipeline, error) {
 	var pipelines []*pipeline.Pipeline
 	for rows.Next() {
 		p := &pipeline.Pipeline{}
-		var configJSON []byte
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &configJSON, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		var configStr string
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &configStr, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		var cfg pipelineConfig
-		json.Unmarshal(configJSON, &cfg)
+		if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+			return nil, fmt.Errorf("unmarshaling pipeline %s config: %w", p.ID, err)
+		}
 		p.Steps = cfg.Steps
 		p.Triggers = cfg.Triggers
 		pipelines = append(pipelines, p)
@@ -84,30 +84,39 @@ func (r *PipelineRepo) List(ctx context.Context) ([]*pipeline.Pipeline, error) {
 }
 
 func (r *PipelineRepo) Update(ctx context.Context, p *pipeline.Pipeline) error {
-	config, _ := json.Marshal(pipelineConfig{Steps: p.Steps, Triggers: p.Triggers})
-	_, err := r.pool.Exec(ctx,
+	config, err := json.Marshal(pipelineConfig{Steps: p.Steps, Triggers: p.Triggers})
+	if err != nil {
+		return fmt.Errorf("marshaling pipeline config: %w", err)
+	}
+	result, err := r.db.ExecContext(ctx,
 		`UPDATE pipelines SET name=$2, description=$3, config=$4, updated_at=$5 WHERE id=$1`,
-		p.ID, p.Name, p.Description, config, time.Now().UTC(),
+		p.ID, p.Name, p.Description, string(config), time.Now().UTC(),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return ErrNotUpdated
+	}
+	return nil
 }
 
 func (r *PipelineRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM pipelines WHERE id=$1`, id)
+	_, err := r.db.ExecContext(ctx, `DELETE FROM pipelines WHERE id=$1`, id)
 	return err
 }
 
-// RunRepo implements pipeline.RunRepository.
+// RunRepo implements pipeline.RunRepository using database/sql.
 type RunRepo struct {
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-func NewRunRepo(pool *pgxpool.Pool) *RunRepo {
-	return &RunRepo{pool: pool}
+func NewRunRepo(db *sql.DB) *RunRepo {
+	return &RunRepo{db: db}
 }
 
 func (r *RunRepo) Create(ctx context.Context, run *pipeline.Run) error {
-	_, err := r.pool.Exec(ctx,
+	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO pipeline_runs (id, pipeline_id, status, triggered_by, started_at, finished_at, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		run.ID, run.PipelineID, string(run.Status), run.TriggeredBy, run.StartedAt, run.FinishedAt, run.CreatedAt,
@@ -118,11 +127,11 @@ func (r *RunRepo) Create(ctx context.Context, run *pipeline.Run) error {
 func (r *RunRepo) GetByID(ctx context.Context, id string) (*pipeline.Run, error) {
 	run := &pipeline.Run{}
 	var status string
-	err := r.pool.QueryRow(ctx,
+	err := r.db.QueryRowContext(ctx,
 		`SELECT id, pipeline_id, status, triggered_by, started_at, finished_at, created_at
 		 FROM pipeline_runs WHERE id = $1`, id,
 	).Scan(&run.ID, &run.PipelineID, &status, &run.TriggeredBy, &run.StartedAt, &run.FinishedAt, &run.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -133,7 +142,7 @@ func (r *RunRepo) GetByID(ctx context.Context, id string) (*pipeline.Run, error)
 }
 
 func (r *RunRepo) ListByPipeline(ctx context.Context, pipelineID string) ([]*pipeline.Run, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, pipeline_id, status, triggered_by, started_at, finished_at, created_at
 		 FROM pipeline_runs WHERE pipeline_id = $1 ORDER BY created_at DESC LIMIT 50`, pipelineID,
 	)
@@ -156,14 +165,20 @@ func (r *RunRepo) ListByPipeline(ctx context.Context, pipelineID string) ([]*pip
 }
 
 func (r *RunRepo) Update(ctx context.Context, run *pipeline.Run) error {
-	_, err := r.pool.Exec(ctx,
+	result, err := r.db.ExecContext(ctx,
 		`UPDATE pipeline_runs SET status=$2, started_at=$3, finished_at=$4 WHERE id=$1`,
 		run.ID, string(run.Status), run.StartedAt, run.FinishedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return ErrNotUpdated
+	}
+	return nil
 }
 
-// pipelineConfig is the JSON structure stored in the pipelines.config JSONB column.
+// pipelineConfig is the JSON structure stored in the pipelines.config column.
 type pipelineConfig struct {
 	Steps    []pipeline.Step    `json:"steps"`
 	Triggers []pipeline.Trigger `json:"triggers"`

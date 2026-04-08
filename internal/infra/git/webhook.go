@@ -3,6 +3,7 @@ package git
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -99,8 +100,10 @@ func parseGitHubPayload(p *WebhookPayload, body []byte) (*WebhookPayload, error)
 // --- GitLab ---
 
 func validateGitLab(secret string, headers map[string]string) bool {
-	// GitLab uses a plain token in X-Gitlab-Token header (not HMAC)
-	return headers["x-gitlab-token"] == secret
+	// GitLab uses a plain token in X-Gitlab-Token header (not HMAC).
+	// Use constant-time comparison to prevent timing attacks.
+	token := headers["x-gitlab-token"]
+	return subtle.ConstantTimeCompare([]byte(token), []byte(secret)) == 1
 }
 
 func parseGitLabPayload(p *WebhookPayload, body []byte) (*WebhookPayload, error) {

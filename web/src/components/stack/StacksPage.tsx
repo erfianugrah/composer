@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardOverview } from "./DashboardOverview";
 import { StackDetail } from "./StackDetail";
 import { TemplatePicker } from "./TemplatePicker";
@@ -14,12 +14,14 @@ export function StacksPage() {
   });
   const [showCreate, setShowCreate] = useState(false);
 
-  if (typeof window !== "undefined") {
-    window.addEventListener("hashchange", () => {
+  useEffect(() => {
+    const handler = () => {
       const hash = window.location.hash.slice(1);
       setSelectedStack(hash || null);
-    });
-  }
+    };
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
 
   async function handleTemplateCreate(name: string, compose: string) {
     const res = await fetch("/api/v1/stacks", {

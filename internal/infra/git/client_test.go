@@ -100,7 +100,7 @@ func TestGitClient_PullNoChanges(t *testing.T) {
 	require.NoError(t, client.Clone(bareRepo, "main", cloneDir, nil))
 
 	// Pull when already up to date
-	changed, sha, err := client.Pull(cloneDir, "compose.yaml")
+	changed, sha, err := client.Pull(cloneDir, "compose.yaml", nil)
 	require.NoError(t, err)
 	assert.False(t, changed)
 	assert.Len(t, sha, 40)
@@ -126,7 +126,7 @@ func TestGitClient_PullWithChanges(t *testing.T) {
 	run(t, pushDir, "git", "push", "origin", "main")
 
 	// Now pull in the original clone
-	changed, sha, err := client.Pull(cloneDir, "compose.yaml")
+	changed, sha, err := client.Pull(cloneDir, "compose.yaml", nil)
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.Len(t, sha, 40)

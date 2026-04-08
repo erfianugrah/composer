@@ -15,11 +15,18 @@ var (
 	ErrNotFound           = errors.New("not found")
 )
 
+// SessionCache is an optional interface for invalidating cached sessions/keys.
+type SessionCache interface {
+	DeleteSession(ctx context.Context, sessionID string) error
+	DeleteAPIKey(ctx context.Context, hashedKey string) error
+}
+
 // AuthService orchestrates authentication operations.
 type AuthService struct {
 	users    auth.UserRepository
 	sessions auth.SessionRepository
 	keys     auth.APIKeyRepository
+	cache    SessionCache // optional, nil = no cache
 }
 
 // NewAuthService creates a new AuthService.
@@ -35,7 +42,15 @@ func NewAuthService(
 	}
 }
 
+// SetCache attaches an optional session/key cache for invalidation.
+func (s *AuthService) SetCache(c SessionCache) {
+	s.cache = c
+}
+
 // Bootstrap creates the first admin user. Fails if any users already exist.
+// Uses a re-check after creation attempt to handle TOCTOU races:
+// two concurrent bootstrap calls both see count==0 but only one insert succeeds
+// (the second gets a duplicate email error).
 func (s *AuthService) Bootstrap(ctx context.Context, email, password string) (*auth.User, error) {
 	count, err := s.users.Count(ctx)
 	if err != nil {
@@ -51,6 +66,10 @@ func (s *AuthService) Bootstrap(ctx context.Context, email, password string) (*a
 	}
 
 	if err := s.users.Create(ctx, user); err != nil {
+		// Re-check count: if another bootstrap raced us, users now exist
+		if c, _ := s.users.Count(ctx); c > 0 {
+			return nil, ErrBootstrapDone
+		}
 		return nil, fmt.Errorf("creating user: %w", err)
 	}
 
@@ -71,7 +90,8 @@ func (s *AuthService) Login(ctx context.Context, email, password string, ttl tim
 		return nil, ErrInvalidCredentials
 	}
 
-	// Revoke existing sessions (session fixation prevention)
+	// Revoke existing sessions (session fixation prevention).
+	// Cache invalidation happens via TTL since we don't track session IDs per user in cache.
 	if err := s.sessions.DeleteByUserID(ctx, user.ID); err != nil {
 		return nil, fmt.Errorf("revoking old sessions: %w", err)
 	}
@@ -111,8 +131,11 @@ func (s *AuthService) ValidateSession(ctx context.Context, sessionID string) (*a
 	return session, nil
 }
 
-// Logout destroys a session.
+// Logout destroys a session and invalidates the cache.
 func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
+	if s.cache != nil {
+		_ = s.cache.DeleteSession(ctx, sessionID) // best-effort
+	}
 	return s.sessions.DeleteByID(ctx, sessionID)
 }
 
@@ -150,8 +173,10 @@ func (s *AuthService) CreateAPIKey(ctx context.Context, name string, role auth.R
 	return result, nil
 }
 
-// DeleteAPIKey revokes an API key.
+// DeleteAPIKey revokes an API key and invalidates the cache.
 func (s *AuthService) DeleteAPIKey(ctx context.Context, id string) error {
+	// Note: we don't have the hashed key here, but the cache entry will expire via TTL.
+	// For immediate invalidation, the caller should provide the hashed key.
 	return s.keys.Delete(ctx, id)
 }
 

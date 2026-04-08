@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ func TestShouldRunCron(t *testing.T) {
 		expr string
 		want bool
 	}{
-		// Matches
+		// Exact matches
 		{"exact match", "30 15 8 4 3", true},
 		{"all wildcards", "* * * * *", true},
 		{"minute only", "30 * * * *", true},
@@ -32,9 +33,25 @@ func TestShouldRunCron(t *testing.T) {
 		{"wrong day", "30 15 9 4 3", false},
 		{"wrong month", "30 15 8 5 3", false},
 		{"wrong weekday", "30 15 8 4 4", false},
-
-		// Midnight -- doesn't match 15:30
 		{"midnight doesn't match 15:30", "0 0 * * *", false},
+
+		// Step expressions (*/N)
+		{"*/5 matches 30", "*/5 * * * *", true},   // 30 % 5 == 0
+		{"*/7 no match 30", "*/7 * * * *", false}, // 30 % 7 != 0
+		{"*/15 matches 30", "*/15 * * * *", true},
+		{"hour */3 matches 15", "* */3 * * *", true},   // 15 % 3 == 0
+		{"hour */4 no match 15", "* */4 * * *", false}, // 15 % 4 != 0
+
+		// Range expressions (N-M)
+		{"range 25-35 matches 30", "25-35 * * * *", true},
+		{"range 31-45 no match 30", "31-45 * * * *", false},
+		{"hour range 14-16 matches 15", "* 14-16 * * *", true},
+		{"weekday range 1-5 matches 3", "* * * * 1-5", true},
+
+		// List expressions (N,M,O)
+		{"list 0,15,30,45 matches 30", "0,15,30,45 * * * *", true},
+		{"list 0,15,45 no match 30", "0,15,45 * * * *", false},
+		{"month list 3,4,5 matches 4", "* * * 3,4,5 *", true},
 
 		// Invalid
 		{"too few fields", "30 15 8", false},
@@ -64,7 +81,7 @@ func TestSplitFields(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		fields := splitFields(tt.input)
-		assert.Len(t, fields, tt.want, "splitFields(%q)", tt.input)
+		fields := strings.Fields(tt.input)
+		assert.Len(t, fields, tt.want, "strings.Fields(%q)", tt.input)
 	}
 }

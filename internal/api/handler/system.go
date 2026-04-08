@@ -55,7 +55,7 @@ func (h *SystemHandler) Info(ctx context.Context, input *struct{}) (*SystemInfoO
 
 	info, err := h.docker.Info(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &SystemInfoOutput{}

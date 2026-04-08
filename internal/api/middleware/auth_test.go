@@ -17,7 +17,7 @@ import (
 	"github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
-	"github.com/erfianugrah/composer/internal/infra/store/postgres"
+	"github.com/erfianugrah/composer/internal/infra/store"
 )
 
 func setupMiddlewareTest(t *testing.T) (*app.AuthService, chi.Router) {
@@ -38,14 +38,14 @@ func setupMiddlewareTest(t *testing.T) (*app.AuthService, chi.Router) {
 	connStr, err := pgCtr.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
-	db, err := postgres.New(ctx, connStr)
+	db, err := store.New(ctx, connStr, "")
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
 	authSvc := app.NewAuthService(
-		postgres.NewUserRepo(db.Pool),
-		postgres.NewSessionRepo(db.Pool),
-		postgres.NewAPIKeyRepo(db.Pool),
+		store.NewUserRepo(db.SQL),
+		store.NewSessionRepo(db.SQL),
+		store.NewAPIKeyRepo(db.SQL),
 	)
 
 	router := chi.NewMux()

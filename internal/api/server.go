@@ -16,7 +16,7 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/infra/docker"
-	"github.com/erfianugrah/composer/internal/infra/store/postgres"
+	"github.com/erfianugrah/composer/internal/infra/store"
 )
 
 // Server is the HTTP API server.
@@ -33,8 +33,8 @@ type Deps struct {
 	PipelineService *app.PipelineService   // nil disables pipeline operations
 	UserRepo        auth.UserRepository    // nil disables user management
 	SessionRepo     auth.SessionRepository // needed for OAuth session persistence
-	WebhookRepo     *postgres.WebhookRepo  // nil disables webhook receiver
-	AuditRepo       *postgres.AuditRepo    // nil disables audit logging
+	WebhookRepo     *store.WebhookRepo     // nil disables webhook receiver
+	AuditRepo       *store.AuditRepo       // nil disables audit logging
 	EventBus        event.Bus              // nil disables SSE events endpoint
 	DockerClient    *docker.Client         // nil disables container/SSE/terminal endpoints
 }
@@ -110,7 +110,11 @@ func NewServer(deps Deps) *Server {
 
 	// User management (admin only)
 	if deps.UserRepo != nil {
-		handler.NewUserHandler(deps.UserRepo).Register(api)
+		userHandler := handler.NewUserHandler(deps.UserRepo)
+		if deps.SessionRepo != nil {
+			userHandler.SetSessionRepo(deps.SessionRepo)
+		}
+		userHandler.Register(api)
 	}
 
 	// API key management (operator+)

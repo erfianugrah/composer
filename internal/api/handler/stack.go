@@ -118,7 +118,7 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 	}
 	stacks, err := h.stacks.List(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to list stacks: " + err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.StackListOutput{}
@@ -160,7 +160,7 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.StackDetailOutput{}
@@ -239,7 +239,7 @@ func (h *StackHandler) Delete(ctx context.Context, input *dto.DeleteStackInput) 
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	return nil, nil
 }
@@ -253,7 +253,7 @@ func (h *StackHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -271,7 +271,7 @@ func (h *StackHandler) Stop(ctx context.Context, input *dto.StackNameInput) (*dt
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -289,7 +289,7 @@ func (h *StackHandler) Restart(ctx context.Context, input *dto.StackNameInput) (
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -307,7 +307,7 @@ func (h *StackHandler) Pull(ctx context.Context, input *dto.StackNameInput) (*dt
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -347,7 +347,7 @@ func (h *StackHandler) Diff(ctx context.Context, input *dto.GetStackInput) (*dto
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	// Compare compose content on disk vs what docker compose reports as running config

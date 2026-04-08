@@ -10,16 +10,16 @@ import (
 
 	"github.com/erfianugrah/composer/internal/app"
 	infraGit "github.com/erfianugrah/composer/internal/infra/git"
-	"github.com/erfianugrah/composer/internal/infra/store/postgres"
+	"github.com/erfianugrah/composer/internal/infra/store"
 )
 
 // WebhookHandler handles inbound webhook deliveries.
 type WebhookHandler struct {
 	gitSvc      *app.GitService
-	webhookRepo *postgres.WebhookRepo
+	webhookRepo *store.WebhookRepo
 }
 
-func NewWebhookHandler(gitSvc *app.GitService, webhookRepo *postgres.WebhookRepo) *WebhookHandler {
+func NewWebhookHandler(gitSvc *app.GitService, webhookRepo *store.WebhookRepo) *WebhookHandler {
 	return &WebhookHandler{gitSvc: gitSvc, webhookRepo: webhookRepo}
 }
 
@@ -82,7 +82,7 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 	// GitOps: sync + redeploy
 	action, err := h.gitSvc.SyncAndRedeploy(r.Context(), webhook.StackName)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		jsonError(w, http.StatusInternalServerError, "sync failed")
 		return
 	}
 

@@ -42,10 +42,9 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		shell = "/bin/sh"
 	}
 
-	// Accept WebSocket
+	// Accept WebSocket -- validate origin against the request host
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// Allow any origin in dev; tighten in production
-		InsecureSkipVerify: true,
+		OriginPatterns: []string{r.Host},
 	})
 	if err != nil {
 		return // Accept already wrote the error response

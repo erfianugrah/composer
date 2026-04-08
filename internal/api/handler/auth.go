@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -95,7 +94,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *dto.LoginInput) (*dto.Lo
 		if errors.Is(err, app.ErrInvalidCredentials) {
 			return nil, huma.Error401Unauthorized("invalid email or password")
 		}
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("login failed: %v", err))
+		return nil, internalError()
 	}
 
 	// Auto-detect TLS: if COMPOSER_COOKIE_SECURE is set, use it;
@@ -137,7 +136,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 
 	// Destroy session in DB
 	if err := h.auth.Logout(ctx, sessionID); err != nil {
-		return nil, huma.Error500InternalServerError("logout failed: " + err.Error())
+		return nil, internalError()
 	}
 
 	// Clear the cookie

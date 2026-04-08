@@ -20,7 +20,7 @@ import (
 	"github.com/erfianugrah/composer/internal/infra/eventbus"
 	infraGit "github.com/erfianugrah/composer/internal/infra/git"
 	"github.com/erfianugrah/composer/internal/infra/notify"
-	"github.com/erfianugrah/composer/internal/infra/store/postgres"
+	"github.com/erfianugrah/composer/internal/infra/store"
 )
 
 // Config holds all configuration, resolved from environment variables with defaults.
@@ -41,8 +41,8 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:         envInt("COMPOSER_PORT", 8080),
-		DBUrl:        envStr("COMPOSER_DB_URL", "postgres://composer:composer@localhost:5432/composer?sslmode=disable"),
-		ValkeyURL:    envStr("COMPOSER_VALKEY_URL", "valkey://localhost:6379"),
+		DBUrl:        envStr("COMPOSER_DB_URL", ""),
+		ValkeyURL:    envStr("COMPOSER_VALKEY_URL", ""),
 		StacksDir:    envStr("COMPOSER_STACKS_DIR", "/opt/stacks"),
 		DataDir:      envStr("COMPOSER_DATA_DIR", "/opt/composer"),
 		DockerHost:   envStr("COMPOSER_DOCKER_HOST", ""),
@@ -109,20 +109,20 @@ func main() {
 
 	ctx := context.Background()
 
-	// --- Postgres ---
-	db, err := postgres.New(ctx, cfg.DBUrl)
+	// --- Database (Postgres or SQLite) ---
+	db, err := store.New(ctx, cfg.DBUrl, cfg.DataDir)
 	if err != nil {
-		logger.Fatal("failed to connect to postgres", zap.Error(err))
+		logger.Fatal("failed to connect to database", zap.Error(err))
 	}
 	defer db.Close()
-	logger.Info("postgres connected, migrations applied")
+	logger.Info("database connected, migrations applied", zap.String("type", string(db.Type)))
 
 	// --- Repositories ---
-	userRepo := postgres.NewUserRepo(db.Pool)
-	sessionRepo := postgres.NewSessionRepo(db.Pool)
-	apiKeyRepo := postgres.NewAPIKeyRepo(db.Pool)
-	stackRepo := postgres.NewStackRepo(db.Pool)
-	gitConfigRepo := postgres.NewGitConfigRepo(db.Pool)
+	userRepo := store.NewUserRepo(db.SQL)
+	sessionRepo := store.NewSessionRepo(db.SQL)
+	apiKeyRepo := store.NewAPIKeyRepo(db.SQL)
+	stackRepo := store.NewStackRepo(db.SQL)
+	gitConfigRepo := store.NewGitConfigRepo(db.SQL)
 
 	// --- Docker (optional -- graceful degradation) ---
 	var dockerClient *docker.Client
@@ -141,12 +141,15 @@ func main() {
 	}
 
 	// --- Valkey Cache (optional) ---
-	valkeyCache, err := cache.New(ctx, cfg.ValkeyURL)
-	if err != nil {
-		logger.Warn("valkey not available, caching disabled", zap.Error(err))
-	} else if valkeyCache != nil {
-		defer valkeyCache.Close()
-		logger.Info("valkey connected")
+	var valkeyCache *cache.Valkey
+	if cfg.ValkeyURL != "" {
+		valkeyCache, err = cache.New(ctx, cfg.ValkeyURL)
+		if err != nil {
+			logger.Warn("valkey not available, caching disabled", zap.Error(err))
+		} else if valkeyCache != nil {
+			defer valkeyCache.Close()
+			logger.Info("valkey connected")
+		}
 	}
 	_ = valkeyCache // used by auth middleware for session caching
 
@@ -193,8 +196,8 @@ func main() {
 	}
 
 	// --- Pipeline Service ---
-	pipelineRepo := postgres.NewPipelineRepo(db.Pool)
-	runRepo := postgres.NewRunRepo(db.Pool)
+	pipelineRepo := store.NewPipelineRepo(db.SQL)
+	runRepo := store.NewRunRepo(db.SQL)
 	var pipelineExecutor *app.PipelineExecutor
 	var pipelineSvc *app.PipelineService
 	if compose != nil {
@@ -211,8 +214,8 @@ func main() {
 	}
 
 	// --- Webhook + Audit Repos ---
-	webhookRepo := postgres.NewWebhookRepo(db.Pool)
-	auditRepo := postgres.NewAuditRepo(db.Pool)
+	webhookRepo := store.NewWebhookRepo(db.SQL)
+	auditRepo := store.NewAuditRepo(db.SQL)
 
 	// --- API Server ---
 	srv := api.NewServer(api.Deps{
@@ -232,40 +235,59 @@ func main() {
 	api.RegisterStaticFiles(srv.Router, composer.FrontendDist)
 
 	// --- HTTP Server ---
+	// WriteTimeout=0: SSE and WebSocket connections are long-lived;
+	// a global write timeout would kill them. Per-handler timeouts are
+	// enforced by context cancellation instead.
 	httpSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
 		Handler:      srv.Router,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,
 	}
+
+	// Cancellable context for background goroutines
+	appCtx, appCancel := context.WithCancel(ctx)
 
 	// --- Background: session cleanup ---
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			if n, err := authSvc.CleanupExpiredSessions(ctx); err != nil {
-				logger.Warn("session cleanup error", zap.Error(err))
-			} else if n > 0 {
-				logger.Info("cleaned expired sessions", zap.Int("count", n))
+		for {
+			select {
+			case <-ticker.C:
+				if n, err := authSvc.CleanupExpiredSessions(appCtx); err != nil {
+					logger.Warn("session cleanup error", zap.Error(err))
+				} else if n > 0 {
+					logger.Info("cleaned expired sessions", zap.Int("count", n))
+				}
+			case <-appCtx.Done():
+				return
 			}
 		}
 	}()
 
 	// --- Start server ---
+	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("HTTP server listening", zap.String("addr", httpSrv.Addr))
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("server failed", zap.Error(err))
+			serverErr <- err
 		}
 	}()
 
-	// --- Wait for shutdown signal ---
+	// --- Wait for shutdown signal or server error ---
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	sig := <-quit
-	logger.Info("shutting down", zap.String("signal", sig.String()))
+
+	select {
+	case sig := <-quit:
+		logger.Info("shutting down", zap.String("signal", sig.String()))
+	case err := <-serverErr:
+		logger.Error("server failed, shutting down", zap.Error(err))
+	}
+
+	appCancel() // stop background goroutines
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -278,6 +300,6 @@ func main() {
 	if dockerClient != nil {
 		dockerClient.Close()
 	}
-	db.Close()
+	// db.Close() handled by defer on line 117
 	logger.Info("server stopped")
 }

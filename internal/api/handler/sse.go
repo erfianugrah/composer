@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -381,7 +382,9 @@ func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *StackLogInput, 
 		return
 	}
 
-	// Stream logs from each container concurrently
+	// Stream logs from each container concurrently.
+	// Mutex protects send.Data() since http.ResponseWriter is not goroutine-safe.
+	var mu sync.Mutex
 	for _, c := range containers {
 		go func(containerID, containerName string) {
 			reader, err := h.dockerClient.ContainerLogs(ctx, containerID, true, input.Tail, input.Since)
@@ -408,12 +411,15 @@ func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *StackLogInput, 
 						if line == "" {
 							continue
 						}
-						if sendErr := send.Data(event.LogEntry{
+						mu.Lock()
+						sendErr := send.Data(event.LogEntry{
 							ContainerID: containerID,
 							Stream:      stream,
 							Message:     "[" + containerName + "] " + line,
 							Timestamp:   time.Now(),
-						}); sendErr != nil {
+						})
+						mu.Unlock()
+						if sendErr != nil {
 							return
 						}
 					}

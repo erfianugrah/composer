@@ -26,16 +26,24 @@ func (l *EventListener) Start(ctx context.Context) {
 	ctx, l.cancel = context.WithCancel(ctx)
 
 	go func() {
-		for {
-			l.listen(ctx)
+		backoff := time.Second
+		const maxBackoff = 60 * time.Second
 
-			// If context is done, exit
+		for {
+			gotEvents := l.listen(ctx)
+
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				// Reconnect after 5 seconds on error
-				time.Sleep(5 * time.Second)
+				if gotEvents {
+					backoff = time.Second // reset on successful connection
+				}
+				time.Sleep(backoff)
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
 			}
 		}
 	}()
@@ -48,7 +56,7 @@ func (l *EventListener) Stop() {
 	}
 }
 
-func (l *EventListener) listen(ctx context.Context) {
+func (l *EventListener) listen(ctx context.Context) (gotEvents bool) {
 	msgs, errs := l.client.Events(ctx)
 
 	for {
@@ -57,6 +65,7 @@ func (l *EventListener) listen(ctx context.Context) {
 			if !ok {
 				return
 			}
+			gotEvents = true
 			l.handleEvent(msg)
 
 		case _, ok := <-errs:

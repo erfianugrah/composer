@@ -82,7 +82,7 @@ Go + Astro + Shadcn/ui.
 | **Language** | Go 1.26+ | Done | Docker SDK native, single binary, goroutines |
 | **HTTP Framework** | Huma v2.37+ + Chi v5 | Done | Auto OpenAPI 3.1, built-in SSE, RFC9457 errors |
 | **Auth** | Custom (session + API key + RBAC) | Done | Session cookie + API key + role middleware |
-| **Database** | PostgreSQL (`jackc/pgx/v5`) | Done | pgxpool for queries, goose for migrations |
+| **Database** | PostgreSQL + SQLite (`database/sql`) | Done | Unified `store.DB` wrapper, goose migrations, SQLite default |
 | **Cache** | Valkey (`valkey-io/valkey-go`) | Done | Session + API key caching. In-process event bus + Valkey |
 | **Migrations** | goose v3.27+ | Done | Embedded SQL via `embed.FS`, Provider API |
 | **Logging** | zap | Done | JSON (prod) + console (dev) encoders |
@@ -1040,9 +1040,7 @@ No Docker daemon operations -- just DB and cache.
 //go:build integration
 ```
 
-- `store/postgres/user_repo_test.go` -- real Postgres CRUD
-- `store/postgres/stack_repo_test.go` -- real Postgres CRUD
-- `store/postgres/migrations_test.go` -- goose migrations apply cleanly
+- `store/` repo tests -- real Postgres CRUD via testcontainers (users, sessions, keys, stacks, git configs)
 - `cache/valkey_test.go` -- real Valkey get/set/pub/sub
 - `git/client_test.go` -- real git clone/pull (against a temp bare repo)
 
@@ -1174,19 +1172,17 @@ composer/
 │   │   │   └── terminal.go           # Container exec + pty attach
 │   │   │
 │   │   ├── store/
-│   │   │   ├── postgres/
-│   │   │   │   ├── db.go             # pgxpool connection, migrations runner
-│   │   │   │   ├── migrations.go     # Embedded SQL migrations (embed.FS)
-│   │   │   │   ├── user_repo.go      # UserRepository impl
-│   │   │   │   ├── session_repo.go   # SessionRepository impl
-│   │   │   │   ├── apikey_repo.go    # APIKeyRepository impl
-│   │   │   │   ├── stack_repo.go     # StackRepository impl
-│   │   │   │   ├── webhook_repo.go   # WebhookRepository impl
-│   │   │   │   ├── pipeline_repo.go  # PipelineRepository impl
-│   │   │   │   └── audit_repo.go     # AuditLogRepository impl
+│   │   │   ├── db.go                 # Unified DB wrapper (Postgres + SQLite via database/sql)
+│   │   │   ├── embed.go             # Embedded SQL migrations (embed.FS)
+│   │   │   ├── user_repo.go         # UserRepository impl
+│   │   │   ├── session_repo.go      # SessionRepository impl
+│   │   │   ├── apikey_repo.go       # APIKeyRepository impl
+│   │   │   ├── stack_repo.go        # StackRepository + GitConfigRepository impl
+│   │   │   ├── webhook_repo.go      # WebhookRepository impl
+│   │   │   ├── pipeline_repo.go     # PipelineRepository + RunRepository impl
+│   │   │   ├── audit_repo.go        # AuditLogRepository impl
 │   │   │   └── migrations/
-│   │   │       ├── 001_initial.up.sql
-│   │   │       └── 001_initial.down.sql
+│   │   │       └── 001_initial.sql   # Goose migration (SQLite-compatible)
 │   │   │
 │   │   ├── cache/
 │   │   │   ├── valkey.go             # Valkey client wrapper
@@ -1886,8 +1882,7 @@ provider, err := goose.NewProvider(
 results, err := provider.Up(ctx)
 ```
 
-Migrations run automatically on startup. Advisory lock prevents concurrent migration
-from multiple instances. Main app uses `pgxpool` directly (not `database/sql`).
+Migrations run automatically on startup. All repos use `database/sql` for dual Postgres/SQLite support.
 
 ### 16.10 Health Checks
 
@@ -2062,7 +2057,7 @@ All dependencies verified as of April 2026.
 | **Go (minimum)**   | **1.25+** | --                                            | Required by huma, pgx, goose, testcontainers                        |
 | Huma v2            | v2.37.3   | `github.com/danielgtaylor/huma/v2`            | Auto OpenAPI 3.1, SSE, chi adapter                                  |
 | Chi                | v5.2.5    | `github.com/go-chi/chi/v5`                    | Via huma adapter                                                    |
-| pgx                | v5.9.1    | `github.com/jackc/pgx/v5`                     | Postgres driver + pgxpool                                           |
+| pgx                | v5.9.1    | `github.com/jackc/pgx/v5`                     | Postgres driver (via database/sql stdlib adapter)                   |
 | goose              | v3.27.0   | `github.com/pressly/goose/v3`                 | Migrations via embedded SQL + Provider API                          |
 | zap                | v1.27+    | `go.uber.org/zap`                             | Structured logging, JSON + console                                  |
 | Docker Client      | v0.4.0    | `github.com/moby/moby/client`                 | New canonical path. Podman compat via `WithAPIVersionNegotiation()` |

@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync"
+
+	"go.uber.org/zap"
 
 	"github.com/erfianugrah/composer/internal/domain/pipeline"
 )
@@ -12,6 +15,10 @@ type PipelineService struct {
 	pipelines pipeline.PipelineRepository
 	runs      pipeline.RunRepository
 	executor  *PipelineExecutor
+	wg        sync.WaitGroup
+	cancel    context.CancelFunc
+	runCtx    context.Context
+	logger    *zap.Logger
 }
 
 func NewPipelineService(
@@ -19,7 +26,20 @@ func NewPipelineService(
 	runs pipeline.RunRepository,
 	executor *PipelineExecutor,
 ) *PipelineService {
-	return &PipelineService{pipelines: pipelines, runs: runs, executor: executor}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &PipelineService{
+		pipelines: pipelines,
+		runs:      runs,
+		executor:  executor,
+		cancel:    cancel,
+		runCtx:    ctx,
+	}
+}
+
+// Stop cancels all in-flight pipeline runs and waits for them to finish.
+func (s *PipelineService) Stop() {
+	s.cancel()
+	s.wg.Wait()
 }
 
 func (s *PipelineService) Create(ctx context.Context, name, description, createdBy string, steps []pipeline.Step, triggers []pipeline.Trigger) (*pipeline.Pipeline, error) {
@@ -87,10 +107,14 @@ func (s *PipelineService) Run(ctx context.Context, pipelineID, triggeredBy strin
 		return nil, fmt.Errorf("persisting run: %w", err)
 	}
 
-	// Execute asynchronously
+	// Execute asynchronously with cancellable context and WaitGroup tracking
+	s.wg.Add(1)
 	go func() {
-		result := s.executor.Execute(context.Background(), p, run)
-		s.runs.Update(context.Background(), result)
+		defer s.wg.Done()
+		result := s.executor.Execute(s.runCtx, p, run)
+		if err := s.runs.Update(context.Background(), result); err != nil && s.logger != nil {
+			s.logger.Warn("failed to update pipeline run", zap.String("run_id", run.ID), zap.Error(err))
+		}
 	}()
 
 	return run, nil
@@ -109,4 +133,9 @@ func (s *PipelineService) GetRun(ctx context.Context, runID string) (*pipeline.R
 
 func (s *PipelineService) ListRuns(ctx context.Context, pipelineID string) ([]*pipeline.Run, error) {
 	return s.runs.ListByPipeline(ctx, pipelineID)
+}
+
+// UpdateRun persists a run's current state (e.g. after cancellation).
+func (s *PipelineService) UpdateRun(ctx context.Context, run *pipeline.Run) error {
+	return s.runs.Update(ctx, run)
 }

@@ -97,20 +97,28 @@ func (e *PipelineExecutor) Execute(ctx context.Context, p *pipeline.Pipeline, ru
 
 		wg.Wait()
 
-		// Record results
+		// Record results -- track whether any non-continuable failure occurred
+		hasHardFailure := false
 		for _, result := range results {
 			run.RecordStepResult(result)
 
-			// Check if we should continue
 			if result.Status == pipeline.RunFailed {
-				// Find the step to check continue_on_error
+				continuable := false
 				for _, s := range batch {
 					if s.ID == result.StepID && s.ContinueOnError {
-						// Override: allow the run to continue
-						run.Status = pipeline.RunRunning
+						continuable = true
+						break
 					}
 				}
+				if !continuable {
+					hasHardFailure = true
+				}
 			}
+		}
+
+		// Only resume running if ALL failures were continuable
+		if !hasHardFailure && run.Status == pipeline.RunFailed {
+			run.Status = pipeline.RunRunning
 		}
 	}
 
@@ -135,41 +143,35 @@ func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) 
 			return "", fmt.Errorf("compose_up: missing stack config")
 		}
 		result, err := e.compose.Up(ctx, stackName)
-		if err != nil {
-			return result.Stderr, err
-		}
-		return result.Stdout, nil
+		return composeOutput(result, err)
 
 	case pipeline.StepComposeDown:
 		stackName, _ := step.Config["stack"].(string)
 		result, err := e.compose.Down(ctx, stackName, false)
-		if err != nil {
-			return result.Stderr, err
-		}
-		return result.Stdout, nil
+		return composeOutput(result, err)
 
 	case pipeline.StepComposePull:
 		stackName, _ := step.Config["stack"].(string)
 		result, err := e.compose.Pull(ctx, stackName)
-		if err != nil {
-			return result.Stderr, err
-		}
-		return result.Stdout, nil
+		return composeOutput(result, err)
 
 	case pipeline.StepComposeRestart:
 		stackName, _ := step.Config["stack"].(string)
 		result, err := e.compose.Restart(ctx, stackName)
-		if err != nil {
-			return result.Stderr, err
-		}
-		return result.Stdout, nil
+		return composeOutput(result, err)
 
 	case pipeline.StepShellCommand:
 		command, _ := step.Config["command"].(string)
 		if command == "" {
 			return "", fmt.Errorf("shell_command: missing command config")
 		}
+		// NOTE: This intentionally executes arbitrary commands -- pipelines are operator-only.
+		// Restrict PATH to common system directories and disable history.
 		cmd := exec.CommandContext(ctx, "sh", "-c", command)
+		cmd.Env = append(cmd.Environ(),
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			"HISTFILE=/dev/null",
+		)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 
@@ -206,6 +208,20 @@ func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) 
 	default:
 		return "", fmt.Errorf("unknown step type %q", step.Type)
 	}
+}
+
+// composeOutput safely extracts output from a compose result, guarding against nil.
+func composeOutput(result *docker.ComposeResult, err error) (string, error) {
+	if err != nil {
+		if result != nil {
+			return result.Stderr, err
+		}
+		return "", err
+	}
+	if result != nil {
+		return result.Stdout, nil
+	}
+	return "", nil
 }
 
 func (e *PipelineExecutor) publishEvent(evt domevent.Event) {

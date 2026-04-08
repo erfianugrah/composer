@@ -13,15 +13,15 @@ import (
 	"github.com/erfianugrah/composer/internal/api/dto"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/domain/auth"
-	"github.com/erfianugrah/composer/internal/infra/store/postgres"
+	"github.com/erfianugrah/composer/internal/infra/store"
 )
 
 // WebhookCRUDHandler manages webhook configurations.
 type WebhookCRUDHandler struct {
-	webhooks *postgres.WebhookRepo
+	webhooks *store.WebhookRepo
 }
 
-func NewWebhookCRUDHandler(webhooks *postgres.WebhookRepo) *WebhookCRUDHandler {
+func NewWebhookCRUDHandler(webhooks *store.WebhookRepo) *WebhookCRUDHandler {
 	return &WebhookCRUDHandler{webhooks: webhooks}
 }
 
@@ -61,7 +61,7 @@ func (h *WebhookCRUDHandler) List(ctx context.Context, input *struct{}) (*dto.We
 	// For now, return all -- could add stack filter query param later
 	all, err := h.webhooks.ListAll(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.WebhookListOutput{}
@@ -86,7 +86,7 @@ func (h *WebhookCRUDHandler) Create(ctx context.Context, input *dto.CreateWebhoo
 	secret := generateWebhookSecret()
 	callerID := authmw.UserIDFromContext(ctx)
 
-	webhook := &postgres.Webhook{
+	webhook := &store.Webhook{
 		ID:           id,
 		StackName:    input.Body.StackName,
 		Provider:     input.Body.Provider,
@@ -97,7 +97,7 @@ func (h *WebhookCRUDHandler) Create(ctx context.Context, input *dto.CreateWebhoo
 	}
 
 	if err := h.webhooks.Create(ctx, webhook); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &dto.WebhookOutput{}
@@ -118,7 +118,7 @@ func (h *WebhookCRUDHandler) Get(ctx context.Context, input *dto.WebhookIDInput)
 
 	w, err := h.webhooks.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	if w == nil {
 		return nil, huma.Error404NotFound("webhook not found")
@@ -141,7 +141,7 @@ func (h *WebhookCRUDHandler) Delete(ctx context.Context, input *dto.WebhookIDInp
 	}
 
 	if err := h.webhooks.Delete(ctx, input.ID); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 	return nil, nil
 }
@@ -170,7 +170,7 @@ func (h *WebhookCRUDHandler) ListDeliveries(ctx context.Context, input *dto.Webh
 
 	deliveries, err := h.webhooks.ListDeliveries(ctx, input.ID, 50)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, internalError()
 	}
 
 	out := &DeliveryListOutput{}

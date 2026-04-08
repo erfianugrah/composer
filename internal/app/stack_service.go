@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	domcontainer "github.com/erfianugrah/composer/internal/domain/container"
@@ -21,6 +22,33 @@ type StackService struct {
 	compose   *docker.Compose
 	bus       event.Bus
 	stacksDir string
+	locks     stackLocks // per-stack mutex to prevent concurrent operations
+}
+
+// stackLocks provides per-stack mutual exclusion.
+type stackLocks struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}
+
+func (l *stackLocks) lock(name string) {
+	l.mu.Lock()
+	m, ok := l.locks[name]
+	if !ok {
+		m = &sync.Mutex{}
+		l.locks[name] = m
+	}
+	l.mu.Unlock()
+	m.Lock()
+}
+
+func (l *stackLocks) unlock(name string) {
+	l.mu.Lock()
+	m := l.locks[name]
+	l.mu.Unlock()
+	if m != nil {
+		m.Unlock()
+	}
 }
 
 // NewStackService creates a new StackService.
@@ -39,11 +67,15 @@ func NewStackService(
 		compose:   compose,
 		bus:       bus,
 		stacksDir: stacksDir,
+		locks:     stackLocks{locks: make(map[string]*sync.Mutex)},
 	}
 }
 
 // Create creates a new local stack with the given compose content.
 func (s *StackService) Create(ctx context.Context, name, composeContent string) (*stack.Stack, error) {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
 	stackPath := filepath.Join(s.stacksDir, name)
 
 	st, err := stack.NewStack(name, stackPath, stack.SourceLocal)
@@ -120,6 +152,9 @@ func (s *StackService) List(ctx context.Context) ([]*stack.Stack, error) {
 
 // Update updates compose content. Writes to disk + DB.
 func (s *StackService) Update(ctx context.Context, name, composeContent string) (*stack.Stack, error) {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
 		return nil, err
@@ -131,11 +166,18 @@ func (s *StackService) Update(ctx context.Context, name, composeContent string) 
 	st.UpdateCompose(composeContent)
 
 	composePath := filepath.Join(st.Path, "compose.yaml")
+	// Save old content for rollback in case DB update fails
+	oldContent, _ := os.ReadFile(composePath)
+
 	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
 		return nil, fmt.Errorf("writing compose file: %w", err)
 	}
 
 	if err := s.stacks.Update(ctx, st); err != nil {
+		// Rollback: restore old file content
+		if oldContent != nil {
+			os.WriteFile(composePath, oldContent, 0644)
+		}
 		return nil, err
 	}
 
@@ -146,6 +188,9 @@ func (s *StackService) Update(ctx context.Context, name, composeContent string) 
 
 // Delete removes a stack.
 func (s *StackService) Delete(ctx context.Context, name string, removeVolumes bool) error {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
 		return err
@@ -170,6 +215,9 @@ func (s *StackService) Delete(ctx context.Context, name string, removeVolumes bo
 
 // Deploy runs docker compose up.
 func (s *StackService) Deploy(ctx context.Context, name string) (*docker.ComposeResult, error) {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
 		return nil, err
@@ -190,6 +238,9 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 
 // Stop runs docker compose down.
 func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeResult, error) {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
 		return nil, err
@@ -209,6 +260,9 @@ func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeRe
 
 // Restart runs docker compose restart.
 func (s *StackService) Restart(ctx context.Context, name string) (*docker.ComposeResult, error) {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
 		return nil, err
