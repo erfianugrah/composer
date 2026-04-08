@@ -72,10 +72,21 @@ func deriveAction(method, path string) string {
 	if len(parts) >= 3 {
 		resource := parts[2]                         // stacks, auth, users, etc.
 		resource = strings.TrimSuffix(resource, "s") // stacks -> stack
+
 		if len(parts) >= 5 {
+			// /api/v1/stacks/mystack/up -> stack.up
+			// /api/v1/users/abc/password -> user.password
+			// /api/v1/containers/abc/start -> container.start
 			return resource + "." + parts[len(parts)-1]
 		}
 		if len(parts) == 4 {
+			lastPart := parts[3]
+			// Check if last part is an action word (not an ID)
+			// Auth paths: /api/v1/auth/login, /api/v1/auth/bootstrap, /api/v1/auth/logout
+			// These have meaningful last segments, not IDs
+			if resource == "auth" || resource == "hook" {
+				return resource + "." + lastPart
+			}
 			switch method {
 			case http.MethodPost:
 				return resource + ".create"
