@@ -20,8 +20,8 @@ func setupBareRepo(t *testing.T) string {
 	bareDir := filepath.Join(t.TempDir(), "test-repo.git")
 	workDir := filepath.Join(t.TempDir(), "work")
 
-	// Init bare repo
-	run(t, "", "git", "init", "--bare", bareDir)
+	// Init bare repo with 'main' as default branch
+	run(t, "", "git", "init", "--bare", "--initial-branch=main", bareDir)
 
 	// Clone it to a working directory, add a compose file, commit, push
 	run(t, "", "git", "clone", bareDir, workDir)

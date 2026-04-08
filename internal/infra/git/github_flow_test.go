@@ -29,8 +29,8 @@ func TestGitHubWebhookFlow(t *testing.T) {
 	devDir := filepath.Join(t.TempDir(), "developer")
 	composerDir := filepath.Join(t.TempDir(), "composer-clone")
 
-	// Init bare repo
-	runCmd(t, "", "git", "init", "--bare", bareDir)
+	// Init bare repo with 'main' as default branch
+	runCmd(t, "", "git", "init", "--bare", "--initial-branch=main", bareDir)
 
 	// Developer clones and pushes initial compose
 	runCmd(t, "", "git", "clone", bareDir, devDir)
