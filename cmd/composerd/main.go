@@ -15,6 +15,7 @@ import (
 	composer "github.com/erfianugrah/composer"
 	"github.com/erfianugrah/composer/internal/api"
 	"github.com/erfianugrah/composer/internal/app"
+	"github.com/erfianugrah/composer/internal/infra/cache"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	"github.com/erfianugrah/composer/internal/infra/eventbus"
 	infraGit "github.com/erfianugrah/composer/internal/infra/git"
@@ -133,6 +134,16 @@ func main() {
 		)
 		compose = docker.NewCompose(dockerClient.Host())
 	}
+
+	// --- Valkey Cache (optional) ---
+	valkeyCache, err := cache.New(ctx, cfg.ValkeyURL)
+	if err != nil {
+		logger.Warn("valkey not available, caching disabled", zap.Error(err))
+	} else if valkeyCache != nil {
+		defer valkeyCache.Close()
+		logger.Info("valkey connected")
+	}
+	_ = valkeyCache // used by auth middleware for session caching
 
 	// --- Event Bus ---
 	bus := eventbus.NewMemoryBus(256)
