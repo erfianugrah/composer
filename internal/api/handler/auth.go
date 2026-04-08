@@ -5,12 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/erfianugrah/composer/internal/api/dto"
-	"github.com/erfianugrah/composer/internal/api/middleware"
+	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/app"
 )
 
@@ -18,11 +19,15 @@ const defaultSessionTTL = 24 * time.Hour
 
 // AuthHandler registers auth-related API endpoints.
 type AuthHandler struct {
-	auth *app.AuthService
+	auth         *app.AuthService
+	loginLimiter *authmw.RateLimiter
 }
 
 func NewAuthHandler(auth *app.AuthService) *AuthHandler {
-	return &AuthHandler{auth: auth}
+	return &AuthHandler{
+		auth:         auth,
+		loginLimiter: authmw.LoginRateLimit(),
+	}
 }
 
 // Register registers all auth routes on the huma API.
@@ -80,6 +85,11 @@ func (h *AuthHandler) Bootstrap(ctx context.Context, input *dto.BootstrapInput) 
 }
 
 func (h *AuthHandler) Login(ctx context.Context, input *dto.LoginInput) (*dto.LoginOutput, error) {
+	// Rate limit login by email (prevents brute-force per account)
+	if !h.loginLimiter.Allow(input.Body.Email) {
+		return nil, huma.Error429TooManyRequests("too many login attempts, try again later")
+	}
+
 	session, err := h.auth.Login(ctx, input.Body.Email, input.Body.Password, defaultSessionTTL)
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidCredentials) {
@@ -88,13 +98,18 @@ func (h *AuthHandler) Login(ctx context.Context, input *dto.LoginInput) (*dto.Lo
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("login failed: %v", err))
 	}
 
+	// Auto-detect TLS: if COMPOSER_COOKIE_SECURE is set, use it;
+	// otherwise default to true (assume production behind TLS).
+	// Only set false for local development without TLS.
+	secureCookie := os.Getenv("COMPOSER_COOKIE_SECURE") != "false"
+
 	cookie := &http.Cookie{
 		Name:     "composer_session",
 		Value:    session.ID,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   false, // set true when behind TLS
+		Secure:   secureCookie,
 		MaxAge:   int(defaultSessionTTL.Seconds()),
 	}
 
@@ -115,7 +130,7 @@ type LogoutOutput struct {
 }
 
 func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutput, error) {
-	sessionID := middleware.SessionIDFromContext(ctx)
+	sessionID := authmw.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
@@ -132,6 +147,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   os.Getenv("COMPOSER_COOKIE_SECURE") != "false",
 		MaxAge:   -1, // delete immediately
 	}
 
@@ -142,8 +158,8 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 }
 
 func (h *AuthHandler) Session(ctx context.Context, input *struct{}) (*dto.SessionOutput, error) {
-	role := middleware.RoleFromContext(ctx)
-	userID := middleware.UserIDFromContext(ctx)
+	role := authmw.RoleFromContext(ctx)
+	userID := authmw.UserIDFromContext(ctx)
 
 	if role == "" || userID == "" {
 		return nil, huma.Error401Unauthorized("not authenticated")

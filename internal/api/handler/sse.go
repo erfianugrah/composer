@@ -10,6 +10,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
 
+	authmw "github.com/erfianugrah/composer/internal/api/middleware"
+	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 )
@@ -54,8 +56,11 @@ func (h *SSEHandler) Register(api huma.API) {
 	}, h.StreamContainerLogs)
 }
 
-// StreamEvents streams all domain events to the client via SSE.
+// StreamEvents streams all domain events to the client via SSE. Requires viewer+ role.
 func (h *SSEHandler) StreamEvents(ctx context.Context, input *struct{}, send sse.Sender) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return
+	}
 	eventCh := make(chan event.Event, 64)
 
 	unsub := h.bus.Subscribe(func(evt event.Event) bool {
@@ -87,8 +92,11 @@ type ContainerLogInput struct {
 	Since string `query:"since" default:"" doc:"Show logs since timestamp or relative (e.g. 5m)"`
 }
 
-// StreamContainerLogs streams container logs via SSE.
+// StreamContainerLogs streams container logs via SSE. Requires viewer+ role.
 func (h *SSEHandler) StreamContainerLogs(ctx context.Context, input *ContainerLogInput, send sse.Sender) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return
+	}
 	reader, err := h.dockerClient.ContainerLogs(ctx, input.ID, true, input.Tail, input.Since)
 	if err != nil {
 		send.Data(event.LogEntry{
