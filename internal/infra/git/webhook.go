@@ -13,11 +13,10 @@ import (
 type WebhookProvider string
 
 const (
-	ProviderGitHub    WebhookProvider = "github"
-	ProviderGitLab    WebhookProvider = "gitlab"
-	ProviderGitea     WebhookProvider = "gitea"
-	ProviderBitbucket WebhookProvider = "bitbucket"
-	ProviderGeneric   WebhookProvider = "generic"
+	ProviderGitHub  WebhookProvider = "github"
+	ProviderGitLab  WebhookProvider = "gitlab"
+	ProviderGitea   WebhookProvider = "gitea"
+	ProviderGeneric WebhookProvider = "generic"
 )
 
 // WebhookPayload is the parsed result of a webhook delivery.
