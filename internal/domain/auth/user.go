@@ -32,11 +32,14 @@ type User struct {
 func NewUser(email, password string, role Role) (*User, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 
-	if email == "" || !strings.Contains(email, "@") {
+	if email == "" || !isValidEmail(email) {
 		return nil, errors.New("invalid email address")
 	}
 	if len(password) < minPasswordLen {
 		return nil, fmt.Errorf("password must be at least %d characters", minPasswordLen)
+	}
+	if len(password) > 72 {
+		return nil, errors.New("password must not exceed 72 bytes (bcrypt limit)")
 	}
 	if !role.Valid() {
 		return nil, fmt.Errorf("invalid role %q", role)
@@ -75,6 +78,9 @@ func (u *User) ChangePassword(oldPassword, newPassword string) error {
 	if len(newPassword) < minPasswordLen {
 		return fmt.Errorf("new password must be at least %d characters", minPasswordLen)
 	}
+	if len(newPassword) > 72 {
+		return errors.New("new password must not exceed 72 bytes (bcrypt limit)")
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
 	if err != nil {
@@ -94,6 +100,21 @@ func (u *User) UpdateRole(newRole Role) error {
 	u.Role = newRole
 	u.UpdatedAt = time.Now().UTC()
 	return nil
+}
+
+// isValidEmail performs a basic email validation.
+// Requires at least one character before @, at least one character after @,
+// and at least one dot after @.
+func isValidEmail(email string) bool {
+	at := strings.IndexByte(email, '@')
+	if at < 1 {
+		return false // no @ or nothing before @
+	}
+	domain := email[at+1:]
+	if len(domain) < 3 || !strings.Contains(domain, ".") {
+		return false // domain too short or no dot
+	}
+	return true
 }
 
 // generateID creates a simple unique ID using timestamp + random bytes.

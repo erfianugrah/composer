@@ -10,6 +10,14 @@ type Event interface {
 
 // --- Stack Events ---
 
+type StackCreated struct {
+	Name      string    `json:"name"`
+	Timestamp time.Time `json:"ts"`
+}
+
+func (e StackCreated) EventType() string    { return "stack.created" }
+func (e StackCreated) EventTime() time.Time { return e.Timestamp }
+
 type StackDeployed struct {
 	Name      string    `json:"name"`
 	Timestamp time.Time `json:"ts"`

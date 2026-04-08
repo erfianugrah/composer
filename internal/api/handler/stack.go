@@ -8,7 +8,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/erfianugrah/composer/internal/api/dto"
+	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/app"
+	"github.com/erfianugrah/composer/internal/domain/auth"
 )
 
 // StackHandler registers stack management API endpoints.
@@ -95,6 +97,9 @@ func (h *StackHandler) Register(api huma.API) {
 }
 
 func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackListOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return nil, err
+	}
 	stacks, err := h.stacks.List(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list stacks: " + err.Error())
@@ -115,6 +120,9 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 }
 
 func (h *StackHandler) Create(ctx context.Context, input *dto.CreateStackInput) (*dto.StackCreatedOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
 	st, err := h.stacks.Create(ctx, input.Body.Name, input.Body.Compose)
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
@@ -128,6 +136,9 @@ func (h *StackHandler) Create(ctx context.Context, input *dto.CreateStackInput) 
 }
 
 func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.StackDetailOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return nil, err
+	}
 	st, err := h.stacks.Get(ctx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
@@ -144,7 +155,24 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 	out.Body.ComposeContent = st.ComposeContent
 	out.Body.CreatedAt = st.CreatedAt
 	out.Body.UpdatedAt = st.UpdatedAt
-	out.Body.Containers = []dto.ContainerOutput{} // populated by Docker client in service
+
+	// Populate containers from Docker
+	containers, err := h.stacks.Containers(ctx, st.Name)
+	if err == nil {
+		out.Body.Containers = make([]dto.ContainerOutput, 0, len(containers))
+		for _, c := range containers {
+			out.Body.Containers = append(out.Body.Containers, dto.ContainerOutput{
+				ID:          c.ID,
+				Name:        c.Name,
+				ServiceName: c.ServiceName,
+				Image:       c.Image,
+				Status:      string(c.Status),
+				Health:      string(c.Health),
+			})
+		}
+	} else {
+		out.Body.Containers = []dto.ContainerOutput{}
+	}
 
 	if st.GitConfig != nil {
 		out.Body.GitConfig = &dto.GitSourceOutput{
@@ -163,6 +191,9 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 }
 
 func (h *StackHandler) Update(ctx context.Context, input *dto.UpdateStackInput) (*dto.StackDetailOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
 	st, err := h.stacks.Update(ctx, input.Name, input.Body.Compose)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
@@ -184,6 +215,9 @@ func (h *StackHandler) Update(ctx context.Context, input *dto.UpdateStackInput) 
 }
 
 func (h *StackHandler) Delete(ctx context.Context, input *dto.DeleteStackInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
 	err := h.stacks.Delete(ctx, input.Name, input.RemoveVolumes)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
@@ -195,6 +229,9 @@ func (h *StackHandler) Delete(ctx context.Context, input *dto.DeleteStackInput) 
 }
 
 func (h *StackHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*dto.ComposeOpOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
 	result, err := h.stacks.Deploy(ctx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
@@ -210,6 +247,9 @@ func (h *StackHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*
 }
 
 func (h *StackHandler) Stop(ctx context.Context, input *dto.StackNameInput) (*dto.ComposeOpOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
 	result, err := h.stacks.Stop(ctx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
@@ -225,6 +265,9 @@ func (h *StackHandler) Stop(ctx context.Context, input *dto.StackNameInput) (*dt
 }
 
 func (h *StackHandler) Restart(ctx context.Context, input *dto.StackNameInput) (*dto.ComposeOpOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
 	result, err := h.stacks.Restart(ctx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
@@ -240,6 +283,9 @@ func (h *StackHandler) Restart(ctx context.Context, input *dto.StackNameInput) (
 }
 
 func (h *StackHandler) Pull(ctx context.Context, input *dto.StackNameInput) (*dto.ComposeOpOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
 	result, err := h.stacks.Pull(ctx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {

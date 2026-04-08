@@ -13,6 +13,7 @@ import (
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/api/ws"
 	"github.com/erfianugrah/composer/internal/app"
+	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 )
@@ -85,10 +86,11 @@ func NewServer(deps Deps) *Server {
 		handler.NewSSEHandler(deps.EventBus, deps.DockerClient).Register(api)
 	}
 
-	// WebSocket terminal (raw HTTP handler on the chi router, not huma-managed)
+	// WebSocket terminal (raw HTTP handler with RBAC -- operator+)
 	if deps.DockerClient != nil {
 		termHandler := ws.NewTerminalHandler(deps.DockerClient)
-		router.Get("/api/v1/ws/terminal/{id}", termHandler.ServeHTTP)
+		router.With(authmw.RequireRole(auth.RoleOperator)).
+			Get("/api/v1/ws/terminal/{id}", termHandler.ServeHTTP)
 	}
 
 	return &Server{Router: router, API: api}

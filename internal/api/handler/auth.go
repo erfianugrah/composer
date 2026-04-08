@@ -103,17 +103,42 @@ func (h *AuthHandler) Login(ctx context.Context, input *dto.LoginInput) (*dto.Lo
 		SetCookie: []*dto.SetCookieValue{&cookieVal},
 	}
 	resp.Body.UserID = session.UserID
+	resp.Body.Email = input.Body.Email
 	resp.Body.Role = string(session.Role)
 	resp.Body.ExpiresAt = session.ExpiresAt
 	return resp, nil
 }
 
-func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*struct{}, error) {
-	userID := middleware.UserIDFromContext(ctx)
-	if userID == "" {
+// LogoutOutput clears the session cookie.
+type LogoutOutput struct {
+	SetCookie []*dto.SetCookieValue `header:"Set-Cookie"`
+}
+
+func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutput, error) {
+	sessionID := middleware.SessionIDFromContext(ctx)
+	if sessionID == "" {
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
-	return nil, nil
+
+	// Destroy session in DB
+	if err := h.auth.Logout(ctx, sessionID); err != nil {
+		return nil, huma.Error500InternalServerError("logout failed: " + err.Error())
+	}
+
+	// Clear the cookie
+	clearCookie := &http.Cookie{
+		Name:     "composer_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1, // delete immediately
+	}
+
+	cookieVal := dto.SetCookieValue(clearCookie.String())
+	return &LogoutOutput{
+		SetCookie: []*dto.SetCookieValue{&cookieVal},
+	}, nil
 }
 
 func (h *AuthHandler) Session(ctx context.Context, input *struct{}) (*dto.SessionOutput, error) {

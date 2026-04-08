@@ -1,0 +1,36 @@
+# Go
+composerd
+*.exe
+*.test
+*.out
+*.prof
+
+# Frontend
+web/node_modules/
+web/dist/
+web/.astro/
+web/test-results/
+web/playwright-report/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Temp
+*.tmp
+*.bak

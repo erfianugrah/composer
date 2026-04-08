@@ -12,10 +12,11 @@ import (
 type contextKey string
 
 const (
-	ctxSession contextKey = "session"
-	ctxAPIKey  contextKey = "apikey"
-	ctxRole    contextKey = "role"
-	ctxUserID  contextKey = "user_id"
+	ctxSession   contextKey = "session"
+	ctxSessionID contextKey = "session_id"
+	ctxAPIKey    contextKey = "apikey"
+	ctxRole      contextKey = "role"
+	ctxUserID    contextKey = "user_id"
 )
 
 // bypassPaths are public endpoints that skip authentication.
@@ -49,6 +50,7 @@ func Auth(authSvc *app.AuthService) func(http.Handler) http.Handler {
 				if err == nil && session != nil {
 					ctx := withAuthContext(r.Context(), session.UserID, session.Role)
 					ctx = context.WithValue(ctx, ctxSession, session)
+					ctx = context.WithValue(ctx, ctxSessionID, session.ID)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
@@ -101,6 +103,20 @@ func UserIDFromContext(ctx context.Context) string {
 		return v
 	}
 	return ""
+}
+
+// SessionIDFromContext retrieves the session token from the request context.
+// Empty string if authenticated via API key or not authenticated.
+func SessionIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(ctxSessionID).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// TestRoleKey returns the context key used for role storage, for use in tests.
+func TestRoleKey() contextKey {
+	return ctxRole
 }
 
 func withAuthContext(ctx context.Context, userID string, role auth.Role) context.Context {

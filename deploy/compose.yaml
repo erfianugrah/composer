@@ -1,0 +1,74 @@
+# Composer - Self-hosting Docker Compose file
+#
+# Usage:
+#   docker compose -f deploy/compose.yaml up -d
+#
+# All config via environment variables.
+# Set PUID/PGID for Unraid/NAS compatibility.
+# Docker socket GID is auto-detected or set via DOCKER_GID.
+
+services:
+  composer:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ghcr.io/erfianugrah/composer:latest
+    ports:
+      - "${COMPOSER_PORT:-8080}:8080"
+    volumes:
+      # Docker socket -- NOT :ro (read-only is security theater on unix sockets;
+      # Composer needs write access for compose up/down/restart anyway)
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+      - stacks:/opt/stacks
+      - composer_data:/opt/composer
+      - composer_ssh:/home/composer/.ssh
+    environment:
+      # User/group mapping (Unraid: 99/100, default: 1000/1000)
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      DOCKER_GID: ${DOCKER_GID:-}
+      # Application config
+      COMPOSER_PORT: "8080"
+      COMPOSER_DB_URL: "postgres://composer:${POSTGRES_PASSWORD:-composer}@postgres:5432/composer?sslmode=disable"
+      COMPOSER_STACKS_DIR: "/opt/stacks"
+      COMPOSER_LOG_FORMAT: "${LOG_FORMAT:-json}"
+      COMPOSER_LOG_LEVEL: "${LOG_LEVEL:-info}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # Security hardening
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Required for entrypoint PUID/PGID adjustments (usermod/groupmod/su-exec)
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+
+  postgres:
+    image: postgres:17-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: composer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-composer}
+      POSTGRES_DB: composer
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U composer"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  stacks:
+  composer_data:
+  composer_ssh:

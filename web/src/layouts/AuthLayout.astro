@@ -1,0 +1,27 @@
+---
+import "@/styles/globals.css";
+
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body class="min-h-screen bg-cp-950 text-foreground antialiased">
+    <div class="flex min-h-screen items-center justify-center">
+      <!-- Backdrop glow -->
+      <div class="fixed inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(197,116,221,0.08),transparent_70%)]"></div>
+      <div class="relative z-10 w-full max-w-sm px-4">
+        <slot />
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { DashboardOverview } from "@/components/stack/DashboardOverview";
+---
+
+<Layout title="Dashboard" active="dashboard">
+  <DashboardOverview client:load />
+</Layout>

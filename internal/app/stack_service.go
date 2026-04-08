@@ -65,6 +65,8 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string) 
 		return nil, fmt.Errorf("persisting stack: %w", err)
 	}
 
+	s.publishEvent(event.StackCreated{Name: name, Timestamp: time.Now()})
+
 	return st, nil
 }
 
@@ -215,7 +217,11 @@ func (s *StackService) Restart(ctx context.Context, name string) (*docker.Compos
 		return nil, ErrNotFound
 	}
 
-	return s.compose.Restart(ctx, st.Path)
+	result, err := s.compose.Restart(ctx, st.Path)
+	if err == nil {
+		s.publishEvent(event.StackDeployed{Name: name, Timestamp: time.Now()})
+	}
+	return result, err
 }
 
 // Pull runs docker compose pull.
@@ -228,7 +234,11 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 		return nil, ErrNotFound
 	}
 
-	return s.compose.Pull(ctx, st.Path)
+	result, err := s.compose.Pull(ctx, st.Path)
+	if err == nil {
+		s.publishEvent(event.StackUpdated{Name: name, Timestamp: time.Now()})
+	}
+	return result, err
 }
 
 // publishEvent sends an event to the bus if one is configured.
@@ -236,6 +246,11 @@ func (s *StackService) publishEvent(evt event.Event) {
 	if s.bus != nil {
 		s.bus.Publish(evt)
 	}
+}
+
+// Containers returns the containers for a stack.
+func (s *StackService) Containers(ctx context.Context, stackName string) ([]domcontainer.Container, error) {
+	return s.docker.ListContainers(ctx, stackName)
 }
 
 func deriveStackStatus(containers []domcontainer.Container) stack.Status {

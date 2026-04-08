@@ -32,7 +32,7 @@ type LoginOutput struct {
 	SetCookie []*SetCookieValue `header:"Set-Cookie"`
 	Body      struct {
 		UserID    string    `json:"user_id" doc:"Authenticated user ID"`
-		Email     string    `json:"email" doc:"User email"`
+		Email     string    `json:"email" doc:"User email address"`
 		Role      string    `json:"role" doc:"User role"`
 		ExpiresAt time.Time `json:"expires_at" doc:"Session expiry time"`
 	}

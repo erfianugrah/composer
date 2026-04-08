@@ -9,6 +9,7 @@ Go + Astro + Shadcn/ui.
 ## 1. Competitive Analysis
 
 ### Dockge (louislam/dockge)
+
 - **Stack**: Node.js + TypeScript + Vue 3 + Socket.IO + SQLite
 - **Stars**: 22.8k | **Binary size**: ~200MB Docker image
 - **Strengths**: File-based compose storage, reactive UI, simple UX, real-time output
@@ -23,6 +24,7 @@ Go + Astro + Shadcn/ui.
   - No OpenAPI spec, no generated clients
 
 ### Portainer (portainer/portainer)
+
 - **Stack**: Go backend + TypeScript/React frontend
 - **Stars**: 37.1k | **Binary size**: ~300MB Docker image
 - **Strengths**: Full Docker/K8s/Swarm management, RBAC, REST API, edge agents
@@ -35,6 +37,7 @@ Go + Astro + Shadcn/ui.
   - 5,684 commits of legacy code
 
 ### Composer (this project) -- target differentiators
+
 - **Single Go binary** (~15MB) + embedded Astro frontend
 - **REST API first** with auto-generated OpenAPI 3.1 spec
 - **Hybrid transport**: REST + SSE + WebSocket (terminal only)
@@ -49,18 +52,21 @@ Go + Astro + Shadcn/ui.
 ## 2. Philosophy & Principles
 
 ### Domain-Driven Design (DDD)
+
 - Clear bounded contexts with aggregate roots
 - Domain events for cross-context communication
 - Repository pattern for persistence abstraction
 - Value objects for immutable domain concepts
 
 ### Test-Driven Development (TDD)
+
 - Domain model tests written BEFORE implementation
 - Integration tests for infrastructure (Docker SDK, DB)
 - API handler tests using huma's `humatest` package
 - E2E tests for critical user flows
 
 ### Architectural Rules
+
 1. Domain layer has ZERO external dependencies (no Docker SDK, no DB drivers)
 2. Application services orchestrate domain objects and infrastructure
 3. Infrastructure implements domain repository interfaces
@@ -71,26 +77,26 @@ Go + Astro + Shadcn/ui.
 
 ## 3. Tech Stack
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| **Language** | Go 1.25+ | Docker SDK native, single binary, goroutines for concurrency |
-| **HTTP Framework** | [Huma v2](https://huma.rocks) v2.37+ + Chi v5 | Auto OpenAPI 3.1, built-in SSE, validation, RFC9457 errors |
-| **Auth** | Custom (session + API key + RBAC) | Patterns from gloryhole/gatekeeper, tailored to our needs |
-| **Database** | PostgreSQL | `jackc/pgx/v5` -- high-performance pure Go Postgres driver |
-| **Cache** | [Valkey](https://valkey.io) | `valkey-io/valkey-go` v1.0+, pub/sub for real-time event fan-out |
-| **Migrations** | [goose v3](https://github.com/pressly/goose) v3.27+ | Embedded SQL via `embed.FS`, Provider API, pgx v5 native |
-| **Logging** | [zap](https://github.com/uber-go/zap) | Structured, high-performance, JSON + console encoders |
-| **Docker** | `moby/moby/client` v0.4+ | Native Go client for Docker Engine API v1.54. Podman compat via `WithAPIVersionNegotiation()` + socket auto-detect |
-| **Compose** | CLI wrapper (Phase 1) | Shell out to `docker compose` V2. Option to migrate to `docker/compose/v5` Go library later (heavier deps but programmatic control) |
-| **Git** | `go-git/go-git/v5` v5.17+ | Pure Go git: clone, pull, push, log, diff, commit. SSH + HTTPS auth |
-| **IDs** | `oklog/ulid` | Sortable, timestamp-prefixed unique IDs for all entities |
-| **Frontend** | Astro 6 + React 19 | SSR pages + interactive React islands |
-| **UI Components** | Shadcn/ui + Tailwind CSS 4 | Beautiful, accessible, copy-paste components. Lovelace theme |
-| **Terminal** | xterm.js + WebSocket | Bidirectional container exec |
-| **Code Editor** | CodeMirror 6 | YAML syntax highlighting for compose editing |
-| **Streaming** | SSE (huma/sse package) | Logs, Docker events, pipeline output, stats |
-| **WebSocket** | `coder/websocket` v1.8+ | Terminal sessions only (was nhooyr.io/websocket, transferred to Coder) |
-| **TS Client** | `openapi-typescript` v7 + `openapi-fetch` | Auto-generated typed client from OpenAPI 3.1 spec |
+| Layer | Technology | Status | Notes |
+|-------|-----------|--------|-------|
+| **Language** | Go 1.26+ | Done | Docker SDK native, single binary, goroutines |
+| **HTTP Framework** | Huma v2.37+ + Chi v5 | Done | Auto OpenAPI 3.1, built-in SSE, RFC9457 errors |
+| **Auth** | Custom (session + API key + RBAC) | Done | Session cookie + API key + role middleware |
+| **Database** | PostgreSQL (`jackc/pgx/v5`) | Done | pgxpool for queries, goose for migrations |
+| **Cache** | Valkey (`valkey-io/valkey-go`) | Phase 4 | Currently in-process event bus. Valkey for multi-instance |
+| **Migrations** | goose v3.27+ | Done | Embedded SQL via `embed.FS`, Provider API |
+| **Logging** | zap | Done | JSON (prod) + console (dev) encoders |
+| **Docker** | `docker/docker` v28+ | Done | Engine SDK + Podman auto-detect |
+| **Compose** | CLI wrapper (`docker compose`) | Done | Shell out to V2. Programmatic library optional later |
+| **Git** | `go-git/go-git/v5` | Phase 2 | Pure Go git. Directory stubbed, not yet integrated |
+| **IDs** | `oklog/ulid` | Planned | Currently using crypto/rand hex. ULID later |
+| **Frontend** | Astro 6.1 + React 19 | Done | Static output, React islands via `client:load` |
+| **UI Components** | Shadcn/ui + Tailwind CSS 4 | Done | Lovelace theme. button, card, badge, input built |
+| **Terminal** | xterm.js + WebSocket | Backend done | WS handler complete. Frontend xterm.js component pending |
+| **Code Editor** | CodeMirror 6 | Planned | YAML syntax highlighting for compose editing |
+| **Streaming** | SSE (huma/sse) | Done | Events stream + container logs. Stats pending |
+| **WebSocket** | `coder/websocket` v1.8+ | Done | Terminal sessions only |
+| **TS Client** | openapi-typescript + openapi-fetch | Planned | Generated typed client from OpenAPI spec |
 
 ---
 
@@ -409,6 +415,7 @@ WebhookReceiver (Application Service -- processes inbound webhooks)
 ```
 
 **GitOps Flow:**
+
 ```
   GitHub/GitLab/Gitea push
          |
@@ -452,6 +459,7 @@ WebhookReceiver (Application Service -- processes inbound webhooks)
 ```
 
 **Edit-in-UI -> Git Commit Flow:**
+
 ```
   User edits compose.yaml in the web editor
          |
@@ -510,6 +518,7 @@ All CRUD operations. Every endpoint is a typed Go struct that Huma converts
 to OpenAPI schema automatically.
 
 #### Auth Endpoints (no auth required)
+
 ```
 POST   /api/v1/auth/bootstrap      -- create first admin user (only when 0 users)
 POST   /api/v1/auth/login           -- email + password -> session cookie
@@ -517,7 +526,8 @@ POST   /api/v1/auth/logout          -- destroy session
 GET    /api/v1/auth/session         -- validate current session, return user info
 ```
 
-#### User Management (admin only)
+#### User Management (admin only) -- NOT YET IMPLEMENTED
+
 ```
 GET    /api/v1/users                -- list users
 POST   /api/v1/users                -- create user
@@ -527,30 +537,33 @@ DELETE /api/v1/users/{id}           -- delete user
 PUT    /api/v1/users/{id}/password  -- change password (admin or self)
 ```
 
-#### API Keys (operator+)
+#### API Keys (operator+) -- NOT YET IMPLEMENTED
+
 ```
 GET    /api/v1/keys                 -- list API keys (redacted)
 POST   /api/v1/keys                 -- create key (returns full key ONCE)
 DELETE /api/v1/keys/{id}            -- revoke key
 ```
 
-#### Stack Management (operator+)
-```
-GET    /api/v1/stacks               -- list all stacks with status
-POST   /api/v1/stacks               -- create new stack
-GET    /api/v1/stacks/{name}        -- get stack detail (containers, compose, status)
-PUT    /api/v1/stacks/{name}        -- update compose content
-DELETE /api/v1/stacks/{name}        -- delete stack (and optionally volumes)
+#### Stack Management (operator+) -- IMPLEMENTED
 
-POST   /api/v1/stacks/{name}/up       -- deploy (docker compose up -d)
-POST   /api/v1/stacks/{name}/down     -- stop (docker compose down)
-POST   /api/v1/stacks/{name}/restart  -- restart all services
-POST   /api/v1/stacks/{name}/pull     -- pull latest images
-POST   /api/v1/stacks/{name}/validate -- validate compose syntax
-GET    /api/v1/stacks/{name}/diff     -- show pending changes vs running state
+```
+GET    /api/v1/stacks               -- list all stacks with status          [done]
+POST   /api/v1/stacks               -- create new stack                     [done]
+GET    /api/v1/stacks/{name}        -- get stack detail + containers        [done]
+PUT    /api/v1/stacks/{name}        -- update compose content               [done]
+DELETE /api/v1/stacks/{name}        -- delete stack (optionally volumes)    [done]
+
+POST   /api/v1/stacks/{name}/up       -- deploy (docker compose up -d)     [done]
+POST   /api/v1/stacks/{name}/down     -- stop (docker compose down)        [done]
+POST   /api/v1/stacks/{name}/restart  -- restart all services              [done]
+POST   /api/v1/stacks/{name}/pull     -- pull latest images                [done]
+POST   /api/v1/stacks/{name}/validate -- validate compose syntax           [not yet]
+GET    /api/v1/stacks/{name}/diff     -- pending changes vs running        [not yet]
 ```
 
-#### Containers (viewer+)
+#### Containers (viewer+) -- NOT YET IMPLEMENTED
+
 ```
 GET    /api/v1/containers              -- list all containers across stacks
 GET    /api/v1/containers/{id}         -- get container detail
@@ -559,7 +572,8 @@ POST   /api/v1/containers/{id}/stop    -- stop container (operator+)
 POST   /api/v1/containers/{id}/restart -- restart container (operator+)
 ```
 
-#### Pipelines (operator+)
+#### Pipelines (operator+) -- Phase 3
+
 ```
 GET    /api/v1/pipelines               -- list pipelines
 POST   /api/v1/pipelines               -- create pipeline
@@ -573,7 +587,8 @@ GET    /api/v1/pipelines/{id}/runs     -- list runs for pipeline
 GET    /api/v1/pipelines/{id}/runs/{runId} -- get run detail with step results
 ```
 
-#### Git Operations (operator+)
+#### Git Operations (operator+) -- Phase 2
+
 ```
 POST   /api/v1/stacks/{name}/sync        -- git pull + detect changes
 POST   /api/v1/stacks/{name}/rollback    -- checkout specific commit
@@ -582,7 +597,8 @@ GET    /api/v1/stacks/{name}/git/diff    -- diff current vs running
 GET    /api/v1/stacks/{name}/git/status  -- sync status, last commit, behind/ahead
 ```
 
-#### Webhooks (operator+ for management, public for receiving)
+#### Webhooks (operator+ for management, public for receiving) -- Phase 2
+
 ```
 GET    /api/v1/webhooks                   -- list registered webhooks
 POST   /api/v1/webhooks                   -- register webhook for a stack
@@ -594,18 +610,20 @@ POST   /api/v1/hooks/{id}                -- inbound webhook receiver (public, va
                                             supports GitHub, GitLab, Gitea, Bitbucket, generic
 ```
 
-#### System (viewer+)
+#### System (viewer+) -- PARTIAL
+
 ```
-GET    /api/v1/system/info             -- Docker engine info, disk, images
-GET    /api/v1/system/health           -- application health check (public)
-GET    /api/v1/system/version          -- Composer version info
+GET    /api/v1/system/health           -- application health check (public)  [done]
+GET    /api/v1/system/info             -- Docker engine info, disk, images   [not yet]
+GET    /api/v1/system/version          -- Composer version info              [not yet]
 ```
 
-#### OpenAPI
+#### OpenAPI -- IMPLEMENTED
+
 ```
-GET    /openapi.json                   -- auto-generated OpenAPI 3.1 spec
-GET    /openapi.yaml                   -- YAML variant
-GET    /docs                           -- Stoplight Elements API docs UI
+GET    /openapi.json                   -- auto-generated OpenAPI 3.1 spec    [done]
+GET    /openapi.yaml                   -- YAML variant                       [done]
+GET    /docs                           -- Stoplight Elements API docs UI     [not yet]
 ```
 
 ### 6.2 SSE Endpoints (Server-Sent Events)
@@ -614,19 +632,15 @@ All streaming server-to-client. Uses huma's built-in `sse` package.
 Each SSE endpoint holds the connection open and pushes events.
 
 ```
-GET    /api/v1/sse/events              -- global Docker events stream
-                                          (container state, health, image pulls)
-GET    /api/v1/sse/stacks/{name}/logs  -- live aggregated logs for all stack services
-                                          query: ?service=x&since=5m&tail=100
-GET    /api/v1/sse/containers/{id}/logs    -- live log stream for single container
-                                              query: ?since=5m&tail=100&follow=true
-GET    /api/v1/sse/containers/{id}/stats   -- live resource stats (CPU/mem/net/disk)
-                                              ~1 event/second
-GET    /api/v1/sse/pipelines/{id}/runs/{runId} -- live pipeline execution output
-                                                  (step start, output lines, finish)
+GET    /api/v1/sse/events              -- global domain events stream        [done]
+GET    /api/v1/sse/containers/{id}/logs    -- live log stream for container  [done]
+GET    /api/v1/sse/stacks/{name}/logs  -- aggregated logs for all services   [not yet]
+GET    /api/v1/sse/containers/{id}/stats   -- live CPU/mem/net/disk stats    [not yet]
+GET    /api/v1/sse/pipelines/{id}/runs/{runId} -- pipeline execution output  [Phase 3]
 ```
 
 **SSE Event Format:**
+
 ```
 event: container.state
 data: {"containerId":"abc123","stack":"docs-ssh","old":"running","new":"exited","ts":"..."}
@@ -647,11 +661,12 @@ Bidirectional communication required for interactive terminal.
 Only endpoint using WebSocket.
 
 ```
-GET    /api/v1/ws/terminal/{containerId}  -- interactive shell session
-                                             query: ?shell=/bin/sh&cols=80&rows=24
+GET    /api/v1/ws/terminal/{id}  -- interactive shell session
+                                    query: ?shell=/bin/sh&cols=80&rows=24
 ```
 
 **Protocol:**
+
 - Client -> Server: raw stdin bytes (keystrokes)
 - Server -> Client: raw stdout/stderr bytes
 - Control messages: JSON-framed resize events `{"type":"resize","cols":120,"rows":40}`
@@ -700,6 +715,7 @@ Modeled after gloryhole (Go session auth) + gatekeeper (RBAC, bootstrap).
 ```
 
 ### 7.2 Session Management
+
 - **Token**: 32 bytes from `crypto/rand`, base64url-encoded
 - **Storage**: `sessions` table in Postgres (persistent across restarts)
 - **TTL**: 24 hours default, configurable
@@ -708,6 +724,7 @@ Modeled after gloryhole (Go session auth) + gatekeeper (RBAC, bootstrap).
 - **Cache**: Active sessions cached in Valkey (TTL-matched) to avoid DB hit per request
 
 ### 7.3 API Key Auth
+
 - **Format**: `ck_<32 hex chars>` (shown once on creation)
 - **Storage**: SHA-256 hash stored in DB, never the raw key
 - **Header**: `Authorization: Bearer ck_...` or `X-API-Key: ck_...`
@@ -715,11 +732,13 @@ Modeled after gloryhole (Go session auth) + gatekeeper (RBAC, bootstrap).
 - **Cache**: Hashed key -> role cached in Valkey
 
 ### 7.4 Bootstrap Flow
+
 - On first startup with 0 users, `/api/v1/auth/bootstrap` is enabled
 - Frontend shows a setup wizard to create the first admin user
 - Once first user exists, bootstrap endpoint returns 409 Conflict
 
 ### 7.5 RBAC Role Hierarchy
+
 ```
 Admin > Operator > Viewer
 
@@ -729,6 +748,7 @@ Viewer:   read-only (list stacks, view containers, view logs, view pipeline runs
 ```
 
 ### 7.6 Security Hardening
+
 - Bcrypt cost 12 for password hashing
 - Constant-time comparison for all credential checks
 - CSRF protection: mutating requests on cookie-auth require `X-Requested-With` header
@@ -758,7 +778,7 @@ triggers:
       secret: ${WEBHOOK_SECRET}
   - type: schedule
     config:
-      cron: "0 3 * * *"  # nightly at 3 AM
+      cron: "0 3 * * *" # nightly at 3 AM
 
 steps:
   - name: pull-images
@@ -988,6 +1008,7 @@ CREATE TABLE settings (
 ### 10.2 Unit Tests (TDD -- tests first, no external deps)
 
 **Domain layer** (zero deps, pure logic):
+
 - `stack/aggregate_test.go` -- stack creation, validation, state transitions, git source
 - `stack/compose_test.go` -- compose parsing, validation
 - `pipeline/aggregate_test.go` -- step ordering, DAG validation, trigger parsing
@@ -997,12 +1018,14 @@ CREATE TABLE settings (
 - `auth/apikey_test.go` -- key format, hashing
 
 **Application services** (with mocked repositories):
+
 - `stack_service_test.go` -- service orchestration, event publishing
 - `pipeline_service_test.go` -- pipeline CRUD, run lifecycle
 - `pipeline_executor_test.go` -- DAG execution, cancellation, timeouts
 - `auth_service_test.go` -- login flow, bootstrap, API key management
 
 **API handlers** (using humatest):
+
 - `handler/stack_test.go` -- request/response validation, auth checks
 - `handler/pipeline_test.go`
 - `handler/auth_test.go` -- login, logout, bootstrap, RBAC
@@ -1033,6 +1056,7 @@ full application against a real Docker daemon. These are live tests.
 ```
 
 **Infrastructure:**
+
 - testcontainers-go v0.41+ for container lifecycle
 - `modules/postgres` -- real Postgres with init scripts
 - `modules/valkey` -- real Valkey
@@ -1066,6 +1090,7 @@ e2e/
 ```
 
 **Build & run:**
+
 ```makefile
 test:             go test ./...                                    # unit only
 test-integration: go test -tags=integration -count=1 -timeout=5m ./...
@@ -1351,7 +1376,7 @@ Same architecture as gatekeeper and gloryhole dashboards.
 ### 12.2 Design System: "Lovelace" (shared with gatekeeper/gloryhole)
 
 Dark-only, warm charcoal base with pastel-neon accents. Consistent with
-the existing erfi.io product family.
+the project's design system.
 
 #### Color Palette (Tailwind v4 `@theme` directive in `globals.css`)
 
@@ -1378,6 +1403,7 @@ the existing erfi.io product family.
 **Foreground**: `#e0e0e0` (off-white), muted: `#bdbdc1`
 
 #### Typography
+
 - **Body/headings**: `Space Grotesk` (self-hosted via `@fontsource`, 400-700)
 - **Data/monospace**: `JetBrains Mono` (via `@fontsource`, `.font-data` utility)
 - **Typography constants** in `src/lib/typography.ts` (imported as `T`):
@@ -1388,6 +1414,7 @@ the existing erfi.io product family.
   - Table cells: `text-xs` with `.font-data` for numeric data
 
 #### Visual Effects
+
 - `.glow-purple` / `.glow-green`: multi-layer `text-shadow` neon glow (logo)
 - `animate-fade-in-up`: staggered card entrance (translateY 8px + opacity, 0.4s)
 - `active:scale-[0.97]`: micro-press feedback on all buttons and tabs
@@ -1395,7 +1422,9 @@ the existing erfi.io product family.
 - Button hover: `hover:shadow-lg hover:shadow-primary/20` (purple glow)
 
 #### Tailwind v4 Configuration
+
 No `tailwind.config.*` file. All theme config via CSS `@theme` directive:
+
 ```css
 @import "tailwindcss";
 @theme {
@@ -1413,8 +1442,10 @@ No `tailwind.config.*` file. All theme config via CSS `@theme` directive:
 ```
 
 #### shadcn/ui Components (customized)
+
 Standard shadcn pattern: Radix primitives + CVA + `cn()` utility.
 Customizations matching gatekeeper/gloryhole:
+
 - `button.tsx`: `xs` + `icon-sm` sizes, `active:scale-[0.97]`, purple glow shadow
 - `card.tsx`: `rounded-xl` (not default `rounded-lg`)
 - `select.tsx`: `active:scale-[0.98]`, `hover:bg-accent/50`
@@ -1422,6 +1453,7 @@ Customizations matching gatekeeper/gloryhole:
 - All use CSS variable tokens, accent colors applied at call site
 
 #### Layout Pattern
+
 ```
 +------+--------------------------------------------------+
 | 60px |                   Header (h-14)                   |
@@ -1472,16 +1504,17 @@ bunx openapi-typescript http://localhost:8080/openapi.json -o src/lib/api/types.
 ```
 
 Usage in frontend:
-```typescript
-import createClient from 'openapi-fetch'
-import type { paths } from './api/types'
 
-const api = createClient<paths>({ baseUrl: '/api/v1' })
+```typescript
+import createClient from "openapi-fetch";
+import type { paths } from "./api/types";
+
+const api = createClient<paths>({ baseUrl: "/api/v1" });
 
 // Fully typed -- IDE autocomplete + compile-time errors
-const { data, error } = await api.GET('/stacks/{name}', {
-  params: { path: { name: 'web-app' } }
-})
+const { data, error } = await api.GET("/stacks/{name}", {
+  params: { path: { name: "web-app" } },
+});
 // data is typed as StackDetailResponse
 ```
 
@@ -1501,7 +1534,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /opt/stacks:/stacks
-      - composer_ssh:/home/composer/.ssh  # SSH keys for git
+      - composer_ssh:/home/composer/.ssh # SSH keys for git
     environment:
       - COMPOSER_STACKS_DIR=/stacks
       - COMPOSER_PORT=8080
@@ -1553,6 +1586,7 @@ make build
 ```
 
 ### 13.3 Resource Budget
+
 - **Idle RAM**: < 50MB (vs Dockge ~120MB, Portainer ~150MB)
 - **Docker image**: ~180MB (alpine + Go binary + bundled docker CLI + compose + buildx + git)
 - **Go binary**: ~8MB (stripped, pure Go, no CGO)
@@ -1612,28 +1646,42 @@ clean        # Remove build artifacts
 ## 15. Implementation Phases
 
 ### Phase 1: Foundation (MVP)
-- [ ] Go module setup + project structure
-- [ ] Domain models: Stack, Container, Auth (with TDD tests)
-- [ ] Auth system: User, Session, RBAC, bootstrap flow
-- [ ] Postgres storage (pgx + goose migrations)
-- [ ] Docker SDK client: list containers, container status, events
-- [ ] Compose CLI wrapper: up, down, restart, pull
-- [ ] File system compose store: read/write compose.yaml
-- [ ] Huma REST API: stacks CRUD + operations + auth
-- [ ] SSE: container events, log streaming
-- [ ] Astro frontend: login, dashboard, stack list, stack detail
-- [ ] WebSocket terminal
+
+- [x] Go module setup + project structure
+- [x] Domain models: Stack, Container, Auth (with TDD tests)
+- [x] Auth system: User, Session, RBAC, bootstrap flow
+- [x] Postgres storage (pgx + goose migrations)
+- [x] Docker SDK client: list, inspect, logs, stats, exec
+- [x] Compose CLI wrapper: up, down, restart, pull, validate
+- [x] Huma REST API: stacks CRUD + operations + auth
+- [x] SSE: domain events stream + container log streaming
+- [x] WebSocket terminal (backend handler)
+- [x] Astro frontend: login, dashboard, stack list, stack detail
+- [x] Playwright E2E browser tests (6 tests)
+- [x] RBAC enforcement in all handlers (viewer/operator)
+- [x] In-process event bus with pub/sub
+- [~] Docker events listener (SDK method exists, goroutine not wired)
+- [ ] Frontend: xterm.js terminal component
+- [ ] Frontend: CodeMirror compose editor
+- [ ] Frontend: generated OpenAPI TypeScript client
+- [ ] User management handler (/api/v1/users CRUD)
+- [ ] API key management handler (/api/v1/keys)
+- [ ] Container individual endpoints (/api/v1/containers)
+- [ ] Rate limiting, CSRF, security headers middleware
+- [ ] Embedded frontend in Go binary (embed.FS)
 - [ ] Makefile + Dockerfile + GHCR CI
 
 ### Phase 2: Git & Webhooks
+
 - [ ] Git-backed stacks (go-git: clone, pull, log, diff)
 - [ ] Webhook receiver (GitHub/GitLab/Gitea signature validation)
 - [ ] GitOps flow: webhook -> pull -> diff -> redeploy
 - [ ] Edit-in-UI -> git commit + push
 - [ ] Git history viewer in frontend
-- [ ] API key auth for automation
+- [ ] API key management REST endpoints
 
 ### Phase 3: Pipelines & CI
+
 - [ ] Domain models: Pipeline, Step, Run (with TDD tests)
 - [ ] Pipeline executor (DAG runner)
 - [ ] Pipeline REST API + SSE streaming
@@ -1642,6 +1690,7 @@ clean        # Remove build artifacts
 - [ ] Pipeline UI (editor + runner)
 
 ### Phase 4: Polish
+
 - [ ] Valkey integration (session cache, event pub/sub)
 - [ ] Container stats streaming (CPU/mem charts)
 - [ ] Command palette (Cmd+K)
@@ -1651,6 +1700,7 @@ clean        # Remove build artifacts
 - [ ] Documentation site
 
 ### Phase 5: Advanced
+
 - [ ] Multi-host agent support (like Dockge's agents)
 - [ ] Podman auto-detection + documentation
 - [ ] Image build support (Dockerfile in stack)
@@ -1763,22 +1813,26 @@ Pass detected `DOCKER_HOST` to `docker compose` subprocess.
 ### 16.5 Compose Stack Features
 
 **Multi-file compose support:**
+
 - `compose.yaml` (primary)
 - `compose.override.yaml` (auto-detected, merged)
 - Custom files via stack config: `composeFiles: ["compose.yaml", "compose.prod.yaml"]`
 
 **.env file support:**
+
 - `.env` files alongside compose.yaml are auto-loaded by `docker compose`
 - Composer reads `.env` for display in UI (environment variable editor)
 - Secrets in `.env` are masked in UI and API responses
 
 **Volume management:**
+
 - On stack delete: optionally remove named volumes (`--volumes` flag)
 - Volume listing per stack via Docker API
 
 ### 16.6 CORS (Development)
 
 In dev mode (Astro on :4321, Go on :8080), CORS middleware allows cross-origin:
+
 ```go
 if isDev {
     router.Use(cors.Handler(cors.Options{
@@ -1789,14 +1843,17 @@ if isDev {
     }))
 }
 ```
+
 In production, the Go binary serves the embedded Astro assets (same origin, no CORS needed).
 
 ### 16.7 Request ID / Tracing
 
 Every request gets a unique ID via middleware:
+
 ```
 X-Request-ID: 01JRZXYZ... (ULID)
 ```
+
 - Generated if not present in inbound request
 - Propagated to all log entries via `zap.String("request_id", id)`
 - Returned in response headers
@@ -1805,6 +1862,7 @@ X-Request-ID: 01JRZXYZ... (ULID)
 ### 16.8 Credential Encryption
 
 Git credentials stored in `stack_git_configs.credentials` are encrypted at rest:
+
 - AES-256-GCM with a server-side encryption key
 - Key derived from `COMPOSER_ENCRYPTION_KEY` env var (or auto-generated on first run, stored in data dir)
 - Credentials decrypted in-memory only when performing git operations
@@ -1835,6 +1893,7 @@ GET /api/v1/system/health  (public, no auth)
 ```
 
 Response:
+
 ```json
 {
   "status": "healthy",
@@ -1898,7 +1957,7 @@ jobs:
 
     steps:
       - Build Astro frontend (bun run build)
-      - Build Go binary (CGO_DISABLED=1, embed frontend assets)
+      - Build Go binary (CGO_ENABLED=0, embed frontend assets)
       - Multi-arch Docker image via docker/build-push-action
       - Push to ghcr.io/erfianugrah/composer:latest
       - Push to ghcr.io/erfianugrah/composer:$TAG
@@ -1960,6 +2019,7 @@ ENTRYPOINT ["composerd"]
 ```
 
 **What's bundled in the image (no host dependencies):**
+
 - `composerd` (~8MB) -- our Go binary
 - `docker` CLI (~30MB) -- from official `docker:28-cli` image
 - `docker-compose` plugin (~55MB) -- from official `docker:28-cli` image
@@ -1968,6 +2028,7 @@ ENTRYPOINT ["composerd"]
 - `ca-certificates` -- for HTTPS git remotes
 
 **The host only needs:**
+
 - A container runtime (Docker or Podman) with a socket
 - The socket mounted into the container (`/var/run/docker.sock`)
 
@@ -1982,7 +2043,7 @@ generate-client:
     - Start composerd in background (test mode, ephemeral Postgres via testcontainers)
     - Wait for /api/v1/system/health
     - bunx openapi-typescript http://localhost:8080/openapi.json \
-        -o web/src/lib/api/types.ts
+      -o web/src/lib/api/types.ts
     - cd web && bunx tsc --noEmit
     - If types changed, commit and push (bot commit)
 ```
@@ -1993,31 +2054,31 @@ generate-client:
 
 All dependencies verified as of April 2026.
 
-| Package | Version | Import Path | Notes |
-|---------|---------|-------------|-------|
-| **Go (minimum)** | **1.25+** | -- | Required by huma, pgx, goose, testcontainers |
-| Huma v2 | v2.37.3 | `github.com/danielgtaylor/huma/v2` | Auto OpenAPI 3.1, SSE, chi adapter |
-| Chi | v5.2.5 | `github.com/go-chi/chi/v5` | Via huma adapter |
-| pgx | v5.9.1 | `github.com/jackc/pgx/v5` | Postgres driver + pgxpool |
-| goose | v3.27.0 | `github.com/pressly/goose/v3` | Migrations via embedded SQL + Provider API |
-| zap | v1.27+ | `go.uber.org/zap` | Structured logging, JSON + console |
-| Docker Client | v0.4.0 | `github.com/moby/moby/client` | New canonical path. Podman compat via `WithAPIVersionNegotiation()` |
-| Docker API Types | v1.54.1 | `github.com/moby/moby/api` | Separate module |
-| Valkey | v1.0.73 | `github.com/valkey-io/valkey-go` | Official client |
-| WebSocket | v1.8.14 | `github.com/coder/websocket` | Was nhooyr.io, transferred to Coder |
-| go-git | v5.17.2 | `github.com/go-git/go-git/v5` | Pure Go, SSH+HTTPS auth |
-| ULID | v2.1+ | `github.com/oklog/ulid/v2` | Sortable unique IDs |
-| bcrypt | -- | `golang.org/x/crypto/bcrypt` | Password hashing, cost 12 |
-| CORS | -- | `github.com/go-chi/cors` | Dev-mode cross-origin |
-| testcontainers-go | v0.41.0 | `github.com/testcontainers/testcontainers-go` | E2E: postgres, valkey, dind, compose modules |
-| testify | -- | `github.com/stretchr/testify` | Assertions + require |
-| **Frontend** | | | |
-| Astro | v6.1.4 | npm: `astro` | Static output mode for embedding |
-| React | v19 | npm: `react` | Via @astrojs/react v5 |
-| Tailwind CSS | v4 | npm: `@tailwindcss/vite` | Vite plugin, @theme CSS config |
-| Shadcn/ui | v4.2.0 | CLI: `shadcn@4.2.0` | Official Astro support, `shadcn apply` command |
-| openapi-typescript | v7 | npm: `openapi-typescript` | OpenAPI 3.1 -> TypeScript types |
-| openapi-fetch | latest | npm: `openapi-fetch` | 6kb typed fetch client |
-| xterm.js | v5+ | npm: `@xterm/xterm` | Terminal emulator |
-| CodeMirror | v6 | npm: `@codemirror/lang-yaml` | YAML editor |
-| Recharts | v2.15+ | npm: `recharts` | Container stats charts |
+| Package            | Version   | Import Path                                   | Notes                                                               |
+| ------------------ | --------- | --------------------------------------------- | ------------------------------------------------------------------- |
+| **Go (minimum)**   | **1.25+** | --                                            | Required by huma, pgx, goose, testcontainers                        |
+| Huma v2            | v2.37.3   | `github.com/danielgtaylor/huma/v2`            | Auto OpenAPI 3.1, SSE, chi adapter                                  |
+| Chi                | v5.2.5    | `github.com/go-chi/chi/v5`                    | Via huma adapter                                                    |
+| pgx                | v5.9.1    | `github.com/jackc/pgx/v5`                     | Postgres driver + pgxpool                                           |
+| goose              | v3.27.0   | `github.com/pressly/goose/v3`                 | Migrations via embedded SQL + Provider API                          |
+| zap                | v1.27+    | `go.uber.org/zap`                             | Structured logging, JSON + console                                  |
+| Docker Client      | v0.4.0    | `github.com/moby/moby/client`                 | New canonical path. Podman compat via `WithAPIVersionNegotiation()` |
+| Docker API Types   | v1.54.1   | `github.com/moby/moby/api`                    | Separate module                                                     |
+| Valkey             | v1.0.73   | `github.com/valkey-io/valkey-go`              | Official client                                                     |
+| WebSocket          | v1.8.14   | `github.com/coder/websocket`                  | Was nhooyr.io, transferred to Coder                                 |
+| go-git             | v5.17.2   | `github.com/go-git/go-git/v5`                 | Pure Go, SSH+HTTPS auth                                             |
+| ULID               | v2.1+     | `github.com/oklog/ulid/v2`                    | Sortable unique IDs                                                 |
+| bcrypt             | --        | `golang.org/x/crypto/bcrypt`                  | Password hashing, cost 12                                           |
+| CORS               | --        | `github.com/go-chi/cors`                      | Dev-mode cross-origin                                               |
+| testcontainers-go  | v0.41.0   | `github.com/testcontainers/testcontainers-go` | E2E: postgres, valkey, dind, compose modules                        |
+| testify            | --        | `github.com/stretchr/testify`                 | Assertions + require                                                |
+| **Frontend**       |           |                                               |                                                                     |
+| Astro              | v6.1.4    | npm: `astro`                                  | Static output mode for embedding                                    |
+| React              | v19       | npm: `react`                                  | Via @astrojs/react v5                                               |
+| Tailwind CSS       | v4        | npm: `@tailwindcss/vite`                      | Vite plugin, @theme CSS config                                      |
+| Shadcn/ui          | v4.2.0    | CLI: `shadcn@4.2.0`                           | Official Astro support, `shadcn apply` command                      |
+| openapi-typescript | v7        | npm: `openapi-typescript`                     | OpenAPI 3.1 -> TypeScript types                                     |
+| openapi-fetch      | latest    | npm: `openapi-fetch`                          | 6kb typed fetch client                                              |
+| xterm.js           | v5+       | npm: `@xterm/xterm`                           | Terminal emulator                                                   |
+| CodeMirror         | v6        | npm: `@codemirror/lang-yaml`                  | YAML editor                                                         |
+| Recharts           | v2.15+    | npm: `recharts`                               | Container stats charts                                              |

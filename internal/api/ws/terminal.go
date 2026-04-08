@@ -3,7 +3,6 @@ package ws
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -65,6 +64,9 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer exec.Conn.Close()
 
 	var wg sync.WaitGroup
+
+	// Keepalive pings
+	go h.Ping(ctx, conn)
 
 	// Docker stdout -> WebSocket (binary messages)
 	wg.Add(1)
@@ -136,14 +138,3 @@ func (h *TerminalHandler) Ping(ctx context.Context, conn *websocket.Conn) {
 		}
 	}
 }
-
-// ReadWriteCloserWrapper wraps a websocket.Conn as an io.ReadWriteCloser.
-// Useful for testing.
-type ReadWriteCloserWrapper struct {
-	r io.Reader
-	w io.Writer
-}
-
-func (rw *ReadWriteCloserWrapper) Read(p []byte) (int, error)  { return rw.r.Read(p) }
-func (rw *ReadWriteCloserWrapper) Write(p []byte) (int, error) { return rw.w.Write(p) }
-func (rw *ReadWriteCloserWrapper) Close() error                { return nil }

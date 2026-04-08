@@ -1,0 +1,30 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+---
+
+<Layout title="Settings" active="settings">
+  <div class="space-y-6">
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">User Management</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p class="text-sm text-muted-foreground">
+          Manage users, roles, and API keys. Coming soon.
+        </p>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">System</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p class="text-sm text-muted-foreground font-data">
+          Composer v0.1.0
+        </p>
+      </CardContent>
+    </Card>
+  </div>
+</Layout>

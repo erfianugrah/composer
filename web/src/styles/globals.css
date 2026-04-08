@@ -1,0 +1,125 @@
+@import "tailwindcss";
+@import "@fontsource/space-grotesk/400.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/700.css";
+
+/* ── Lovelace Theme for Composer ── */
+@theme {
+  /* Base (warm charcoal) */
+  --color-cp-950: #15161e;
+  --color-cp-900: #1d1f28;
+  --color-cp-800: #282a36;
+  --color-cp-700: #343647;
+  --color-cp-600: #414457;
+
+  /* Accents (pastel-neon) */
+  --color-cp-purple: #c574dd;
+  --color-cp-purple-dim: #af43d1;
+  --color-cp-green: #5adecd;
+  --color-cp-green-bright: #17e2c7;
+  --color-cp-red: #f37e96;
+  --color-cp-red-bright: #ff4870;
+  --color-cp-peach: #f1a171;
+  --color-cp-peach-bright: #ff8037;
+  --color-cp-blue: #8796f4;
+  --color-cp-blue-bright: #546eff;
+  --color-cp-cyan: #79e6f3;
+  --color-cp-cyan-bright: #3edced;
+  --color-cp-yellow: #ffd866;
+  --color-cp-mauve: #c9a0dc;
+
+  /* shadcn semantic tokens */
+  --color-background: #1d1f28;
+  --color-foreground: #e0e0e0;
+  --color-card: #282a36;
+  --color-card-foreground: #e0e0e0;
+  --color-popover: #282a36;
+  --color-popover-foreground: #e0e0e0;
+  --color-primary: #c574dd;
+  --color-primary-foreground: #15161e;
+  --color-secondary: #343647;
+  --color-secondary-foreground: #e0e0e0;
+  --color-muted: #343647;
+  --color-muted-foreground: #bdbdc1;
+  --color-accent: #343647;
+  --color-accent-foreground: #e0e0e0;
+  --color-destructive: #f37e96;
+  --color-destructive-foreground: #15161e;
+  --color-border: #414457;
+  --color-input: #414457;
+  --color-ring: #c574dd;
+
+  /* Fonts */
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+
+  /* Radius */
+  --radius: 0.5rem;
+}
+
+/* ── Base ── */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ── Utilities ── */
+.font-data {
+  font-family: var(--font-mono);
+}
+
+.glow-purple {
+  text-shadow:
+    0 0 7px rgba(197, 116, 221, 0.6),
+    0 0 14px rgba(197, 116, 221, 0.3),
+    0 0 28px rgba(197, 116, 221, 0.15);
+}
+
+.glow-green {
+  text-shadow:
+    0 0 7px rgba(90, 222, 205, 0.6),
+    0 0 14px rgba(90, 222, 205, 0.3),
+    0 0 28px rgba(90, 222, 205, 0.15);
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s ease-out both;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-cp-950);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-cp-600);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-cp-purple);
+}
