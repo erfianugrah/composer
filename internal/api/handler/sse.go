@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -54,6 +55,17 @@ func (h *SSEHandler) Register(api huma.API) {
 	}, map[string]any{
 		"log": event.LogEntry{},
 	}, h.StreamContainerLogs)
+
+	// Container stats stream
+	sse.Register(api, huma.Operation{
+		OperationID: "streamContainerStats",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/sse/containers/{id}/stats",
+		Summary:     "Stream container CPU/memory/network stats",
+		Tags:        []string{"sse"},
+	}, map[string]any{
+		"stats": event.ContainerStats{},
+	}, h.StreamContainerStats)
 }
 
 // StreamEvents streams all domain events to the client via SSE. Requires viewer+ role.
@@ -90,6 +102,11 @@ type ContainerLogInput struct {
 	ID    string `path:"id" doc:"Container ID"`
 	Tail  string `query:"tail" default:"100" doc:"Number of lines from the end"`
 	Since string `query:"since" default:"" doc:"Show logs since timestamp or relative (e.g. 5m)"`
+}
+
+// ContainerStatsInput defines the path params for stats streaming.
+type ContainerStatsInput struct {
+	ID string `path:"id" doc:"Container ID"`
 }
 
 // StreamContainerLogs streams container logs via SSE. Requires viewer+ role.
@@ -147,5 +164,119 @@ func (h *SSEHandler) StreamContainerLogs(ctx context.Context, input *ContainerLo
 		if err != nil {
 			return
 		}
+	}
+}
+
+// StreamContainerStats streams container resource stats via SSE (~1 event/sec).
+func (h *SSEHandler) StreamContainerStats(ctx context.Context, input *ContainerStatsInput, send sse.Sender) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return
+	}
+
+	reader, err := h.dockerClient.ContainerStats(ctx, input.ID, true)
+	if err != nil {
+		return
+	}
+	defer reader.Close()
+
+	decoder := json.NewDecoder(reader)
+	for {
+		var raw dockerStats
+		if err := decoder.Decode(&raw); err != nil {
+			return
+		}
+
+		stats := parseDockerStats(input.ID, &raw)
+		if sendErr := send.Data(stats); sendErr != nil {
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+	}
+}
+
+// dockerStats is the JSON structure returned by the Docker stats API.
+type dockerStats struct {
+	CPUStats struct {
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		OnlineCPUs     uint64 `json:"online_cpus"`
+	} `json:"cpu_stats"`
+	PreCPUStats struct {
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+	} `json:"precpu_stats"`
+	MemoryStats struct {
+		Usage uint64 `json:"usage"`
+		Limit uint64 `json:"limit"`
+	} `json:"memory_stats"`
+	Networks map[string]struct {
+		RxBytes uint64 `json:"rx_bytes"`
+		TxBytes uint64 `json:"tx_bytes"`
+	} `json:"networks"`
+	BlkioStats struct {
+		IOServiceBytesRecursive []struct {
+			Op    string `json:"op"`
+			Value uint64 `json:"value"`
+		} `json:"io_service_bytes_recursive"`
+	} `json:"blkio_stats"`
+	PidsStats struct {
+		Current uint64 `json:"current"`
+	} `json:"pids_stats"`
+}
+
+func parseDockerStats(containerID string, raw *dockerStats) event.ContainerStats {
+	// CPU percentage calculation
+	cpuDelta := float64(raw.CPUStats.CPUUsage.TotalUsage - raw.PreCPUStats.CPUUsage.TotalUsage)
+	systemDelta := float64(raw.CPUStats.SystemCPUUsage - raw.PreCPUStats.SystemCPUUsage)
+	cpuPercent := 0.0
+	if systemDelta > 0 && cpuDelta > 0 {
+		cpuPercent = (cpuDelta / systemDelta) * float64(raw.CPUStats.OnlineCPUs) * 100.0
+	}
+
+	// Memory percentage
+	memPercent := 0.0
+	if raw.MemoryStats.Limit > 0 {
+		memPercent = float64(raw.MemoryStats.Usage) / float64(raw.MemoryStats.Limit) * 100.0
+	}
+
+	// Network totals
+	var netRx, netTx uint64
+	for _, iface := range raw.Networks {
+		netRx += iface.RxBytes
+		netTx += iface.TxBytes
+	}
+
+	// Block I/O
+	var blockRead, blockWrite uint64
+	for _, entry := range raw.BlkioStats.IOServiceBytesRecursive {
+		switch entry.Op {
+		case "read", "Read":
+			blockRead += entry.Value
+		case "write", "Write":
+			blockWrite += entry.Value
+		}
+	}
+
+	return event.ContainerStats{
+		ContainerID: containerID,
+		CPUPercent:  cpuPercent,
+		MemUsage:    raw.MemoryStats.Usage,
+		MemLimit:    raw.MemoryStats.Limit,
+		MemPercent:  memPercent,
+		NetRx:       netRx,
+		NetTx:       netTx,
+		BlockRead:   blockRead,
+		BlockWrite:  blockWrite,
+		PIDs:        raw.PidsStats.Current,
+		Timestamp:   time.Now(),
 	}
 }

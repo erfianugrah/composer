@@ -1,5 +1,6 @@
 ---
 import "@/styles/globals.css";
+import { CommandPalette } from "@/components/layout/CommandPalette";
 
 interface Props {
   title: string;
@@ -80,5 +81,7 @@ const navItems = [
         </main>
       </div>
     </div>
+    <!-- Command Palette (Cmd+K) -->
+    <CommandPalette client:load />
   </body>
 </html>

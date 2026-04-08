@@ -127,6 +127,25 @@ type PipelineRunFinished struct {
 func (e PipelineRunFinished) EventType() string    { return "pipeline.run.finished" }
 func (e PipelineRunFinished) EventTime() time.Time { return e.Timestamp }
 
+// --- Container Stats Event ---
+
+type ContainerStats struct {
+	ContainerID string    `json:"container_id"`
+	CPUPercent  float64   `json:"cpu_percent"`
+	MemUsage    uint64    `json:"mem_usage"`
+	MemLimit    uint64    `json:"mem_limit"`
+	MemPercent  float64   `json:"mem_percent"`
+	NetRx       uint64    `json:"net_rx"`
+	NetTx       uint64    `json:"net_tx"`
+	BlockRead   uint64    `json:"block_read"`
+	BlockWrite  uint64    `json:"block_write"`
+	PIDs        uint64    `json:"pids"`
+	Timestamp   time.Time `json:"ts"`
+}
+
+func (e ContainerStats) EventType() string    { return "stats" }
+func (e ContainerStats) EventTime() time.Time { return e.Timestamp }
+
 // --- Log Event (for SSE streaming) ---
 
 type LogEntry struct {

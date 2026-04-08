@@ -317,6 +317,45 @@ test.describe("Responsive Design", () => {
   });
 });
 
+test.describe("Command Palette", () => {
+  test("Cmd+K trigger button is visible on dashboard", async ({ page }) => {
+    await page.goto("/");
+    const trigger = page.getByTestId("cmd-k-trigger");
+    await expect(trigger).toBeVisible();
+  });
+
+  test("opens command palette via trigger button", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("cmd-k-trigger").click();
+
+    const palette = page.getByTestId("command-palette");
+    await expect(palette).toBeVisible({ timeout: 2000 });
+
+    const input = page.getByTestId("cmd-k-input");
+    await expect(input).toBeFocused();
+  });
+
+  test("closes command palette with Escape", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("cmd-k-trigger").click();
+    await expect(page.getByTestId("command-palette")).toBeVisible({ timeout: 2000 });
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("command-palette")).toBeHidden({ timeout: 2000 });
+  });
+
+  test("can search in command palette", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("cmd-k-trigger").click();
+
+    const input = page.getByTestId("cmd-k-input");
+    await input.fill("stacks");
+
+    const option = page.locator("text=Go to Stacks");
+    await expect(option).toBeVisible();
+  });
+});
+
 test.describe("Static Assets", () => {
   test("favicon loads", async ({ page }) => {
     const response = await page.goto("/favicon.svg");

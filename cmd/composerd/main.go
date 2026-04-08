@@ -171,8 +171,9 @@ func main() {
 		pipelineSvc = app.NewPipelineService(pipelineRepo, runRepo, pipelineExecutor)
 	}
 
-	// --- Webhook Repo ---
+	// --- Webhook + Audit Repos ---
 	webhookRepo := postgres.NewWebhookRepo(db.Pool)
+	auditRepo := postgres.NewAuditRepo(db.Pool)
 
 	// --- API Server ---
 	srv := api.NewServer(api.Deps{
@@ -182,6 +183,7 @@ func main() {
 		PipelineService: pipelineSvc,
 		UserRepo:        userRepo,
 		WebhookRepo:     webhookRepo,
+		AuditRepo:       auditRepo,
 		EventBus:        bus,
 		DockerClient:    dockerClient,
 	})

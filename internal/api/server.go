@@ -33,6 +33,7 @@ type Deps struct {
 	PipelineService *app.PipelineService  // nil disables pipeline operations
 	UserRepo        auth.UserRepository   // nil disables user management
 	WebhookRepo     *postgres.WebhookRepo // nil disables webhook receiver
+	AuditRepo       *postgres.AuditRepo   // nil disables audit logging
 	EventBus        event.Bus             // nil disables SSE events endpoint
 	DockerClient    *docker.Client        // nil disables container/SSE/terminal endpoints
 }
@@ -50,6 +51,11 @@ func NewServer(deps Deps) *Server {
 
 	// Auth middleware
 	router.Use(authmw.Auth(deps.AuthService))
+
+	// Audit middleware (logs mutating API requests)
+	if deps.AuditRepo != nil {
+		router.Use(authmw.Audit(deps.AuditRepo))
+	}
 
 	// Huma API (auto-generates OpenAPI 3.1)
 	config := huma.DefaultConfig("Composer", "0.1.0")
