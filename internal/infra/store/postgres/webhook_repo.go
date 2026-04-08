@@ -74,6 +74,27 @@ func (r *WebhookRepo) ListByStack(ctx context.Context, stackName string) ([]*Web
 	return webhooks, rows.Err()
 }
 
+func (r *WebhookRepo) ListAll(ctx context.Context) ([]*Webhook, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, stack_name, provider, secret, branch_filter, auto_redeploy, created_by
+		 FROM webhooks ORDER BY created_at ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var webhooks []*Webhook
+	for rows.Next() {
+		w := &Webhook{}
+		if err := rows.Scan(&w.ID, &w.StackName, &w.Provider, &w.Secret, &w.BranchFilter, &w.AutoRedeploy, &w.CreatedBy); err != nil {
+			return nil, err
+		}
+		webhooks = append(webhooks, w)
+	}
+	return webhooks, rows.Err()
+}
+
 func (r *WebhookRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM webhooks WHERE id = $1`, id)
 	return err

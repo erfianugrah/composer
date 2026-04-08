@@ -105,6 +105,16 @@ func NewServer(deps Deps) *Server {
 		handler.NewSSEHandler(deps.EventBus, deps.DockerClient).Register(api)
 	}
 
+	// Git operation handlers (requires GitService)
+	if deps.GitService != nil {
+		handler.NewGitHandler(deps.GitService).Register(api)
+	}
+
+	// Webhook CRUD (requires WebhookRepo)
+	if deps.WebhookRepo != nil {
+		handler.NewWebhookCRUDHandler(deps.WebhookRepo).Register(api)
+	}
+
 	// WebSocket terminal (raw HTTP handler with RBAC -- operator+)
 	if deps.DockerClient != nil {
 		termHandler := ws.NewTerminalHandler(deps.DockerClient)
