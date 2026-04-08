@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
@@ -19,22 +21,22 @@ import (
 
 // OAuthHandler handles OAuth/OIDC login flows via goth.
 type OAuthHandler struct {
-	authSvc *app.AuthService
-	users   auth.UserRepository
+	authSvc  *app.AuthService
+	users    auth.UserRepository
+	sessions auth.SessionRepository
 }
 
-func NewOAuthHandler(authSvc *app.AuthService, users auth.UserRepository) *OAuthHandler {
-	return &OAuthHandler{authSvc: authSvc, users: users}
+func NewOAuthHandler(authSvc *app.AuthService, users auth.UserRepository, sessions auth.SessionRepository) *OAuthHandler {
+	return &OAuthHandler{authSvc: authSvc, users: users, sessions: sessions}
 }
 
 // Setup configures OAuth providers from environment variables.
-// Call this once at startup. Returns true if any providers were configured.
+// Returns true if any providers were configured.
 func (h *OAuthHandler) Setup() bool {
 	callbackBase := envOrDefault("COMPOSER_OAUTH_CALLBACK_URL", "http://localhost:8080")
 
 	var providers []goth.Provider
 
-	// GitHub OAuth
 	if clientID := os.Getenv("COMPOSER_GITHUB_CLIENT_ID"); clientID != "" {
 		clientSecret := os.Getenv("COMPOSER_GITHUB_CLIENT_SECRET")
 		providers = append(providers, github.New(
@@ -44,7 +46,6 @@ func (h *OAuthHandler) Setup() bool {
 		))
 	}
 
-	// Google OAuth
 	if clientID := os.Getenv("COMPOSER_GOOGLE_CLIENT_ID"); clientID != "" {
 		clientSecret := os.Getenv("COMPOSER_GOOGLE_CLIENT_SECRET")
 		providers = append(providers, gothGoogle.New(
@@ -60,10 +61,14 @@ func (h *OAuthHandler) Setup() bool {
 
 	goth.UseProviders(providers...)
 
-	// Configure session store for goth
+	// Session store for goth OAuth flow state
 	key := os.Getenv("COMPOSER_SESSION_SECRET")
 	if key == "" {
-		key = "composer-default-session-key-change-me"
+		// Generate a random key if not provided (safe default, but sessions
+		// won't survive restarts unless the env var is set)
+		buf := make([]byte, 32)
+		rand.Read(buf)
+		key = hex.EncodeToString(buf)
 	}
 	store := sessions.NewCookieStore([]byte(key))
 	store.MaxAge(300) // 5 min for OAuth flow
@@ -74,25 +79,20 @@ func (h *OAuthHandler) Setup() bool {
 	return true
 }
 
-// RegisterRaw registers OAuth routes as raw chi handlers (goth needs raw http).
+// RegisterRaw registers OAuth routes as raw chi handlers.
 func (h *OAuthHandler) RegisterRaw(router chi.Router) {
 	router.Get("/api/v1/auth/oauth/{provider}", h.Begin)
 	router.Get("/api/v1/auth/oauth/{provider}/callback", h.Callback)
 }
 
-// Begin starts the OAuth flow by redirecting to the provider.
 func (h *OAuthHandler) Begin(w http.ResponseWriter, r *http.Request) {
 	provider := r.PathValue("provider")
-	r = r.WithContext(r.Context())
-	// Set provider in query for goth
 	q := r.URL.Query()
 	q.Set("provider", provider)
 	r.URL.RawQuery = q.Encode()
-
 	gothic.BeginAuthHandler(w, r)
 }
 
-// Callback handles the OAuth callback from the provider.
 func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	provider := r.PathValue("provider")
 	q := r.URL.Query()
@@ -105,13 +105,13 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find or create user by email
 	email := gothUser.Email
 	if email == "" {
 		http.Error(w, "OAuth provider did not return an email", http.StatusBadRequest)
 		return
 	}
 
+	// Find or create user
 	user, err := h.users.GetByEmail(r.Context(), email)
 	if err != nil {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -119,15 +119,13 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user == nil {
-		// Check if any users exist -- if not, create as admin (first user)
 		count, _ := h.users.Count(r.Context())
 		role := auth.RoleViewer
 		if count == 0 {
 			role = auth.RoleAdmin
 		}
 
-		// Create user with OAuth -- no password (they'll use OAuth to login)
-		user, err = auth.NewUser(email, generateOAuthPlaceholder(), role)
+		user, err = auth.NewUser(email, generateSecureOAuthPlaceholder(), role)
 		if err != nil {
 			http.Error(w, "Failed to create user", http.StatusInternalServerError)
 			return
@@ -138,16 +136,19 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create session
+	// Create session and PERSIST IT TO THE DATABASE
 	session, err := auth.NewSession(user.ID, user.Role, 24*time.Hour)
 	if err != nil {
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
 	}
 
-	// We need to persist the session -- but we don't have the session repo here.
-	// Use the AuthService login-by-session approach instead.
-	// For now, set the cookie directly.
+	if err := h.sessions.Create(r.Context(), session); err != nil {
+		http.Error(w, "Failed to persist session", http.StatusInternalServerError)
+		return
+	}
+
+	// Set session cookie
 	secureCookie := os.Getenv("COMPOSER_COOKIE_SECURE") != "false"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "composer_session",
@@ -159,7 +160,6 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   86400,
 	})
 
-	// Redirect to dashboard
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -170,8 +170,10 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-func generateOAuthPlaceholder() string {
-	// OAuth users don't need a real password -- they authenticate via provider
-	// Generate a long random string they'll never use
-	return fmt.Sprintf("oauth_%d_%d", time.Now().UnixNano(), time.Now().UnixMicro())
+// generateSecureOAuthPlaceholder creates a cryptographically random placeholder password.
+// OAuth users authenticate via their provider, never via this password.
+func generateSecureOAuthPlaceholder() string {
+	buf := make([]byte, 64)
+	rand.Read(buf)
+	return fmt.Sprintf("oauth_%s", hex.EncodeToString(buf))
 }

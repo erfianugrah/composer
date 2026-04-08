@@ -28,14 +28,15 @@ type Server struct {
 // Deps holds all dependencies needed by the API server.
 type Deps struct {
 	AuthService     *app.AuthService
-	StackService    *app.StackService     // nil if Docker not available
-	GitService      *app.GitService       // nil disables git operations
-	PipelineService *app.PipelineService  // nil disables pipeline operations
-	UserRepo        auth.UserRepository   // nil disables user management
-	WebhookRepo     *postgres.WebhookRepo // nil disables webhook receiver
-	AuditRepo       *postgres.AuditRepo   // nil disables audit logging
-	EventBus        event.Bus             // nil disables SSE events endpoint
-	DockerClient    *docker.Client        // nil disables container/SSE/terminal endpoints
+	StackService    *app.StackService      // nil if Docker not available
+	GitService      *app.GitService        // nil disables git operations
+	PipelineService *app.PipelineService   // nil disables pipeline operations
+	UserRepo        auth.UserRepository    // nil disables user management
+	SessionRepo     auth.SessionRepository // needed for OAuth session persistence
+	WebhookRepo     *postgres.WebhookRepo  // nil disables webhook receiver
+	AuditRepo       *postgres.AuditRepo    // nil disables audit logging
+	EventBus        event.Bus              // nil disables SSE events endpoint
+	DockerClient    *docker.Client         // nil disables container/SSE/terminal endpoints
 }
 
 // NewServer creates a new API server with all routes registered.
@@ -138,8 +139,8 @@ func NewServer(deps Deps) *Server {
 	}
 
 	// OAuth/OIDC (raw chi handlers -- goth needs raw http)
-	if deps.UserRepo != nil {
-		oauthHandler := handler.NewOAuthHandler(deps.AuthService, deps.UserRepo)
+	if deps.UserRepo != nil && deps.SessionRepo != nil {
+		oauthHandler := handler.NewOAuthHandler(deps.AuthService, deps.UserRepo, deps.SessionRepo)
 		if oauthHandler.Setup() {
 			oauthHandler.RegisterRaw(router)
 		}

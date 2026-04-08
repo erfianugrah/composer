@@ -7,7 +7,9 @@ Think Dockge's simplicity meets Portainer's power -- built from scratch with Go,
 ## Features
 
 - **Stack management** -- Create, deploy, stop, restart, pull Docker Compose stacks via REST API or web UI
-- **REST API first** -- 47 endpoints with auto-generated OpenAPI 3.1 spec. Every operation is scriptable
+- **REST API first** -- 53 endpoints with auto-generated OpenAPI 3.1 spec. Every operation is scriptable
+- **OAuth/OIDC** -- Login with GitHub or Google accounts via goth
+- **Stack templates** -- 10 built-in compose presets (nginx, postgres, immich, etc.)
 - **GitOps** -- Git-backed stacks with webhook-triggered auto-redeploy (GitHub, GitLab, Gitea)
 - **Pipelines** -- CI-esque workflows with DAG execution, concurrent steps, and 8 step types
 - **Real-time streaming** -- SSE for container logs, stats, and events; WebSocket for interactive terminal
@@ -39,7 +41,7 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 |----------|-------------|
 | [Getting Started](docs/getting-started.md) | Installation, first run, bootstrap |
 | [Configuration](docs/configuration.md) | All environment variables, PUID/PGID |
-| [API Reference](docs/api-reference.md) | 47 REST endpoints, SSE streams, WebSocket |
+| [API Reference](docs/api-reference.md) | 53 REST endpoints, SSE streams, WebSocket |
 | [Deployment](docs/deployment.md) | Docker, Unraid, TrueNAS, bare metal, Podman |
 | [Security](docs/security.md) | Docker socket, RBAC, hardening |
 | [Architecture](docs/architecture.md) | DDD, tech stack, domain model |
@@ -60,7 +62,7 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 
 ## Status
 
-Phases 1-4 complete. 47 API endpoints, 253 tests, 10k+ lines of Go.
+All 5 phases complete. 53 API endpoints, 322 tests, 12k+ lines of Go.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full roadmap.
 
 ## License

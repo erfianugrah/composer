@@ -79,13 +79,24 @@ RBAC is enforced at the handler level via `middleware.CheckRole()`. The WebSocke
 
 Mutating API requests from cookie-based sessions should include an `X-Requested-With` header (planned -- not yet enforced).
 
+## OAuth/OIDC Security
+
+When OAuth is enabled (via `COMPOSER_GITHUB_CLIENT_ID` or `COMPOSER_GOOGLE_CLIENT_ID`):
+
+- **Auto-creation**: Users who authenticate via OAuth are automatically created with the `viewer` role. If no users exist, the first OAuth user gets `admin`.
+- **Password**: OAuth users get a cryptographically random placeholder password (64 bytes from `crypto/rand`). They cannot login via email/password.
+- **Session**: OAuth sessions are persisted to PostgreSQL (same as password-based sessions). 24-hour TTL.
+- **Session secret**: Set `COMPOSER_SESSION_SECRET` for the goth OAuth flow state cookie. If not set, a random key is generated per startup (OAuth flow state won't survive restarts).
+
 ## Security Headers
 
-Planned for Phase 1 completion:
+All responses include:
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
-- `Content-Security-Policy`
-- `Strict-Transport-Security` (when behind TLS)
+- `X-XSS-Protection: 1; mode=block`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- `Strict-Transport-Security` (when behind TLS proxy)
 
 ## Reporting Vulnerabilities
 

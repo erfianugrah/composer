@@ -4,7 +4,7 @@ Composer exposes a REST API with auto-generated OpenAPI 3.1 spec.
 
 **Live spec:** `GET /openapi.json` or `GET /openapi.yaml`
 
-**Total endpoints:** 47
+**Total endpoints:** 53
 
 ## Authentication
 
@@ -138,6 +138,24 @@ Supported providers: GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), 
 | Path | Description |
 |------|-------------|
 | `/api/v1/ws/terminal/{id}` | Interactive container shell. `?shell=/bin/sh&cols=80&rows=24` |
+
+### Stack Templates (2 endpoints, public)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/templates` | List all built-in stack templates (no auth required) |
+| `GET` | `/api/v1/templates/{id}` | Get template compose content |
+
+Available templates: nginx, caddy, postgres, valkey, uptime-kuma, vaultwarden, gitea, portainer-agent, whoami, immich.
+
+### OAuth/OIDC (2 endpoints, public)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/auth/oauth/{provider}` | Start OAuth flow (redirects to provider) |
+| `GET` | `/api/v1/auth/oauth/{provider}/callback` | OAuth callback (creates user + session) |
+
+Supported providers: `github`, `google`. Configure via `COMPOSER_GITHUB_CLIENT_ID` / `COMPOSER_GOOGLE_CLIENT_ID` env vars.
 
 ### OpenAPI Spec
 

@@ -221,6 +221,7 @@ func main() {
 		GitService:      gitSvc,
 		PipelineService: pipelineSvc,
 		UserRepo:        userRepo,
+		SessionRepo:     sessionRepo,
 		WebhookRepo:     webhookRepo,
 		AuditRepo:       auditRepo,
 		EventBus:        bus,
