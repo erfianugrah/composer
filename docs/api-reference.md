@@ -4,7 +4,7 @@ Composer exposes a REST API with auto-generated OpenAPI 3.1 spec.
 
 **Live spec:** `GET /openapi.json` or `GET /openapi.yaml`
 
-**Total endpoints:** 53
+**Total endpoints:** 60+
 
 ## Authentication
 
@@ -71,6 +71,8 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `POST` | `/api/v1/stacks/{name}/down` | Operator+ | Stop (docker compose down) |
 | `POST` | `/api/v1/stacks/{name}/restart` | Operator+ | Restart all services |
 | `POST` | `/api/v1/stacks/{name}/pull` | Operator+ | Pull latest images |
+| `POST` | `/api/v1/stacks/{name}/validate` | Operator+ | Validate compose syntax |
+| `GET` | `/api/v1/stacks/{name}/diff` | Viewer+ | Show pending compose changes |
 
 ### Containers (5 endpoints)
 
@@ -89,6 +91,8 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `POST` | `/api/v1/stacks/{name}/sync` | Operator+ | Git pull + detect compose changes |
 | `GET` | `/api/v1/stacks/{name}/git/log` | Viewer+ | Commit history (filtered to compose file). `?limit=20` |
 | `GET` | `/api/v1/stacks/{name}/git/status` | Viewer+ | Sync status, branch, last commit |
+| `POST` | `/api/v1/stacks/{name}/rollback` | Operator+ | Checkout specific git commit |
+| `GET` | `/api/v1/stacks/{name}/git/diff` | Viewer+ | Working tree diff vs last commit |
 
 ### Pipelines (7 endpoints, operator+)
 
@@ -101,6 +105,8 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `POST` | `/api/v1/pipelines/{id}/run` | Trigger pipeline run (async) |
 | `GET` | `/api/v1/pipelines/{id}/runs` | List runs for pipeline |
 | `GET` | `/api/v1/pipelines/{id}/runs/{runId}` | Get run detail |
+| `PUT` | `/api/v1/pipelines/{id}` | Update pipeline |
+| `POST` | `/api/v1/pipelines/{id}/cancel` | Cancel running pipeline |
 
 ### Webhooks (4 endpoints, operator+)
 
@@ -110,6 +116,7 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `POST` | `/api/v1/webhooks` | Create webhook (returns secret + URL) |
 | `GET` | `/api/v1/webhooks/{id}` | Get webhook detail + secret |
 | `DELETE` | `/api/v1/webhooks/{id}` | Delete webhook |
+| `GET` | `/api/v1/webhooks/{id}/deliveries` | List webhook delivery history |
 
 ### Webhook Receiver (1 endpoint, public)
 
@@ -124,6 +131,8 @@ Supported providers: GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/api/v1/system/health` | None | Health check |
+| `GET` | `/api/v1/system/info` | Viewer+ | Docker engine info (version, containers, images) |
+| `GET` | `/api/v1/system/version` | Viewer+ | Composer version, Go version, uptime |
 
 ### SSE Streams (3 endpoints, viewer+)
 
@@ -132,6 +141,8 @@ Supported providers: GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), 
 | `GET` | `/api/v1/sse/events` | Global domain events (stack deployed/stopped, container state) |
 | `GET` | `/api/v1/sse/containers/{id}/logs` | Live container log stream. `?tail=100&since=5m` |
 | `GET` | `/api/v1/sse/containers/{id}/stats` | Live CPU/memory/network/disk stats (~1/sec) |
+| `GET` | `/api/v1/sse/stacks/{name}/logs` | Aggregated logs from all containers in a stack |
+| `GET` | `/api/v1/sse/pipelines/{id}/runs/{runId}` | Live pipeline run step output |
 
 ### WebSocket (1 endpoint, operator+)
 
@@ -157,12 +168,13 @@ Available templates: nginx, caddy, postgres, valkey, uptime-kuma, vaultwarden, g
 
 Supported providers: `github`, `google`. Configure via `COMPOSER_GITHUB_CLIENT_ID` / `COMPOSER_GOOGLE_CLIENT_ID` env vars.
 
-### OpenAPI Spec
+### OpenAPI Spec & Docs
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/openapi.json` | OpenAPI 3.1 spec (JSON) |
 | `GET` | `/openapi.yaml` | OpenAPI 3.1 spec (YAML) |
+| `GET` | `/docs` | Stoplight Elements interactive API docs |
 
 ## RBAC Roles
 
