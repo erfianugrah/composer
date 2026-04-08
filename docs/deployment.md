@@ -9,7 +9,24 @@ Composer ships as a self-contained Docker image. The image bundles all required 
 
 The host only needs a container runtime with a socket. Nothing else needs to be installed.
 
-## Docker Compose (recommended)
+## Single Container (SQLite -- simplest)
+
+No external database required. SQLite is embedded and stores data in `/opt/composer/composer.db`.
+
+```bash
+docker run -d --name composer -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v composer_data:/opt/composer \
+  -v composer_stacks:/opt/stacks \
+  --security-opt no-new-privileges:true \
+  ghcr.io/erfianugrah/composer:latest
+```
+
+Access at `http://localhost:8080`.
+
+## Docker Compose with PostgreSQL
+
+For production with PostgreSQL + Valkey caching:
 
 ```bash
 mkdir -p /opt/composer && cd /opt/composer
@@ -19,82 +36,55 @@ curl -O https://raw.githubusercontent.com/erfianugrah/composer/main/deploy/compo
 docker compose up -d
 ```
 
-Includes Composer + PostgreSQL. Access at `http://localhost:8080`.
+Includes Composer + PostgreSQL + Valkey. Access at `http://localhost:8080`.
 
 ## Unraid
 
-Unraid doesn't have Docker Compose by default, so you create each container
-individually via the Unraid Docker UI. You need **two containers**: PostgreSQL
-first, then Composer.
+### Single Container (recommended)
 
-### Step 1: Create PostgreSQL Container
+Only one container needed -- Composer with built-in SQLite:
 
 1. Go to **Docker > Add Container**
-2. **Template:** Click "Add Container" (or use the XML template from `deploy/unraid/composer-postgres.xml`)
-3. Set:
-   - **Name:** `composer-postgres`
-   - **Repository:** `postgres:17-alpine`
-   - **Network Type:** Bridge
-4. Add port mapping:
-   - Container Port: `5432`, Host Port: `5432`, Connection Type: TCP
-5. Add path:
-   - **Container Path:** `/var/lib/postgresql/data`
-   - **Host Path:** `/mnt/user/appdata/composer/postgres`
-6. Add variables:
-   - `POSTGRES_USER` = `composer`
-   - `POSTGRES_PASSWORD` = `changeme` (use a strong password!)
-   - `POSTGRES_DB` = `composer`
-7. Click **Apply**
-8. Wait for the container to start, then **note its IP address** (visible in the Docker tab)
-
-### Step 2: Create Composer Container
-
-1. Go to **Docker > Add Container**
-2. **Template:** Use the XML template from `deploy/unraid/composer.xml` if available
-3. Set:
+2. Set:
    - **Name:** `composer`
    - **Repository:** `ghcr.io/erfianugrah/composer:latest`
    - **Network Type:** Bridge
    - **Extra Parameters:** `--security-opt no-new-privileges:true`
-4. Add port mapping:
+3. Add port mapping:
    - Container Port: `8080`, Host Port: `8080`, Connection Type: TCP
-5. Add paths:
+4. Add paths:
    - `/var/run/docker.sock` -> `/var/run/docker.sock` (Mode: `rw`) -- Docker socket
+   - `/mnt/user/appdata/composer/data` -> `/opt/composer` (Mode: `rw`) -- Database + keys
    - `/mnt/user/appdata/composer/stacks` -> `/opt/stacks` (Mode: `rw`) -- Stack files
    - `/mnt/user/appdata/composer/ssh` -> `/home/composer/.ssh` (Mode: `rw`) -- SSH keys (optional)
-6. Add variables:
+5. Add variables:
    - `PUID` = `99`
    - `PGID` = `100`
-   - `COMPOSER_DB_URL` = `postgres://composer:changeme@172.17.0.X:5432/composer?sslmode=disable`
-     (replace `172.17.0.X` with the Postgres container's IP from Step 1,
-     and `changeme` with the password you set)
-   - `COMPOSER_LOG_LEVEL` = `info`
-   - `COMPOSER_COOKIE_SECURE` = `false` (set to `true` if behind Caddy/nginx with HTTPS)
+   - `COMPOSER_COOKIE_SECURE` = `false` (set to `true` if behind HTTPS reverse proxy)
+6. **Leave `COMPOSER_DB_URL` empty** -- uses SQLite automatically
 7. Click **Apply**
 8. Open `http://[UNRAID-IP]:8080` and create your admin account
 
-### Step 3: Create Valkey Container (cache)
+An XML template is available at `deploy/unraid/composer.xml` for use in Community Applications.
 
-1. Go to **Docker > Add Container**
-2. Set:
-   - **Name:** `composer-valkey`
-   - **Repository:** `valkey/valkey:8-alpine`
-   - **Network Type:** Bridge
-3. Add port mapping:
-   - Container Port: `6379`, Host Port: `6379`, Connection Type: TCP
-4. Add path:
-   - `/mnt/user/appdata/composer/valkey` -> `/data`
-5. Click **Apply**
-6. Note the container's IP address, then **edit the Composer container** and add:
-   - `COMPOSER_VALKEY_URL` = `valkey://[VALKEY-IP]:6379`
-7. Restart the Composer container
+### With PostgreSQL (optional)
+
+If you prefer PostgreSQL, create a Postgres container first, then set `COMPOSER_DB_URL`:
+
+1. Create a PostgreSQL container (`postgres:17-alpine`) with:
+   - `POSTGRES_USER` = `composer`, `POSTGRES_PASSWORD` = `changeme`, `POSTGRES_DB` = `composer`
+   - Volume: `/mnt/user/appdata/composer/postgres` -> `/var/lib/postgresql/data`
+2. Note the Postgres container's IP address
+3. In the Composer container, set:
+   - `COMPOSER_DB_URL` = `postgres://composer:changeme@172.17.0.X:5432/composer?sslmode=disable`
+
+### Valkey Cache (optional)
+
+For session caching, add a Valkey container and set `COMPOSER_VALKEY_URL` = `valkey://[VALKEY-IP]:6379`.
 
 ### XML Templates
 
-Pre-built Unraid XML templates are in `deploy/unraid/`:
-- `composer.xml` -- Composer container
-- `composer-postgres.xml` -- PostgreSQL for Composer
-
+A pre-built Unraid XML template is at `deploy/unraid/composer.xml`.
 Download and place in `/boot/config/plugins/dockerMan/templates-user/` on your Unraid server.
 
 ### Via Docker Compose (if Compose Manager plugin is installed)
@@ -109,23 +99,13 @@ services:
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/user/appdata/composer/data:/opt/composer
       - /mnt/user/appdata/composer/stacks:/opt/stacks
-      - /mnt/user/appdata/composer/ssh:/home/composer/.ssh
     environment:
       PUID: "99"
       PGID: "100"
-      COMPOSER_DB_URL: "postgres://composer:changeme@composer-postgres:5432/composer?sslmode=disable"
-    depends_on:
-      - composer-postgres
-
-  composer-postgres:
-    image: postgres:17-alpine
-    volumes:
-      - /mnt/user/appdata/composer/postgres:/var/lib/postgresql/data
-    environment:
-      POSTGRES_USER: composer
-      POSTGRES_PASSWORD: changeme
-      POSTGRES_DB: composer
+    # COMPOSER_DB_URL not set = SQLite (default)
+    restart: unless-stopped
 ```
 
 ## TrueNAS SCALE (24.10+)
@@ -142,7 +122,7 @@ TrueNAS SCALE 24.10 ("Electric Eel") uses Docker natively.
 6. Set environment variables:
    - `PUID` = `568` (apps user on TrueNAS)
    - `PGID` = `568`
-   - `COMPOSER_DB_URL` = your Postgres connection string
+   - Leave `COMPOSER_DB_URL` empty for SQLite, or set to a Postgres connection string
 
 ### Via Docker Compose (SSH)
 
@@ -174,7 +154,7 @@ composerd
 The bare binary requires:
 - `docker` CLI and `docker compose` plugin installed on the host
 - `git` installed if using git-backed stacks
-- PostgreSQL accessible
+- No database setup needed (uses SQLite by default in `$COMPOSER_DATA_DIR/composer.db`)
 
 ### With Podman
 
@@ -184,8 +164,9 @@ systemctl --user enable --now podman.socket
 
 # Composer auto-detects the Podman socket
 COMPOSER_PORT=8080 \
-COMPOSER_DB_URL="postgres://user:pass@localhost:5432/composer?sslmode=disable" \
+COMPOSER_LOG_FORMAT=console \
 composerd
+# Uses SQLite by default. Set COMPOSER_DB_URL for Postgres.
 ```
 
 Or run as a Podman container (same image, just use `podman` instead of `docker`):
@@ -195,18 +176,19 @@ podman run -d \
   --name composer \
   -p 8080:8080 \
   -v /run/podman/podman.sock:/var/run/docker.sock \
+  -v composer-data:/opt/composer \
   -v composer-stacks:/opt/stacks \
-  -e COMPOSER_DB_URL="postgres://user:pass@host:5432/composer?sslmode=disable" \
   -e PUID=$(id -u) \
   -e PGID=$(id -g) \
   ghcr.io/erfianugrah/composer:latest
+# Uses SQLite by default. Set COMPOSER_DB_URL for Postgres.
 ```
 
 ## Networking Notes
 
 Composer needs to reach:
 1. **Docker socket** -- to manage containers and compose stacks
-2. **PostgreSQL** -- for persistent state (users, sessions, stack metadata)
+2. **Database** -- SQLite (local file, no network needed) or PostgreSQL (if configured)
 3. **Git remotes** (optional) -- for git-backed stacks (HTTPS or SSH)
 
 In Docker Compose, services communicate by name (`postgres:5432`). In standalone setups, use host networking or explicit IPs.

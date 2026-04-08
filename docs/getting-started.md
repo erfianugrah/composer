@@ -5,20 +5,54 @@
 - Docker (or Podman) with Docker Compose V2
 - A machine with the Docker socket accessible
 
-That's it. Composer bundles everything else (Go binary, docker CLI, git, compose plugin) inside its Docker image.
+That's it. Composer bundles everything else (Go binary, docker CLI, git, compose plugin, SQLite) inside its Docker image. No external database required.
+
+## Quick Start (Single Container)
+
+The simplest way to run Composer -- uses embedded SQLite, no external dependencies:
+
+```bash
+docker run -d \
+  --name composer \
+  -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v composer_data:/opt/composer \
+  -v composer_stacks:/opt/stacks \
+  ghcr.io/erfianugrah/composer:latest
+```
+
+Composer is now running at `http://localhost:8080` with SQLite storage.
 
 ## Install with Docker Compose
 
+For production with PostgreSQL + Valkey caching:
+
 ```bash
-# Download the compose file
 mkdir -p /opt/composer && cd /opt/composer
 curl -O https://raw.githubusercontent.com/erfianugrah/composer/main/deploy/compose.yaml
 
-# Start
+# Edit compose.yaml to set POSTGRES_PASSWORD
 docker compose up -d
 ```
 
-Composer is now running at `http://localhost:8080`.
+Or for a single-container setup (SQLite), create a `compose.yaml`:
+
+```yaml
+services:
+  composer:
+    image: ghcr.io/erfianugrah/composer:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - composer_data:/opt/composer
+      - composer_stacks:/opt/stacks
+    restart: unless-stopped
+
+volumes:
+  composer_data:
+  composer_stacks:
+```
 
 ## First Run: Bootstrap
 

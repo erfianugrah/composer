@@ -22,16 +22,18 @@ Think Dockge's simplicity meets Portainer's power -- built from scratch with Go,
 ## Quick Start
 
 ```bash
-# Clone
-git clone https://github.com/erfianugrah/composer
-cd composer
-
-# Start with Docker Compose (includes Postgres + Valkey)
-docker compose -f deploy/compose.yaml up -d
+# Single container with SQLite (no external DB needed)
+docker run -d --name composer -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v composer_data:/opt/composer \
+  -v composer_stacks:/opt/stacks \
+  ghcr.io/erfianugrah/composer:latest
 
 # Open http://localhost:8080
 # First visit: create admin account via bootstrap
 ```
+
+Or with Docker Compose + PostgreSQL + Valkey: `docker compose -f deploy/compose.yaml up -d`
 
 See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 
@@ -55,7 +57,7 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 |---------|----------|
 | Go 1.26 | Astro 6 |
 | Huma v2 (OpenAPI 3.1) | React 19 |
-| PostgreSQL (pgx) | Shadcn/ui + Tailwind CSS 4 |
+| SQLite + PostgreSQL (database/sql) | Shadcn/ui + Tailwind CSS 4 |
 | go-git (GitOps) | xterm.js (terminal) |
 | Valkey (cache) | CodeMirror 6 (editor) |
 | zap (logging) | Playwright (tests) |
