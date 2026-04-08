@@ -27,9 +27,10 @@ type Server struct {
 // Deps holds all dependencies needed by the API server.
 type Deps struct {
 	AuthService  *app.AuthService
-	StackService *app.StackService // nil if Docker not available
-	EventBus     event.Bus         // nil disables SSE events endpoint
-	DockerClient *docker.Client    // nil disables SSE logs endpoint
+	StackService *app.StackService   // nil if Docker not available
+	UserRepo     auth.UserRepository // nil disables user management
+	EventBus     event.Bus           // nil disables SSE events endpoint
+	DockerClient *docker.Client      // nil disables container/SSE/terminal endpoints
 }
 
 // NewServer creates a new API server with all routes registered.
@@ -40,6 +41,8 @@ func NewServer(deps Deps) *Server {
 	router.Use(chimiddleware.RequestID)
 	router.Use(chimiddleware.RealIP)
 	router.Use(chimiddleware.Recoverer)
+	router.Use(authmw.SecurityHeaders)
+	router.Use(authmw.RateLimit(authmw.GeneralRateLimit()))
 
 	// Auth middleware
 	router.Use(authmw.Auth(deps.AuthService))
@@ -76,9 +79,22 @@ func NewServer(deps Deps) *Server {
 	// Auth handlers (always registered)
 	handler.NewAuthHandler(deps.AuthService).Register(api)
 
+	// User management (admin only)
+	if deps.UserRepo != nil {
+		handler.NewUserHandler(deps.UserRepo).Register(api)
+	}
+
+	// API key management (operator+)
+	handler.NewKeyHandler(deps.AuthService).Register(api)
+
 	// Stack handlers (requires Docker)
 	if deps.StackService != nil {
 		handler.NewStackHandler(deps.StackService).Register(api)
+	}
+
+	// Container handlers (requires Docker)
+	if deps.DockerClient != nil {
+		handler.NewContainerHandler(deps.DockerClient).Register(api)
 	}
 
 	// SSE handlers (requires event bus and/or Docker)

@@ -127,6 +127,14 @@ func withAuthContext(ctx context.Context, userID string, role auth.Role) context
 
 func shouldBypass(r *http.Request) bool {
 	path := r.URL.Path
+
+	// Only /api/ paths require authentication.
+	// Everything else (frontend pages, static assets, OpenAPI) is public.
+	if !strings.HasPrefix(path, "/api/") {
+		return true
+	}
+
+	// Specific /api/ paths that are public
 	if bypassPaths[path] {
 		return true
 	}

@@ -1,0 +1,108 @@
+package handler
+
+import (
+	"context"
+	"net/http"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/erfianugrah/composer/internal/api/dto"
+	authmw "github.com/erfianugrah/composer/internal/api/middleware"
+	"github.com/erfianugrah/composer/internal/app"
+	"github.com/erfianugrah/composer/internal/domain/auth"
+)
+
+// KeyHandler registers API key management endpoints.
+type KeyHandler struct {
+	auth *app.AuthService
+}
+
+func NewKeyHandler(auth *app.AuthService) *KeyHandler {
+	return &KeyHandler{auth: auth}
+}
+
+func (h *KeyHandler) Register(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "listKeys", Method: http.MethodGet,
+		Path: "/api/v1/keys", Summary: "List API keys (redacted)", Tags: []string{"keys"},
+	}, h.List)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "createKey", Method: http.MethodPost,
+		Path: "/api/v1/keys", Summary: "Create API key (plaintext shown once)", Tags: []string{"keys"},
+	}, h.Create)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "deleteKey", Method: http.MethodDelete,
+		Path: "/api/v1/keys/{id}", Summary: "Revoke API key", Tags: []string{"keys"},
+	}, h.Delete)
+}
+
+func (h *KeyHandler) List(ctx context.Context, input *struct{}) (*dto.KeyListOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	keys, err := h.auth.ListAPIKeys(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	out := &dto.KeyListOutput{}
+	out.Body.Keys = make([]dto.KeySummary, 0, len(keys))
+	for _, k := range keys {
+		out.Body.Keys = append(out.Body.Keys, dto.KeySummary{
+			ID: k.ID, Name: k.Name, Role: string(k.Role),
+			LastUsedAt: k.LastUsedAt, ExpiresAt: k.ExpiresAt, CreatedAt: k.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+func (h *KeyHandler) Create(ctx context.Context, input *dto.CreateKeyInput) (*dto.KeyCreatedOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	role, err := auth.ParseRole(input.Body.Role)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+
+	callerID := authmw.UserIDFromContext(ctx)
+
+	var expiresAt *time.Time
+	if input.Body.ExpiresAt != nil {
+		t, err := time.Parse(time.RFC3339, *input.Body.ExpiresAt)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("invalid expires_at: must be RFC3339 format")
+		}
+		expiresAt = &t
+	}
+
+	result, err := h.auth.CreateAPIKey(ctx, input.Body.Name, role, callerID, expiresAt)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	out := &dto.KeyCreatedOutput{}
+	out.Body.ID = result.ID
+	out.Body.Name = result.Name
+	out.Body.Role = string(result.Role)
+	out.Body.PlaintextKey = result.PlaintextKey
+	out.Body.ExpiresAt = result.ExpiresAt
+	out.Body.CreatedAt = result.CreatedAt
+	return out, nil
+}
+
+func (h *KeyHandler) Delete(ctx context.Context, input *dto.KeyIDInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	if err := h.auth.DeleteAPIKey(ctx, input.ID); err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return nil, nil
+}

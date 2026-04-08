@@ -1,0 +1,125 @@
+package middleware
+
+import (
+	"net/http"
+	"sync"
+	"time"
+)
+
+// SecurityHeaders adds standard security headers to all responses.
+func SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+
+		// HSTS only if request came over TLS or via a trusted proxy
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RateLimiter implements per-IP token bucket rate limiting.
+type RateLimiter struct {
+	mu      sync.Mutex
+	buckets map[string]*bucket
+	rate    float64 // tokens per second
+	burst   int     // max tokens
+}
+
+type bucket struct {
+	tokens   float64
+	lastTime time.Time
+}
+
+// NewRateLimiter creates a rate limiter. rate is requests/second, burst is max burst.
+func NewRateLimiter(rate float64, burst int) *RateLimiter {
+	rl := &RateLimiter{
+		buckets: make(map[string]*bucket),
+		rate:    rate,
+		burst:   burst,
+	}
+
+	// Cleanup old buckets every 60 seconds
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			rl.cleanup()
+		}
+	}()
+
+	return rl
+}
+
+// Allow returns true if the request from this IP is allowed.
+func (rl *RateLimiter) Allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	b, ok := rl.buckets[ip]
+	if !ok {
+		rl.buckets[ip] = &bucket{tokens: float64(rl.burst) - 1, lastTime: now}
+		return true
+	}
+
+	// Refill tokens
+	elapsed := now.Sub(b.lastTime).Seconds()
+	b.tokens += elapsed * rl.rate
+	if b.tokens > float64(rl.burst) {
+		b.tokens = float64(rl.burst)
+	}
+	b.lastTime = now
+
+	if b.tokens >= 1 {
+		b.tokens--
+		return true
+	}
+	return false
+}
+
+func (rl *RateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	cutoff := time.Now().Add(-5 * time.Minute)
+	for ip, b := range rl.buckets {
+		if b.lastTime.Before(cutoff) {
+			delete(rl.buckets, ip)
+		}
+	}
+}
+
+// RateLimit returns middleware that limits requests per IP.
+func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := r.RemoteAddr
+			if fwd := r.Header.Get("X-Real-IP"); fwd != "" {
+				ip = fwd
+			}
+
+			if !limiter.Allow(ip) {
+				http.Error(w, `{"status":429,"title":"Too Many Requests","detail":"Rate limit exceeded"}`, http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// LoginRateLimit returns a stricter rate limiter for login endpoints (5 req/min).
+func LoginRateLimit() *RateLimiter {
+	return NewRateLimiter(5.0/60.0, 5) // 5 per minute, burst of 5
+}
+
+// GeneralRateLimit returns a general rate limiter (60 req/sec).
+func GeneralRateLimit() *RateLimiter {
+	return NewRateLimiter(60, 120) // 60/sec, burst 120
+}

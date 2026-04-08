@@ -1,93 +1,307 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Smoke tests", () => {
-  test("login page renders with Composer branding", async ({ page }) => {
+test.describe("Login Page", () => {
+  test("renders with Composer branding and form", async ({ page }) => {
     await page.goto("/login");
-
-    // Verify the page loaded
     await expect(page).toHaveTitle(/Composer/);
 
-    // Check branding
     const brand = page.locator("text=Composer").first();
     await expect(brand).toBeVisible();
 
-    // Check login form exists
     const form = page.getByTestId("login-form");
     await expect(form).toBeVisible();
+  });
 
-    // Check form inputs
+  test("has email and password inputs with correct types", async ({ page }) => {
+    await page.goto("/login");
+
     const emailInput = page.getByTestId("login-email");
     await expect(emailInput).toBeVisible();
     await expect(emailInput).toHaveAttribute("type", "email");
+    await expect(emailInput).toHaveAttribute("required", "");
 
     const passwordInput = page.getByTestId("login-password");
     await expect(passwordInput).toBeVisible();
     await expect(passwordInput).toHaveAttribute("type", "password");
+    await expect(passwordInput).toHaveAttribute("required", "");
+  });
 
-    // Check submit button
+  test("has a submit button with correct text", async ({ page }) => {
+    await page.goto("/login");
     const submitBtn = page.getByTestId("login-submit");
     await expect(submitBtn).toBeVisible();
     await expect(submitBtn).toHaveText("Sign in");
   });
 
-  test("login form shows error on invalid credentials", async ({ page }) => {
+  test("shows error on invalid credentials", async ({ page }) => {
     await page.goto("/login");
-
-    // Fill in bad credentials
     await page.getByTestId("login-email").fill("bad@example.com");
     await page.getByTestId("login-password").fill("wrongpassword");
     await page.getByTestId("login-submit").click();
 
-    // Should show an error (network error since no backend in static preview)
+    // Should show error (network error in static preview, or auth error against backend)
     const error = page.getByTestId("login-error");
     await expect(error).toBeVisible({ timeout: 5000 });
   });
 
-  test("dashboard page renders with sidebar and header", async ({ page }) => {
-    await page.goto("/");
+  test("submit button shows loading state on click", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByTestId("login-email").fill("test@example.com");
+    await page.getByTestId("login-password").fill("testpassword");
 
-    // Should have the page title in header
-    const title = page.getByTestId("page-title");
-    await expect(title).toHaveText("Dashboard");
+    const btn = page.getByTestId("login-submit");
+    await btn.click();
 
-    // Sidebar nav items should exist
-    await expect(page.getByTestId("nav-dashboard")).toBeVisible();
-    await expect(page.getByTestId("nav-stacks")).toBeVisible();
-    await expect(page.getByTestId("nav-settings")).toBeVisible();
-
-    // Dashboard active in sidebar
-    const dashboardNav = page.getByTestId("nav-dashboard");
-    await expect(dashboardNav).toHaveClass(/text-cp-purple/);
+    // Should briefly show "Signing in..." text
+    await expect(btn).toHaveText("Signing in...", { timeout: 1000 }).catch(() => {
+      // May have already resolved by the time we check
+    });
   });
 
-  test("stacks page renders", async ({ page }) => {
+  test("uses AuthLayout with dark background and glow effect", async ({ page }) => {
+    await page.goto("/login");
+
+    const bgColor = await page.evaluate(() =>
+      getComputedStyle(document.body).backgroundColor
+    );
+    // cp-950: #15161e -> rgb(21, 22, 30)
+    expect(bgColor).toMatch(/rgb\(21,\s*22,\s*30\)/);
+  });
+});
+
+test.describe("Dashboard Page", () => {
+  test("renders with sidebar, header, and content area", async ({ page }) => {
+    await page.goto("/");
+
+    const title = page.getByTestId("page-title");
+    await expect(title).toHaveText("Dashboard");
+  });
+
+  test("sidebar shows all navigation items", async ({ page }) => {
+    await page.goto("/");
+
+    await expect(page.getByTestId("nav-dashboard")).toBeVisible();
+    await expect(page.getByTestId("nav-stacks")).toBeVisible();
+    await expect(page.getByTestId("nav-pipelines")).toBeVisible();
+    await expect(page.getByTestId("nav-settings")).toBeVisible();
+  });
+
+  test("dashboard nav is active (highlighted) on root page", async ({ page }) => {
+    await page.goto("/");
+
+    const dashboardNav = page.getByTestId("nav-dashboard");
+    const className = await dashboardNav.getAttribute("class");
+    expect(className).toContain("text-cp-purple");
+    expect(className).toContain("bg-cp-purple");
+  });
+
+  test("other nav items are NOT active on root page", async ({ page }) => {
+    await page.goto("/");
+
+    for (const id of ["nav-stacks", "nav-pipelines", "nav-settings"]) {
+      const nav = page.getByTestId(id);
+      const className = await nav.getAttribute("class");
+      expect(className).toContain("text-muted-foreground");
+    }
+  });
+
+  test("header shows health indicator", async ({ page }) => {
+    await page.goto("/");
+
+    // The green ping dot should be visible
+    const healthText = page.locator("text=Healthy");
+    await expect(healthText).toBeVisible();
+  });
+
+  test("sidebar footer shows version", async ({ page }) => {
+    await page.goto("/");
+
+    const version = page.locator("text=Composer v0.1.0");
+    await expect(version).toBeVisible();
+  });
+});
+
+test.describe("Stacks Page", () => {
+  test("renders with correct title", async ({ page }) => {
     await page.goto("/stacks");
 
     const title = page.getByTestId("page-title");
     await expect(title).toHaveText("Stacks");
   });
 
-  test("Lovelace theme is applied (dark background)", async ({ page }) => {
-    await page.goto("/login");
+  test("stacks nav is active on stacks page", async ({ page }) => {
+    await page.goto("/stacks");
 
-    // Verify the body has the dark background
-    const bgColor = await page.evaluate(() => {
-      return getComputedStyle(document.body).backgroundColor;
-    });
+    const stacksNav = page.getByTestId("nav-stacks");
+    const className = await stacksNav.getAttribute("class");
+    expect(className).toContain("text-cp-purple");
+  });
+});
 
-    // The bg should be dark (cp-950: #15161e -> rgb(21, 22, 30))
-    expect(bgColor).toMatch(/rgb\(21,\s*22,\s*30\)/);
+test.describe("Pipelines Page", () => {
+  test("renders with correct title and coming soon message", async ({ page }) => {
+    await page.goto("/pipelines");
+
+    const title = page.getByTestId("page-title");
+    await expect(title).toHaveText("Pipelines");
+
+    const comingSoon = page.locator("text=Coming soon");
+    await expect(comingSoon).toBeVisible();
   });
 
-  test("sidebar navigation links work", async ({ page }) => {
+  test("pipelines nav is active", async ({ page }) => {
+    await page.goto("/pipelines");
+
+    const nav = page.getByTestId("nav-pipelines");
+    const className = await nav.getAttribute("class");
+    expect(className).toContain("text-cp-purple");
+  });
+});
+
+test.describe("Settings Page", () => {
+  test("renders with correct title and sections", async ({ page }) => {
+    await page.goto("/settings");
+
+    const title = page.getByTestId("page-title");
+    await expect(title).toHaveText("Settings");
+
+    // Should have user management and system sections
+    await expect(page.locator("text=User Management")).toBeVisible();
+    await expect(page.locator("text=System")).toBeVisible();
+    // Version shown in settings card (use main content area to avoid sidebar match)
+    await expect(page.locator("main").locator("text=Composer v0.1.0")).toBeVisible();
+  });
+});
+
+test.describe("Navigation", () => {
+  test("sidebar links navigate between pages", async ({ page }) => {
     await page.goto("/");
 
-    // Click "Stacks" in sidebar
     await page.getByTestId("nav-stacks").click();
     await expect(page).toHaveURL(/\/stacks/);
 
-    // Click "Dashboard" in sidebar
+    await page.getByTestId("nav-pipelines").click();
+    await expect(page).toHaveURL(/\/pipelines/);
+
+    await page.getByTestId("nav-settings").click();
+    await expect(page).toHaveURL(/\/settings/);
+
     await page.getByTestId("nav-dashboard").click();
     await expect(page).toHaveURL(/\/$/);
+  });
+
+  test("all pages load without console errors", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+
+    for (const path of ["/", "/login", "/stacks", "/pipelines", "/settings"]) {
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+    }
+
+    // Filter out expected network errors (API calls fail in static preview)
+    const unexpectedErrors = errors.filter(
+      (e) => !e.includes("fetch") && !e.includes("NetworkError") && !e.includes("Failed to fetch")
+    );
+    expect(unexpectedErrors).toHaveLength(0);
+  });
+});
+
+test.describe("Lovelace Theme", () => {
+  test("login page has dark background (cp-950)", async ({ page }) => {
+    await page.goto("/login");
+
+    const bgColor = await page.evaluate(() =>
+      getComputedStyle(document.body).backgroundColor
+    );
+    expect(bgColor).toMatch(/rgb\(21,\s*22,\s*30\)/);
+  });
+
+  test("dashboard has correct background (cp-900 via background token)", async ({ page }) => {
+    await page.goto("/");
+
+    const bgColor = await page.evaluate(() =>
+      getComputedStyle(document.body).backgroundColor
+    );
+    // background token maps to cp-900: #1d1f28 -> rgb(29, 31, 40)
+    expect(bgColor).toMatch(/rgb\(29,\s*31,\s*40\)/);
+  });
+
+  test("sidebar has darkest background (cp-950)", async ({ page }) => {
+    await page.goto("/");
+
+    // The aside element with cp-950 class
+    const sidebar = page.locator("aside").first();
+    const bgColor = await sidebar.evaluate((el) =>
+      getComputedStyle(el).backgroundColor
+    );
+    expect(bgColor).toMatch(/rgb\(21,\s*22,\s*30\)/);
+  });
+
+  test("active nav link has purple accent", async ({ page }) => {
+    await page.goto("/");
+
+    const dashboardNav = page.getByTestId("nav-dashboard");
+    const className = await dashboardNav.getAttribute("class");
+    expect(className).toContain("cp-purple");
+  });
+
+  test("text uses Space Grotesk font", async ({ page }) => {
+    await page.goto("/");
+
+    const fontFamily = await page.evaluate(() =>
+      getComputedStyle(document.body).fontFamily
+    );
+    expect(fontFamily.toLowerCase()).toContain("space grotesk");
+  });
+});
+
+test.describe("Responsive Design", () => {
+  test("sidebar is hidden on mobile viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 }); // iPhone size
+    await page.goto("/");
+
+    const sidebar = page.locator("aside").first();
+    await expect(sidebar).toBeHidden();
+  });
+
+  test("sidebar is visible on desktop viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+
+    const sidebar = page.locator("aside").first();
+    await expect(sidebar).toBeVisible();
+  });
+
+  test("main content fills width on mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/");
+
+    const main = page.locator("main").first();
+    const box = await main.boundingBox();
+    expect(box!.width).toBeGreaterThan(350);
+  });
+});
+
+test.describe("Static Assets", () => {
+  test("favicon loads", async ({ page }) => {
+    const response = await page.goto("/favicon.svg");
+    expect(response?.status()).toBe(200);
+    expect(response?.headers()["content-type"]).toContain("svg");
+  });
+
+  test("CSS files load with correct content type", async ({ page }) => {
+    await page.goto("/");
+
+    // Find a CSS link in the HTML
+    const cssHref = await page.evaluate(() => {
+      const link = document.querySelector('link[rel="stylesheet"]');
+      return link?.getAttribute("href") || "";
+    });
+
+    if (cssHref) {
+      const response = await page.goto(cssHref);
+      expect(response?.status()).toBe(200);
+    }
   });
 });

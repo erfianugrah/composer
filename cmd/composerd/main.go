@@ -12,6 +12,7 @@ import (
 
 	"go.uber.org/zap"
 
+	composer "github.com/erfianugrah/composer"
 	"github.com/erfianugrah/composer/internal/api"
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/infra/docker"
@@ -140,6 +141,14 @@ func main() {
 		logger.Fatal("failed to create stacks directory", zap.Error(err))
 	}
 
+	// --- Docker Event Listener (bridges Docker events to domain events) ---
+	if dockerClient != nil {
+		eventListener := docker.NewEventListener(dockerClient, bus)
+		eventListener.Start(ctx)
+		defer eventListener.Stop()
+		logger.Info("docker event listener started")
+	}
+
 	// --- Application Services ---
 	authSvc := app.NewAuthService(userRepo, sessionRepo, apiKeyRepo)
 	if dockerClient != nil {
@@ -150,9 +159,13 @@ func main() {
 	srv := api.NewServer(api.Deps{
 		AuthService:  authSvc,
 		StackService: stackSvc,
+		UserRepo:     userRepo,
 		EventBus:     bus,
 		DockerClient: dockerClient,
 	})
+
+	// --- Embedded frontend (serves web/dist if built) ---
+	api.RegisterStaticFiles(srv.Router, composer.FrontendDist)
 
 	// --- HTTP Server ---
 	httpSrv := &http.Server{
