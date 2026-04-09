@@ -13,6 +13,7 @@ const StackConsole = lazy(() => import("./StackConsole").then(m => ({ default: m
 const DiffViewer = lazy(() => import("./DiffViewer").then(m => ({ default: m.DiffViewer })));
 import { GitStatus } from "./GitStatus";
 import { EnvEditor } from "./EnvEditor";
+import { highlightDockerfile } from "@/lib/dockerfile-highlight";
 
 interface StackFile {
   name: string;
@@ -324,7 +325,10 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 <CardTitle className="text-sm font-data">{df.name}</CardTitle>
               </CardHeader>
               <CardContent>
-                <pre className="text-xs font-data bg-cp-950 border border-border rounded p-3 max-h-96 overflow-auto whitespace-pre-wrap">{df.content}</pre>
+                <pre
+                  className="text-xs font-data bg-cp-950 border border-border rounded p-3 max-h-96 overflow-auto whitespace-pre-wrap"
+                  dangerouslySetInnerHTML={{ __html: highlightDockerfile(df.content) }}
+                />
               </CardContent>
             </Card>
           ))}

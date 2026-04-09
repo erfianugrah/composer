@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api/errors";
 
 interface DockerEvent {
   type: string;
@@ -14,6 +15,21 @@ export function EventStream() {
   const [paused, setPaused] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Fetch recent Docker events on mount to pre-populate
+  useEffect(() => {
+    apiFetch<{ events: { type: string; action: string; actor: string; id: string; time: string }[] }>(
+      "/api/v1/docker/events?since=5m"
+    ).then(({ data }) => {
+      if (data?.events?.length) {
+        setEvents(data.events.map((e) => ({
+          type: `${e.type}.${e.action}`,
+          data: { actor: e.actor, id: e.id },
+          ts: e.time,
+        })));
+      }
+    });
+  }, []);
 
   useEffect(() => {
     let es: EventSource;
@@ -71,15 +87,15 @@ export function EventStream() {
     setPaused(scrollHeight - scrollTop - clientHeight > 50);
   }
 
-  const typeColor: Record<string, string> = {
-    "stack.deployed": "bg-cp-green/20 text-cp-green border-cp-green/30",
-    "stack.stopped": "bg-cp-red/20 text-cp-red border-cp-red/30",
-    "stack.updated": "bg-cp-blue/20 text-cp-blue border-cp-blue/30",
-    "stack.deleted": "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
-    "stack.error": "bg-cp-red/20 text-cp-red border-cp-red/30",
-    "container.state": "bg-cp-cyan/20 text-cp-cyan border-cp-cyan/30",
-    "container.health": "bg-cp-purple/20 text-cp-purple border-cp-purple/30",
-  };
+  function getEventColor(type: string): string {
+    if (type.includes("start") || type.includes("deploy")) return "bg-cp-green/20 text-cp-green border-cp-green/30";
+    if (type.includes("stop") || type.includes("die") || type.includes("kill") || type.includes("delete") || type.includes("destroy")) return "bg-cp-red/20 text-cp-red border-cp-red/30";
+    if (type.includes("create") || type.includes("update") || type.includes("pull")) return "bg-cp-blue/20 text-cp-blue border-cp-blue/30";
+    if (type.includes("error") || type.includes("fail")) return "bg-cp-red/20 text-cp-red border-cp-red/30";
+    if (type.includes("health")) return "bg-cp-purple/20 text-cp-purple border-cp-purple/30";
+    if (type.includes("connect") || type.includes("network")) return "bg-cp-cyan/20 text-cp-cyan border-cp-cyan/30";
+    return "bg-cp-600/20 text-muted-foreground border-cp-600/30";
+  }
 
   return (
     <div className="space-y-2">
@@ -100,7 +116,7 @@ export function EventStream() {
       >
         {events.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground">
-            {connected ? "Waiting for Docker events..." : "Not connected"}
+            {connected ? "No recent events. Deploy or stop a stack to see events here." : "Not connected"}
           </div>
         ) : (
           <div className="p-3 space-y-1">
@@ -109,7 +125,7 @@ export function EventStream() {
                 <span className="text-muted-foreground font-data select-none w-16 shrink-0 tabular-nums">
                   {new Date(evt.ts).toLocaleTimeString()}
                 </span>
-                <Badge className={`shrink-0 ${typeColor[evt.type] || "bg-cp-600/20 text-muted-foreground border-cp-600/30"}`}>
+                <Badge className={`shrink-0 ${getEventColor(evt.type)}`}>
                   {evt.type}
                 </Badge>
                 <span className="text-muted-foreground font-data break-all text-[10px] min-w-0">

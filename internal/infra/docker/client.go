@@ -163,6 +163,13 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Message, <-chan erro
 	return c.cli.Events(ctx, events.ListOptions{})
 }
 
+// EventsSince returns Docker events since the given Unix timestamp, plus future events.
+func (c *Client) EventsSince(ctx context.Context, sinceUnix int64) (<-chan events.Message, <-chan error) {
+	return c.cli.Events(ctx, events.ListOptions{
+		Since: fmt.Sprintf("%d", sinceUnix),
+	})
+}
+
 // --- Helpers ---
 
 func detectSocket() string {

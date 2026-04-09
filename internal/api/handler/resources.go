@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -78,6 +79,11 @@ func (h *ResourceHandler) Register(api huma.API) {
 		OperationID: "removeImage", Method: http.MethodDelete,
 		Path: "/api/v1/images/{id}", Summary: "Remove a Docker image", Tags: []string{"images"},
 	}, h.RemoveImage)
+	huma.Register(api, huma.Operation{
+		OperationID: "recentDockerEvents", Method: http.MethodGet,
+		Path: "/api/v1/docker/events", Summary: "Recent Docker events (last 5 minutes)", Tags: []string{"docker"},
+	}, h.RecentEvents)
+
 	huma.Register(api, huma.Operation{
 		OperationID: "pruneImages", Method: http.MethodPost,
 		Path: "/api/v1/images/prune", Summary: "Remove unused Docker images", Tags: []string{"images"},
@@ -320,4 +326,78 @@ func formatBytes(b uint64) string {
 		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
 	}
 	return fmt.Sprintf("%.2f GB", float64(b)/(1024*1024*1024))
+}
+
+// --- Recent Docker Events ---
+
+type DockerEventItem struct {
+	Type   string `json:"type"`   // container, network, volume, image
+	Action string `json:"action"` // create, start, stop, die, destroy, etc.
+	Actor  string `json:"actor"`  // container name, image ref, network name
+	ID     string `json:"id"`     // short ID
+	Time   string `json:"time"`   // ISO timestamp
+}
+
+type RecentEventsInput struct {
+	Since string `query:"since" default:"5m" doc:"How far back to look (e.g. 5m, 1h, 30m)"`
+}
+
+type RecentEventsOutput struct {
+	Body struct {
+		Events []DockerEventItem `json:"events"`
+	}
+}
+
+func (h *ResourceHandler) RecentEvents(ctx context.Context, input *RecentEventsInput) (*RecentEventsOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return nil, err
+	}
+
+	// Parse since duration
+	dur, err := time.ParseDuration(input.Since)
+	if err != nil {
+		dur = 5 * time.Minute
+	}
+	sinceUnix := time.Now().Add(-dur).Unix()
+
+	// Get events with a short timeout context (don't block forever)
+	evtCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	msgCh, errCh := h.docker.EventsSince(evtCtx, sinceUnix)
+
+	out := &RecentEventsOutput{}
+	out.Body.Events = []DockerEventItem{}
+
+	for {
+		select {
+		case msg, ok := <-msgCh:
+			if !ok {
+				return out, nil
+			}
+			actor := msg.Actor.Attributes["name"]
+			if actor == "" {
+				actor = msg.Actor.Attributes["image"]
+			}
+			id := msg.Actor.ID
+			if len(id) > 12 {
+				id = id[:12]
+			}
+			out.Body.Events = append(out.Body.Events, DockerEventItem{
+				Type:   string(msg.Type),
+				Action: string(msg.Action),
+				Actor:  actor,
+				ID:     id,
+				Time:   time.Unix(msg.Time, msg.TimeNano).Format(time.RFC3339),
+			})
+			// Cap at 100 events
+			if len(out.Body.Events) >= 100 {
+				return out, nil
+			}
+		case <-errCh:
+			return out, nil
+		case <-evtCtx.Done():
+			return out, nil
+		}
+	}
 }
