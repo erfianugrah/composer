@@ -92,6 +92,14 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string) 
 		return nil, fmt.Errorf("writing compose file: %w", err)
 	}
 
+	// Validate compose syntax before persisting to DB
+	if s.compose != nil {
+		if _, err := s.compose.Validate(ctx, stackPath); err != nil {
+			os.RemoveAll(stackPath)
+			return nil, fmt.Errorf("invalid compose file: %w", err)
+		}
+	}
+
 	if err := s.stacks.Create(ctx, st); err != nil {
 		os.RemoveAll(stackPath)
 		return nil, fmt.Errorf("persisting stack: %w", err)

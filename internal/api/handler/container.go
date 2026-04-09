@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -95,9 +96,26 @@ func (h *ContainerHandler) Get(ctx context.Context, input *dto.ContainerIDInput)
 	return out, nil
 }
 
+// validateContainerScope checks that a container is managed by Docker Compose
+// (has the com.docker.compose.project label). Prevents operating on infrastructure
+// containers like Composer itself, Postgres, Valkey, etc.
+func (h *ContainerHandler) validateScope(ctx context.Context, id string) error {
+	c, err := h.docker.InspectContainer(ctx, id)
+	if err != nil {
+		return fmt.Errorf("container not found")
+	}
+	if c.ServiceName == "" {
+		return fmt.Errorf("container is not part of a Docker Compose stack")
+	}
+	return nil
+}
+
 func (h *ContainerHandler) Start(ctx context.Context, input *dto.ContainerIDInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
+	}
+	if err := h.validateScope(ctx, input.ID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.StartContainer(ctx, input.ID); err != nil {
 		return nil, internalError()
@@ -109,6 +127,9 @@ func (h *ContainerHandler) Stop(ctx context.Context, input *dto.ContainerIDInput
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
+	if err := h.validateScope(ctx, input.ID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
 	if err := h.docker.StopContainer(ctx, input.ID); err != nil {
 		return nil, internalError()
 	}
@@ -118,6 +139,9 @@ func (h *ContainerHandler) Stop(ctx context.Context, input *dto.ContainerIDInput
 func (h *ContainerHandler) Restart(ctx context.Context, input *dto.ContainerIDInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
+	}
+	if err := h.validateScope(ctx, input.ID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.RestartContainer(ctx, input.ID); err != nil {
 		return nil, internalError()

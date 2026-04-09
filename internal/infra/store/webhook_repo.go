@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/erfianugrah/composer/internal/infra/crypto"
 )
 
 // Webhook represents a stored webhook configuration.
@@ -28,10 +30,12 @@ func NewWebhookRepo(db *sql.DB) *WebhookRepo {
 }
 
 func (r *WebhookRepo) Create(ctx context.Context, w *Webhook) error {
+	// Encrypt the webhook secret before storage
+	encSecret, _ := crypto.Encrypt(w.Secret)
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO webhooks (id, stack_name, provider, secret, branch_filter, auto_redeploy, created_by)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		w.ID, w.StackName, w.Provider, w.Secret, w.BranchFilter, w.AutoRedeploy, w.CreatedBy,
+		w.ID, w.StackName, w.Provider, encSecret, w.BranchFilter, w.AutoRedeploy, w.CreatedBy,
 	)
 	return err
 }
@@ -48,6 +52,8 @@ func (r *WebhookRepo) GetByID(ctx context.Context, id string) (*Webhook, error) 
 	if err != nil {
 		return nil, fmt.Errorf("getting webhook: %w", err)
 	}
+	// Decrypt the secret (backwards compatible with unencrypted data)
+	w.Secret, _ = crypto.Decrypt(w.Secret)
 	return w, nil
 }
 
