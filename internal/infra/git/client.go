@@ -132,6 +132,9 @@ func (c *Client) Pull(stackDir, composePath string, creds *domstack.GitCredentia
 		remote, _ := repo.Remote("origin")
 		if remote != nil && len(remote.Config().URLs) > 0 && isSSHURL(remote.Config().URLs[0]) {
 			auth = buildSSHAuthFromAgent()
+			if auth == nil {
+				return false, "", fmt.Errorf("SSH repo requires SSH keys. Mount your keys to /home/composer/.ssh/ or switch to HTTPS URL with a token")
+			}
 		}
 	}
 	pullOpts := &git.PullOptions{
