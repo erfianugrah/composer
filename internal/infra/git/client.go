@@ -61,21 +61,47 @@ func buildAuth(creds *domstack.GitCredentials) transport.AuthMethod {
 	return nil
 }
 
-// buildSSHAuthFromAgent tries to use the SSH agent or default key files
-// for SSH URLs when no explicit credentials are provided.
-// Key files are transparently decrypted if they were encrypted at rest.
+// loadGlobalGitToken reads the global git token from COMPOSER_DATA_DIR/git-token.
+// Returns empty string if not configured.
+func loadGlobalGitToken() string {
+	dataDir := os.Getenv("COMPOSER_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "/opt/composer"
+	}
+	tokenPath := filepath.Join(dataDir, "git-token")
+	token, err := crypto.DecryptFile(tokenPath)
+	if err != nil || token == "" {
+		return ""
+	}
+	return strings.TrimSpace(token)
+}
+
+// buildSSHAuthFromAgent tries SSH key files in standard locations.
+// Scans all files in ~/.ssh/ and /home/composer/.ssh/ (not just id_ed25519/id_rsa).
+// Key files are transparently decrypted if encrypted at rest.
+// Skips .pub, known_hosts, config, and authorized_keys.
 func buildSSHAuthFromAgent() transport.AuthMethod {
-	// Try common SSH key paths
-	for _, keyPath := range []string{
-		filepath.Join(os.Getenv("HOME"), ".ssh", "id_ed25519"),
-		filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa"),
-		"/home/composer/.ssh/id_ed25519",
-		"/home/composer/.ssh/id_rsa",
+	for _, sshDir := range []string{
+		filepath.Join(os.Getenv("HOME"), ".ssh"),
+		"/home/composer/.ssh",
 	} {
-		if _, err := os.Stat(keyPath); err == nil {
-			// Try decrypting first (handles both encrypted and plaintext files)
+		entries, err := os.ReadDir(sshDir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			// Skip non-key files
+			if name == "known_hosts" || name == "config" || name == "authorized_keys" ||
+				strings.HasSuffix(name, ".pub") {
+				continue
+			}
+			keyPath := filepath.Join(sshDir, name)
 			keyContent, err := crypto.DecryptFile(keyPath)
-			if err != nil {
+			if err != nil || keyContent == "" {
 				continue
 			}
 			keys, err := ssh.NewPublicKeys("git", []byte(keyContent), "")
@@ -106,9 +132,13 @@ func isSSHURL(url string) bool {
 func (c *Client) Clone(repoURL, branch, targetDir string, creds *domstack.GitCredentials) error {
 	auth := buildAuth(creds)
 
-	// For SSH URLs without explicit credentials, try system SSH keys
-	if auth == nil && isSSHURL(repoURL) {
-		auth = buildSSHAuthFromAgent()
+	// Fallback chain when no per-stack credentials matched
+	if auth == nil {
+		if isSSHURL(repoURL) {
+			auth = buildSSHAuthFromAgent()
+		} else if token := loadGlobalGitToken(); token != "" {
+			auth = &http.BasicAuth{Username: "x-access-token", Password: token}
+		}
 	}
 
 	opts := &git.CloneOptions{
@@ -145,14 +175,19 @@ func (c *Client) Pull(stackDir, composePath string, creds *domstack.GitCredentia
 	}
 	oldSHA := oldHead.Hash().String()
 
-	// Pull with credentials (SSH fallback for git@ URLs)
+	// Pull with credentials -- fallback chain: per-stack → global SSH → global token
 	auth := buildAuth(creds)
 	if auth == nil {
 		remote, _ := repo.Remote("origin")
-		if remote != nil && len(remote.Config().URLs) > 0 && isSSHURL(remote.Config().URLs[0]) {
-			auth = buildSSHAuthFromAgent()
-			if auth == nil {
-				return false, "", fmt.Errorf("SSH repo requires SSH keys. Mount your keys to /home/composer/.ssh/ or switch to HTTPS URL with a token")
+		if remote != nil && len(remote.Config().URLs) > 0 {
+			remoteURL := remote.Config().URLs[0]
+			if isSSHURL(remoteURL) {
+				auth = buildSSHAuthFromAgent()
+				if auth == nil {
+					return false, "", fmt.Errorf("SSH repo requires SSH keys. Add keys via Settings > SSH Keys, or switch to HTTPS URL with a token")
+				}
+			} else if token := loadGlobalGitToken(); token != "" {
+				auth = &http.BasicAuth{Username: "x-access-token", Password: token}
 			}
 		}
 	}
@@ -273,8 +308,14 @@ func (c *Client) CommitAndPush(stackDir, composePath, message, authorName, autho
 		return "", fmt.Errorf("committing: %w", err)
 	}
 
-	// Push
-	pushOpts := &git.PushOptions{Auth: buildAuth(creds)}
+	// Push -- per-stack creds → global token fallback
+	pushAuth := buildAuth(creds)
+	if pushAuth == nil {
+		if token := loadGlobalGitToken(); token != "" {
+			pushAuth = &http.BasicAuth{Username: "x-access-token", Password: token}
+		}
+	}
+	pushOpts := &git.PushOptions{Auth: pushAuth}
 
 	if err := repo.Push(pushOpts); err != nil && err != git.NoErrAlreadyUpToDate {
 		return commit.String(), fmt.Errorf("pushing: %w", err)

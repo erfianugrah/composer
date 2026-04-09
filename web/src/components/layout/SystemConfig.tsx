@@ -18,6 +18,8 @@ interface ConfigData {
   age_key_loaded: boolean;
   age_key_source: string;
   age_public_key: string;
+  git_token_set: boolean;
+  git_token_preview: string;
   notify_url: string;
   slack_webhook: boolean;
   trusted_proxies: boolean;
@@ -45,6 +47,17 @@ export function SystemConfig() {
   const [ageKeyInput, setAgeKeyInput] = useState("");
   const [ageKeySaving, setAgeKeySaving] = useState(false);
   const [ageKeyMsg, setAgeKeyMsg] = useState("");
+
+  // SSH key form
+  const [sshKeyName, setSSHKeyName] = useState("");
+  const [sshKeyContent, setSSHKeyContent] = useState("");
+  const [sshKeySaving, setSSHKeySaving] = useState(false);
+  const [sshKeyMsg, setSSHKeyMsg] = useState("");
+
+  // Git token form
+  const [gitTokenInput, setGitTokenInput] = useState("");
+  const [gitTokenSaving, setGitTokenSaving] = useState(false);
+  const [gitTokenMsg, setGitTokenMsg] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -113,19 +126,120 @@ export function SystemConfig() {
         <CardHeader>
           <CardTitle className="text-sm">SSH Keys</CardTitle>
         </CardHeader>
-        <CardContent>
-          {(!config.ssh_keys || config.ssh_keys.length === 0) ? (
-            <p className="text-sm text-muted-foreground">No SSH keys detected. Mount keys to <code className="font-data">/home/composer/.ssh/</code></p>
-          ) : (
-            <div className="space-y-2">
+        <CardContent className="space-y-3">
+          {config.ssh_keys && config.ssh_keys.length > 0 && (
+            <div className="space-y-1">
               {config.ssh_keys.map((key) => (
                 <div key={key.path} className="flex items-center gap-3 rounded-lg border border-border p-2">
                   <code className="text-xs font-data flex-1">{key.path}</code>
                   {statusBadge(key.encrypted, key.encrypted ? "Encrypted" : "Plaintext")}
+                  <Button size="xs" variant="destructive" onClick={async () => {
+                    if (!confirm(`Delete ${key.name}?`)) return;
+                    await apiFetch(`/api/v1/system/config/ssh-keys/${key.name}`, { method: "DELETE" });
+                    const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
+                    if (r) setConfig(r);
+                  }}>Delete</Button>
                 </div>
               ))}
             </div>
           )}
+          {(!config.ssh_keys || config.ssh_keys.length === 0) && (
+            <p className="text-xs text-muted-foreground">No SSH keys. Add one below or mount keys to <code className="font-data">/home/composer/.ssh/</code></p>
+          )}
+          <div className="border-t border-border pt-3 space-y-2">
+            <p className="text-xs text-muted-foreground">Add SSH private key (encrypted at rest after save)</p>
+            <div className="flex gap-2">
+              <Input
+                value={sshKeyName}
+                onChange={(e) => setSSHKeyName(e.target.value)}
+                placeholder="id_github"
+                className="w-40 font-data text-xs"
+              />
+              <Button size="sm" onClick={async () => {
+                if (!sshKeyName.trim() || !sshKeyContent.trim()) return;
+                setSSHKeySaving(true); setSSHKeyMsg("");
+                const { error: err } = await apiFetch("/api/v1/system/config/ssh-keys", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: sshKeyName.trim(), content: sshKeyContent.trim() }),
+                });
+                if (err) { setSSHKeyMsg(err); }
+                else { setSSHKeyMsg("Saved + encrypted"); setSSHKeyName(""); setSSHKeyContent("");
+                  const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
+                  if (r) setConfig(r);
+                }
+                setSSHKeySaving(false);
+              }} disabled={sshKeySaving || !sshKeyName || !sshKeyContent}>
+                {sshKeySaving ? "..." : "Add Key"}
+              </Button>
+            </div>
+            <textarea
+              value={sshKeyContent}
+              onChange={(e) => setSSHKeyContent(e.target.value)}
+              placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
+              rows={4}
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs font-data resize-none"
+              spellCheck={false}
+            />
+            {sshKeyMsg && <p className={`text-xs ${sshKeyMsg.includes("Saved") ? "text-cp-green" : "text-cp-red"}`}>{sshKeyMsg}</p>}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Global Git Token */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm">Global Git Token</CardTitle>
+            {config.git_token_set && (
+              <Badge className="bg-cp-green/20 text-cp-green border-cp-green/30">
+                {config.git_token_preview || "configured"}
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-xs text-muted-foreground">Default token for HTTPS git operations. Per-stack tokens override this.</p>
+          <div className="flex gap-2">
+            <Input
+              type="password"
+              value={gitTokenInput}
+              onChange={(e) => setGitTokenInput(e.target.value)}
+              placeholder="ghp_... or glpat-..."
+              className="flex-1 font-data text-xs"
+            />
+            <Button size="sm" onClick={async () => {
+              setGitTokenSaving(true); setGitTokenMsg("");
+              const { error: err } = await apiFetch("/api/v1/system/config/git-token", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token: gitTokenInput.trim() }),
+              });
+              if (err) { setGitTokenMsg(err); }
+              else { setGitTokenMsg(gitTokenInput.trim() ? "Saved" : "Removed"); setGitTokenInput("");
+                const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
+                if (r) setConfig(r);
+              }
+              setGitTokenSaving(false);
+            }} disabled={gitTokenSaving || !gitTokenInput}>
+              {gitTokenSaving ? "..." : "Save"}
+            </Button>
+            {config.git_token_set && (
+              <Button size="sm" variant="destructive" onClick={async () => {
+                setGitTokenSaving(true);
+                await apiFetch("/api/v1/system/config/git-token", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ token: "" }),
+                });
+                setGitTokenMsg("Removed");
+                const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
+                if (r) setConfig(r);
+                setGitTokenSaving(false);
+              }}>Remove</Button>
+            )}
+          </div>
+          {gitTokenMsg && <p className={`text-xs ${gitTokenMsg.includes("Saved") || gitTokenMsg.includes("Removed") ? "text-cp-green" : "text-cp-red"}`}>{gitTokenMsg}</p>}
         </CardContent>
       </Card>
 

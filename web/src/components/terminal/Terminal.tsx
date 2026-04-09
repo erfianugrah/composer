@@ -62,6 +62,8 @@ export function Terminal({ containerId, shell = "/bin/sh" }: TerminalProps) {
     term.loadAddon(new WebLinksAddon());
     term.open(termRef.current);
     fitAddon.fit();
+    // Re-fit after layout settles (Astro island hydration can shift things)
+    requestAnimationFrame(() => fitAddon.fit());
 
     xtermRef.current = term;
     fitRef.current = fitAddon;
@@ -148,7 +150,7 @@ export function Terminal({ containerId, shell = "/bin/sh" }: TerminalProps) {
       )}
       <div
         ref={termRef}
-        className="rounded-lg border border-border overflow-hidden"
+        className="rounded-lg border border-border overflow-hidden [&_.xterm]:p-2 [&_.xterm-viewport]:!overflow-hidden"
         style={{ height: "400px" }}
         data-testid="terminal-container"
       />

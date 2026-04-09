@@ -53,22 +53,26 @@ export function DiffViewer({ stackName }: { stackName: string }) {
         {!diff.has_changes ? (
           <p className="text-sm text-muted-foreground">No pending changes. Compose file matches the running config.</p>
         ) : (
-          <div className="rounded-lg border border-border bg-cp-950 overflow-x-auto font-data text-xs leading-5" data-testid="diff-output">
-            <pre className="p-3">
+          <div className="rounded-lg border border-border bg-cp-950 overflow-x-auto font-data text-xs leading-relaxed" data-testid="diff-output">
+            <pre className="p-0">
               {diff.lines.map((line, i) => (
                 <div
                   key={i}
                   className={
-                    line.type === "add" ? "text-cp-green bg-cp-green/5" :
-                    line.type === "remove" ? "text-cp-red bg-cp-red/5" :
-                    "text-muted-foreground"
+                    line.type === "add"
+                      ? "bg-cp-green/15 text-cp-green border-l-2 border-cp-green px-3 py-px"
+                      : line.type === "remove"
+                      ? "bg-cp-red/15 text-cp-red border-l-2 border-cp-red px-3 py-px"
+                      : "text-foreground/60 px-3 py-px border-l-2 border-transparent"
                   }
                 >
-                  <span className="select-none inline-block w-8 text-right mr-2 opacity-40">
+                  <span className="select-none inline-block w-8 text-right mr-3 opacity-30 font-data">
                     {line.type === "remove" ? line.old_line : line.type === "add" ? line.new_line : line.old_line}
                   </span>
-                  <span className="select-none inline-block w-3">
-                    {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}
+                  <span className={`select-none inline-block w-4 font-bold ${
+                    line.type === "add" ? "text-cp-green" : line.type === "remove" ? "text-cp-red" : "opacity-20"
+                  }`}>
+                    {line.type === "add" ? "+" : line.type === "remove" ? "−" : " "}
                   </span>
                   {line.content}
                 </div>

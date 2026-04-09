@@ -12,10 +12,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	ageLib "filippo.io/age"
+
 	composer "github.com/erfianugrah/composer"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/domain/auth"
-
+	"github.com/erfianugrah/composer/internal/infra/crypto"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	"github.com/erfianugrah/composer/internal/infra/sops"
 )
@@ -57,6 +58,25 @@ func (h *SystemHandler) Register(api huma.API) {
 		OperationID: "generateAgeKey", Method: http.MethodPost,
 		Path: "/api/v1/system/config/age-key/generate", Summary: "Generate a new age key pair and save", Tags: []string{"system"},
 	}, h.GenerateAgeKey)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "getGitToken", Method: http.MethodGet,
+		Path: "/api/v1/system/config/git-token", Summary: "Get global git token status", Tags: []string{"system"},
+	}, h.GetGitToken)
+	huma.Register(api, huma.Operation{
+		OperationID: "updateGitToken", Method: http.MethodPut,
+		Path: "/api/v1/system/config/git-token", Summary: "Set or remove global git access token", Tags: []string{"system"},
+	}, h.UpdateGitToken)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "addSSHKey", Method: http.MethodPost,
+		Path: "/api/v1/system/config/ssh-keys", Summary: "Add an SSH key by pasting content", Tags: []string{"system"},
+	}, h.AddSSHKey)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "deleteSSHKey", Method: http.MethodDelete,
+		Path: "/api/v1/system/config/ssh-keys/{name}", Summary: "Delete an SSH key file", Tags: []string{"system"},
+	}, h.DeleteSSHKey)
 }
 
 type SystemInfoOutput struct {
@@ -124,17 +144,19 @@ type SSHKeyInfo struct {
 
 type ConfigOutput struct {
 	Body struct {
-		SSHKeys        []SSHKeyInfo `json:"ssh_keys" doc:"SSH keys detected on the system"`
-		EncryptionKey  string       `json:"encryption_key" doc:"Source of encryption key: env, file, or none"`
-		SopsAvailable  bool         `json:"sops_available" doc:"Whether sops binary is in PATH"`
-		AgeKeyLoaded   bool         `json:"age_key_loaded" doc:"Whether a global age key was found"`
-		AgeKeySource   string       `json:"age_key_source" doc:"Where the age key was loaded from"`
-		AgePublicKey   string       `json:"age_public_key,omitempty" doc:"Age public key (recipient) for encrypting new secrets"`
-		NotifyURL      string       `json:"notify_url,omitempty" doc:"Webhook notification URL (redacted)"`
-		SlackWebhook   bool         `json:"slack_webhook" doc:"Whether Slack webhook is configured"`
-		TrustedProxies bool         `json:"trusted_proxies" doc:"Whether X-Real-IP headers are trusted"`
-		CookieSecure   string       `json:"cookie_secure"`
-		DatabaseType   string       `json:"database_type" doc:"sqlite or postgres"`
+		SSHKeys         []SSHKeyInfo `json:"ssh_keys" doc:"SSH keys detected on the system"`
+		EncryptionKey   string       `json:"encryption_key" doc:"Source of encryption key: env, file, or none"`
+		SopsAvailable   bool         `json:"sops_available" doc:"Whether sops binary is in PATH"`
+		AgeKeyLoaded    bool         `json:"age_key_loaded" doc:"Whether a global age key was found"`
+		AgeKeySource    string       `json:"age_key_source" doc:"Where the age key was loaded from"`
+		AgePublicKey    string       `json:"age_public_key,omitempty" doc:"Age public key (recipient) for encrypting new secrets"`
+		GitTokenSet     bool         `json:"git_token_set" doc:"Whether a global git token is configured"`
+		GitTokenPreview string       `json:"git_token_preview,omitempty" doc:"First 8 chars of the token"`
+		NotifyURL       string       `json:"notify_url,omitempty" doc:"Webhook notification URL (redacted)"`
+		SlackWebhook    bool         `json:"slack_webhook" doc:"Whether Slack webhook is configured"`
+		TrustedProxies  bool         `json:"trusted_proxies" doc:"Whether X-Real-IP headers are trusted"`
+		CookieSecure    string       `json:"cookie_secure"`
+		DatabaseType    string       `json:"database_type" doc:"sqlite or postgres"`
 	}
 }
 
@@ -168,6 +190,15 @@ func (h *SystemHandler) Config(ctx context.Context, input *struct{}) (*ConfigOut
 	}
 
 	// SOPS/age
+	// Git token
+	tokenPath := filepath.Join(h.dataDir, "git-token")
+	if data, err := crypto.DecryptFile(tokenPath); err == nil && data != "" {
+		out.Body.GitTokenSet = true
+		if len(data) > 8 {
+			out.Body.GitTokenPreview = data[:8] + "..."
+		}
+	}
+
 	out.Body.SopsAvailable = sops.IsAvailable()
 	ageKey := sops.LoadGlobalAgeKey(h.dataDir)
 	out.Body.AgeKeyLoaded = ageKey != ""
@@ -281,6 +312,128 @@ func (h *SystemHandler) GenerateAgeKey(ctx context.Context, input *struct{}) (*G
 	out := &GenerateAgeKeyOutput{}
 	out.Body.PrivateKey = privKey
 	out.Body.PublicKey = pubKey
+	return out, nil
+}
+
+type AddSSHKeyInput struct {
+	Body struct {
+		Name    string `json:"name" minLength:"1" doc:"Key file name (e.g. id_ed25519, id_github)"`
+		Content string `json:"content" minLength:"1" doc:"PEM-encoded SSH private key content"`
+	}
+}
+
+type AddSSHKeyOutput struct {
+	Body struct {
+		Path      string `json:"path"`
+		Encrypted bool   `json:"encrypted"`
+	}
+}
+
+func (h *SystemHandler) AddSSHKey(ctx context.Context, input *AddSSHKeyInput) (*AddSSHKeyOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+
+	name := strings.TrimSpace(input.Body.Name)
+	if strings.ContainsAny(name, "/\\.. ") {
+		return nil, huma.Error422UnprocessableEntity("invalid key name: must not contain slashes, dots, or spaces")
+	}
+
+	sshDir := "/home/composer/.ssh"
+	os.MkdirAll(sshDir, 0700)
+
+	keyPath := filepath.Join(sshDir, name)
+	content := strings.TrimSpace(input.Body.Content)
+
+	// Write the key, then encrypt it at rest
+	if err := os.WriteFile(keyPath, []byte(content+"\n"), 0600); err != nil {
+		return nil, serverError(err)
+	}
+
+	// Encrypt at rest using our AES-256-GCM layer
+	crypto.EncryptFile(keyPath)
+
+	out := &AddSSHKeyOutput{}
+	out.Body.Path = keyPath
+	out.Body.Encrypted = true
+	return out, nil
+}
+
+type DeleteSSHKeyInput struct {
+	Name string `path:"name" doc:"Key file name"`
+}
+
+func (h *SystemHandler) DeleteSSHKey(ctx context.Context, input *DeleteSSHKeyInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+
+	name := strings.TrimSpace(input.Name)
+	if strings.ContainsAny(name, "/\\.. ") {
+		return nil, huma.Error422UnprocessableEntity("invalid key name")
+	}
+
+	keyPath := filepath.Join("/home/composer/.ssh", name)
+	if err := os.Remove(keyPath); err != nil {
+		return nil, huma.Error404NotFound("key not found: " + err.Error())
+	}
+	// Also remove .pub if it exists
+	os.Remove(keyPath + ".pub")
+
+	return nil, nil
+}
+
+// --- Global Git Token ---
+
+type UpdateGitTokenInput struct {
+	Body struct {
+		Token string `json:"token" doc:"Global git access token (GitHub PAT, GitLab token, etc.). Empty to remove."`
+	}
+}
+
+type GitTokenOutput struct {
+	Body struct {
+		Configured bool   `json:"configured"`
+		Preview    string `json:"preview,omitempty" doc:"First 8 chars of token for identification"`
+	}
+}
+
+func (h *SystemHandler) GetGitToken(ctx context.Context, input *struct{}) (*GitTokenOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+	out := &GitTokenOutput{}
+	tokenPath := filepath.Join(h.dataDir, "git-token")
+	if data, err := crypto.DecryptFile(tokenPath); err == nil && data != "" {
+		out.Body.Configured = true
+		if len(data) > 8 {
+			out.Body.Preview = data[:8] + "..."
+		}
+	}
+	return out, nil
+}
+
+func (h *SystemHandler) UpdateGitToken(ctx context.Context, input *UpdateGitTokenInput) (*GitTokenOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+	tokenPath := filepath.Join(h.dataDir, "git-token")
+	token := strings.TrimSpace(input.Body.Token)
+
+	if token == "" {
+		os.Remove(tokenPath)
+		return &GitTokenOutput{}, nil
+	}
+
+	if err := crypto.WriteEncrypted(tokenPath, token); err != nil {
+		return nil, serverError(err)
+	}
+
+	out := &GitTokenOutput{}
+	out.Body.Configured = true
+	if len(token) > 8 {
+		out.Body.Preview = token[:8] + "..."
+	}
 	return out, nil
 }
 

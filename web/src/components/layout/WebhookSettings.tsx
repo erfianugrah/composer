@@ -45,6 +45,7 @@ export function WebhookSettings() {
   const [provider, setProvider] = useState("github");
   const [branchFilter, setBranchFilter] = useState("");
   const [autoRedeploy, setAutoRedeploy] = useState(true);
+  const [stackNames, setStackNames] = useState<string[]>([]);
 
   function fetchWebhooks() {
     apiFetch<{ webhooks: WebhookSummary[] }>("/api/v1/webhooks").then(({ data, error: err }) => {
@@ -54,7 +55,12 @@ export function WebhookSettings() {
     });
   }
 
-  useEffect(() => { fetchWebhooks(); }, []);
+  useEffect(() => {
+    fetchWebhooks();
+    apiFetch<{ stacks: { name: string }[] }>("/api/v1/stacks").then(({ data }) => {
+      if (data?.stacks) setStackNames(data.stacks.map((s) => s.name));
+    });
+  }, []);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -101,9 +107,10 @@ export function WebhookSettings() {
               <div className="space-y-1">
                 <label className="text-xs uppercase tracking-wider text-muted-foreground">Stack Name</label>
                 <Input
+                  list="stack-names-list"
                   value={stackName}
                   onChange={(e) => setStackName(e.target.value)}
-                  placeholder="my-stack"
+                  placeholder="Select or type stack name"
                   required
                   data-testid="webhook-stack-name"
                 />
@@ -136,6 +143,9 @@ export function WebhookSettings() {
               <input type="checkbox" checked={autoRedeploy} onChange={(e) => setAutoRedeploy(e.target.checked)} data-testid="webhook-auto-redeploy" className="rounded" />
               Auto-redeploy on push
             </label>
+            <datalist id="stack-names-list">
+              {stackNames.map((n) => <option key={n} value={n} />)}
+            </datalist>
             {error && <p className="text-sm text-cp-red">{error}</p>}
             <Button type="submit" disabled={creating || !stackName} data-testid="webhook-create-btn">
               {creating ? "Creating..." : "Create Webhook"}
