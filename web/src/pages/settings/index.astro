@@ -17,9 +17,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
         <CardTitle className="text-sm">System</CardTitle>
       </CardHeader>
       <CardContent>
-        <p class="text-sm text-muted-foreground font-data">
-          Composer v0.1.0
-        </p>
+        <p class="text-sm text-muted-foreground font-data" id="settings-version">Loading...</p>
+        <script is:inline>
+          fetch("/api/v1/system/version",{credentials:"include",headers:{"X-Requested-With":"XMLHttpRequest"}})
+            .then(r=>r.json()).then(d=>{
+              const el=document.getElementById("settings-version");
+              if(el)el.textContent=`Composer v${d.version} | Go ${d.go_version} | ${d.os}/${d.arch} | Uptime: ${d.uptime}`;
+            }).catch(()=>{
+              const el=document.getElementById("settings-version");
+              if(el)el.textContent="Could not fetch system info";
+            });
+        </script>
       </CardContent>
     </Card>
   </div>

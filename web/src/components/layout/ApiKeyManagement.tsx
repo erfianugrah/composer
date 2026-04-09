@@ -26,13 +26,15 @@ export function ApiKeyManagement() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newKey, setNewKey] = useState<KeyCreated | null>(null);
+  const [error, setError] = useState("");
 
   const [name, setName] = useState("");
   const [role, setRole] = useState("operator");
 
   function fetchKeys() {
-    apiFetch<{ keys: KeySummary[] }>("/api/v1/keys").then(({ data }) => {
-      if (data) setKeys(data.keys || []);
+    apiFetch<{ keys: KeySummary[] }>("/api/v1/keys").then(({ data, error: err }) => {
+      if (err) setError(err);
+      else setKeys(data?.keys || []);
       setLoading(false);
     });
   }
@@ -43,12 +45,14 @@ export function ApiKeyManagement() {
     e.preventDefault();
     setCreating(true);
     setNewKey(null);
-    const { data } = await apiFetch<KeyCreated>("/api/v1/keys", {
+    setError("");
+    const { data, error: err } = await apiFetch<KeyCreated>("/api/v1/keys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, role }),
     });
-    if (data) {
+    if (err) setError(err);
+    else if (data) {
       setNewKey(data);
       setName("");
       fetchKeys();
@@ -57,8 +61,10 @@ export function ApiKeyManagement() {
   }
 
   async function handleDelete(id: string) {
-    await apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" });
-    fetchKeys();
+    if (!confirm("Revoke this API key?")) return;
+    const { error: err } = await apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" });
+    if (err) setError(err);
+    else fetchKeys();
   }
 
   return (
@@ -88,6 +94,8 @@ export function ApiKeyManagement() {
           </Button>
         </form>
 
+        {error && <p className="text-sm text-cp-red">{error}</p>}
+
         {/* Show newly created key */}
         {newKey && (
           <div className="rounded-lg border border-cp-green/30 bg-cp-green/5 p-4 space-y-2" data-testid="key-created">
@@ -113,7 +121,7 @@ export function ApiKeyManagement() {
             {keys.map((k) => (
               <div key={k.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                 <div className="flex items-center gap-3">
-                  <Badge className={k.role === "admin" ? "bg-cp-red/20 text-cp-red border-cp-red/30" : "bg-cp-blue/20 text-cp-blue border-cp-blue/30"}>
+                  <Badge className={k.role === "admin" ? "bg-cp-red/20 text-cp-red border-cp-red/30" : k.role === "operator" ? "bg-cp-peach/20 text-cp-peach border-cp-peach/30" : "bg-cp-blue/20 text-cp-blue border-cp-blue/30"}>
                     {k.role}
                   </Badge>
                   <span className="text-sm">{k.name}</span>

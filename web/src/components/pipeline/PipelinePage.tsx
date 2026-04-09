@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 
 interface PipelineSummary {
@@ -35,6 +36,12 @@ export function PipelinePage() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createDesc, setCreateDesc] = useState("");
+  const [createStepStack, setCreateStepStack] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
 
   function fetchPipelines() {
     apiFetch<{ pipelines: PipelineSummary[] }>("/api/v1/pipelines").then(({ data, error: err }) => {
@@ -65,6 +72,44 @@ export function PipelinePage() {
     setRunning("");
   }
 
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setCreating(true);
+    setError("");
+    const { error: err } = await apiFetch("/api/v1/pipelines", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: createName,
+        description: createDesc,
+        steps: [{
+          id: "step-1",
+          name: createStepStack ? `Deploy ${createStepStack}` : "Deploy",
+          type: createStepStack ? "compose_up" : "shell_command",
+          config: createStepStack ? { stack: createStepStack } : { command: "echo hello" },
+        }],
+        triggers: [{ type: "manual", config: {} }],
+      }),
+    });
+    if (err) {
+      setError(err);
+    } else {
+      setShowCreate(false);
+      setCreateName("");
+      setCreateDesc("");
+      setCreateStepStack("");
+      fetchPipelines();
+    }
+    setCreating(false);
+  }
+
+  async function handleDelete(pipelineId: string) {
+    if (!confirm("Delete this pipeline?")) return;
+    await apiFetch(`/api/v1/pipelines/${pipelineId}`, { method: "DELETE" });
+    if (selectedPipeline === pipelineId) setSelectedPipeline(null);
+    fetchPipelines();
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -77,6 +122,32 @@ export function PipelinePage() {
 
   return (
     <div className="space-y-6">
+      {/* Create pipeline form */}
+      <div className="flex justify-end">
+        <Button size="sm" onClick={() => setShowCreate(!showCreate)} data-testid="new-pipeline-btn">
+          {showCreate ? "Cancel" : "+ New Pipeline"}
+        </Button>
+      </div>
+
+      {showCreate && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Create Pipeline</CardTitle></CardHeader>
+          <CardContent>
+            <form onSubmit={handleCreate} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Pipeline name" required data-testid="pipeline-name" />
+                <Input value={createDesc} onChange={(e) => setCreateDesc(e.target.value)} placeholder="Description (optional)" data-testid="pipeline-desc" />
+              </div>
+              <Input value={createStepStack} onChange={(e) => setCreateStepStack(e.target.value)} placeholder="Stack name to deploy (optional -- leave empty for shell step)" data-testid="pipeline-stack" />
+              {error && <p className="text-sm text-cp-red">{error}</p>}
+              <Button type="submit" disabled={creating || !createName} className="w-full" data-testid="pipeline-create-btn">
+                {creating ? "Creating..." : "Create Pipeline"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Pipeline list */}
       <Card>
         <CardHeader>
@@ -85,7 +156,7 @@ export function PipelinePage() {
         <CardContent>
           {pipelines.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="no-pipelines">
-              No pipelines configured. Create one via the API.
+              No pipelines yet. Create your first pipeline above.
             </p>
           ) : (
             <div className="space-y-2" data-testid="pipeline-list">
@@ -106,14 +177,24 @@ export function PipelinePage() {
                       {pl.description || `${pl.step_count} steps`}
                     </div>
                   </div>
-                  <Button
-                    size="xs"
-                    onClick={(e) => { e.stopPropagation(); handleRun(pl.id); }}
-                    disabled={running === pl.id}
-                    data-testid={`run-${pl.id}`}
-                  >
-                    {running === pl.id ? "Running..." : "Run"}
-                  </Button>
+                    <div className="flex gap-1">
+                    <Button
+                      size="xs"
+                      onClick={(e) => { e.stopPropagation(); handleRun(pl.id); }}
+                      disabled={running === pl.id}
+                      data-testid={`run-${pl.id}`}
+                    >
+                      {running === pl.id ? "Running..." : "Run"}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="destructive"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(pl.id); }}
+                      data-testid={`delete-${pl.id}`}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -36,11 +36,13 @@ export function WebhookSettings() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newWebhook, setNewWebhook] = useState<WebhookDetail | null>(null);
+  const [error, setError] = useState("");
 
   // Form state
   const [stackName, setStackName] = useState("");
   const [provider, setProvider] = useState("github");
   const [branchFilter, setBranchFilter] = useState("");
+  const [autoRedeploy, setAutoRedeploy] = useState(true);
 
   function fetchWebhooks() {
     apiFetch<{ webhooks: WebhookSummary[] }>("/api/v1/webhooks").then(({ data, error: err }) => {
@@ -56,17 +58,19 @@ export function WebhookSettings() {
     e.preventDefault();
     setCreating(true);
     setNewWebhook(null);
-    const { data } = await apiFetch<WebhookDetail>("/api/v1/webhooks", {
+    setError("");
+    const { data, error: err } = await apiFetch<WebhookDetail>("/api/v1/webhooks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        stack_name: stackName,
-        provider,
-        branch_filter: branchFilter || undefined,
-        auto_redeploy: true,
+          stack_name: stackName,
+          provider,
+          branch_filter: branchFilter || undefined,
+          auto_redeploy: autoRedeploy,
       }),
     });
-    if (data) {
+    if (err) setError(err);
+    else if (data) {
       setNewWebhook(data);
       setStackName("");
       setBranchFilter("");
@@ -76,8 +80,10 @@ export function WebhookSettings() {
   }
 
   async function handleDelete(id: string) {
-    await apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" });
-    fetchWebhooks();
+    if (!confirm("Delete this webhook?")) return;
+    const { error: err } = await apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" });
+    if (err) setError(err);
+    else fetchWebhooks();
   }
 
   return (
@@ -124,6 +130,11 @@ export function WebhookSettings() {
                 data-testid="webhook-branch"
               />
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={autoRedeploy} onChange={(e) => setAutoRedeploy(e.target.checked)} data-testid="webhook-auto-redeploy" className="rounded" />
+              Auto-redeploy on push
+            </label>
+            {error && <p className="text-sm text-cp-red">{error}</p>}
             <Button type="submit" disabled={creating || !stackName} data-testid="webhook-create-btn">
               {creating ? "Creating..." : "Create Webhook"}
             </Button>

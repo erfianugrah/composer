@@ -11,6 +11,20 @@ type CreateStackInput struct {
 	}
 }
 
+type CreateGitStackInput struct {
+	Body struct {
+		Name        string `json:"name" minLength:"1" maxLength:"128" doc:"Stack name"`
+		RepoURL     string `json:"repo_url" minLength:"1" doc:"Git repository URL (HTTPS or SSH)"`
+		Branch      string `json:"branch,omitempty" doc:"Branch to track (default: main)"`
+		ComposePath string `json:"compose_path,omitempty" doc:"Path to compose file in repo (default: compose.yaml)"`
+		AuthMethod  string `json:"auth_method,omitempty" doc:"Auth method: none, token, ssh_key, basic"`
+		Token       string `json:"token,omitempty" doc:"Access token for token auth"`
+		SSHKey      string `json:"ssh_key,omitempty" doc:"PEM-encoded SSH private key"`
+		Username    string `json:"username,omitempty" doc:"Username for basic auth"`
+		Password    string `json:"password,omitempty" doc:"Password for basic auth"`
+	}
+}
+
 type GetStackInput struct {
 	Name string `path:"name" doc:"Stack name"`
 }

@@ -11,6 +11,7 @@ import (
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
+	"github.com/erfianugrah/composer/internal/domain/stack"
 )
 
 // GitHandler registers git operation endpoints for stacks.
@@ -23,6 +24,11 @@ func NewGitHandler(git *app.GitService) *GitHandler {
 }
 
 func (h *GitHandler) Register(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "createGitStack", Method: http.MethodPost,
+		Path: "/api/v1/stacks/git", Summary: "Clone a git repo and create a git-backed stack", Tags: []string{"git", "stacks"},
+	}, h.CreateGitStack)
+
 	huma.Register(api, huma.Operation{
 		OperationID: "syncStack", Method: http.MethodPost,
 		Path: "/api/v1/stacks/{name}/sync", Summary: "Git pull + detect changes", Tags: []string{"git"},
@@ -150,5 +156,54 @@ func (h *GitHandler) GitDiff(ctx context.Context, input *dto.GitDiffInput) (*dto
 	out.Body.HasChanges = false
 	out.Body.Summary = "No uncommitted changes"
 	out.Body.Lines = []dto.DiffLine{}
+	return out, nil
+}
+
+// CreateGitStack clones a git repository and creates a git-backed stack.
+func (h *GitHandler) CreateGitStack(ctx context.Context, input *dto.CreateGitStackInput) (*dto.StackCreatedOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	branch := input.Body.Branch
+	if branch == "" {
+		branch = "main"
+	}
+	composePath := input.Body.ComposePath
+	if composePath == "" {
+		composePath = "compose.yaml"
+	}
+	authMethod := stack.GitAuthNone
+	if input.Body.AuthMethod != "" {
+		authMethod = stack.GitAuthMethod(input.Body.AuthMethod)
+	}
+
+	gitCfg := &stack.GitSource{
+		RepoURL:     input.Body.RepoURL,
+		Branch:      branch,
+		ComposePath: composePath,
+		AutoSync:    true,
+		AuthMethod:  authMethod,
+	}
+
+	// Build credentials from input
+	if input.Body.Token != "" || input.Body.SSHKey != "" || input.Body.Username != "" {
+		gitCfg.Credentials = &stack.GitCredentials{
+			Token:    input.Body.Token,
+			SSHKey:   input.Body.SSHKey,
+			Username: input.Body.Username,
+			Password: input.Body.Password,
+		}
+	}
+
+	st, err := h.git.CreateGitStack(ctx, input.Body.Name, gitCfg)
+	if err != nil {
+		return nil, internalError()
+	}
+
+	out := &dto.StackCreatedOutput{}
+	out.Body.Name = st.Name
+	out.Body.Source = string(st.Source)
+	out.Body.Path = st.Path
 	return out, nil
 }

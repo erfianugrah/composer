@@ -2,8 +2,12 @@ import { useState, useEffect } from "react";
 import { DashboardOverview } from "./DashboardOverview";
 import { StackDetail } from "./StackDetail";
 import { TemplatePicker } from "./TemplatePicker";
+import { GitCloneForm } from "./GitCloneForm";
+import { RawComposeForm } from "./RawComposeForm";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/errors";
+
+type CreateMode = null | "template" | "git" | "yaml";
 
 export function StacksPage() {
   const [selectedStack, setSelectedStack] = useState<string | null>(() => {
@@ -13,7 +17,7 @@ export function StacksPage() {
     }
     return null;
   });
-  const [showCreate, setShowCreate] = useState(false);
+  const [createMode, setCreateMode] = useState<CreateMode>(null);
 
   useEffect(() => {
     const handler = () => {
@@ -24,17 +28,19 @@ export function StacksPage() {
     return () => window.removeEventListener("hashchange", handler);
   }, []);
 
+  function handleCreated(name: string) {
+    setCreateMode(null);
+    window.location.hash = name;
+    setSelectedStack(name);
+  }
+
   async function handleTemplateCreate(name: string, compose: string) {
     const { error } = await apiFetch("/api/v1/stacks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, compose }),
     });
-    if (!error) {
-      setShowCreate(false);
-      window.location.hash = name;
-      setSelectedStack(name);
-    }
+    if (!error) handleCreated(name);
   }
 
   if (selectedStack) {
@@ -56,12 +62,32 @@ export function StacksPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => setShowCreate(!showCreate)} data-testid="new-stack-btn">
-          {showCreate ? "Cancel" : "+ New Stack"}
-        </Button>
+      {/* Creation mode selector */}
+      <div className="flex gap-2 justify-end">
+        {createMode ? (
+          <Button size="sm" variant="ghost" onClick={() => setCreateMode(null)} data-testid="cancel-create">
+            Cancel
+          </Button>
+        ) : (
+          <>
+            <Button size="sm" variant="outline" onClick={() => setCreateMode("template")} data-testid="new-template-btn">
+              From Template
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setCreateMode("git")} data-testid="new-git-btn">
+              Clone from Git
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setCreateMode("yaml")} data-testid="new-yaml-btn">
+              From YAML
+            </Button>
+          </>
+        )}
       </div>
-      {showCreate && <TemplatePicker onSelect={handleTemplateCreate} />}
+
+      {/* Creation forms */}
+      {createMode === "template" && <TemplatePicker onSelect={handleTemplateCreate} />}
+      {createMode === "git" && <GitCloneForm onCreated={handleCreated} />}
+      {createMode === "yaml" && <RawComposeForm onCreated={handleCreated} />}
+
       <DashboardOverview />
     </div>
   );

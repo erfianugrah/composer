@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	composer "github.com/erfianugrah/composer"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 )
 
@@ -81,7 +82,7 @@ type VersionOutput struct {
 
 func (h *SystemHandler) Version(ctx context.Context, input *struct{}) (*VersionOutput, error) {
 	out := &VersionOutput{}
-	out.Body.Version = "0.1.0"
+	out.Body.Version = composer.Version
 	out.Body.GoVersion = runtime.Version()
 	out.Body.OS = runtime.GOOS
 	out.Body.Arch = runtime.GOARCH

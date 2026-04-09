@@ -10,10 +10,10 @@ interface Props {
 const { title, active } = Astro.props;
 
 const navItems = [
-  { label: "Dashboard", href: "/", id: "dashboard", icon: "grid" },
-  { label: "Stacks", href: "/stacks", id: "stacks", icon: "layers" },
-  { label: "Pipelines", href: "/pipelines", id: "pipelines", icon: "workflow" },
-  { label: "Settings", href: "/settings", id: "settings", icon: "settings" },
+  { label: "Dashboard", href: "/", id: "dashboard", icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>` },
+  { label: "Stacks", href: "/stacks", id: "stacks", icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>` },
+  { label: "Pipelines", href: "/pipelines", id: "pipelines", icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>` },
+  { label: "Settings", href: "/settings", id: "settings", icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>` },
 ];
 ---
 
@@ -48,6 +48,7 @@ const navItems = [
               ]}
               data-testid={`nav-${item.id}`}
             >
+              <Fragment set:html={item.icon} />
               {item.label}
             </a>
           ))}
@@ -55,7 +56,13 @@ const navItems = [
 
         <!-- Footer -->
         <div class="border-t border-border p-3">
-          <div class="text-xs text-muted-foreground font-data">Composer v0.1.0</div>
+          <div class="text-xs text-muted-foreground font-data" id="composer-version">Composer</div>
+          <script is:inline>
+            fetch("/api/v1/system/health").then(r=>r.json()).then(d=>{
+              const el=document.getElementById("composer-version");
+              if(el&&d.version)el.textContent="Composer v"+d.version;
+            }).catch(()=>{});
+          </script>
         </div>
       </aside>
 
@@ -64,14 +71,41 @@ const navItems = [
         <!-- Header -->
         <header class="flex h-14 items-center gap-4 border-b border-border bg-cp-950/50 px-6">
           <h1 class="text-lg font-semibold" data-testid="page-title">{title}</h1>
-          <div class="ml-auto flex items-center gap-2">
-            <div class="flex items-center gap-2">
+          <div class="ml-auto flex items-center gap-3">
+            <div class="flex items-center gap-2" id="health-indicator">
               <span class="relative flex h-2 w-2">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cp-green opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2 w-2 bg-cp-green"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-cp-600"></span>
               </span>
-              <span class="text-xs text-muted-foreground">Healthy</span>
+              <span class="text-xs text-muted-foreground">Checking...</span>
             </div>
+            <button
+              id="logout-btn"
+              class="text-xs text-muted-foreground hover:text-cp-red transition-colors px-2 py-1 rounded border border-transparent hover:border-cp-red/30"
+              title="Sign out"
+            >
+              Sign out
+            </button>
+            <script is:inline>
+              // Health check
+              fetch("/api/v1/system/health").then(r=>{
+                const el=document.getElementById("health-indicator");
+                if(!el)return;
+                if(r.ok){
+                  el.innerHTML=`<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cp-green opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-cp-green"></span></span><span class="text-xs text-muted-foreground">Healthy</span>`;
+                } else {
+                  el.innerHTML=`<span class="relative flex h-2 w-2"><span class="relative inline-flex rounded-full h-2 w-2 bg-cp-red"></span></span><span class="text-xs text-cp-red">Unhealthy</span>`;
+                }
+              }).catch(()=>{
+                const el=document.getElementById("health-indicator");
+                if(el)el.innerHTML=`<span class="relative flex h-2 w-2"><span class="relative inline-flex rounded-full h-2 w-2 bg-cp-red"></span></span><span class="text-xs text-cp-red">Offline</span>`;
+              });
+              // Logout
+              document.getElementById("logout-btn")?.addEventListener("click",()=>{
+                fetch("/api/v1/auth/logout",{method:"POST",credentials:"include",headers:{"X-Requested-With":"XMLHttpRequest"}})
+                  .then(()=>window.location.href="/login")
+                  .catch(()=>window.location.href="/login");
+              });
+            </script>
           </div>
         </header>
 

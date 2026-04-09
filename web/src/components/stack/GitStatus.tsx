@@ -145,6 +145,23 @@ export function GitStatus({ stackName }: { stackName: string }) {
                       {commit.author} &middot; {new Date(commit.date).toLocaleDateString()}
                     </p>
                   </div>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={async () => {
+                      if (!confirm(`Rollback to ${commit.short_sha}?`)) return;
+                      const { error: err } = await apiFetch(`/api/v1/stacks/${stackName}/rollback`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ commit_sha: commit.sha }),
+                      });
+                      if (err) setError(err);
+                      else { fetchStatus(); fetchLog(); }
+                    }}
+                    data-testid={`rollback-${commit.short_sha}`}
+                  >
+                    Rollback
+                  </Button>
                 </div>
               ))}
             </div>

@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
+	composer "github.com/erfianugrah/composer"
 	"github.com/erfianugrah/composer/internal/api/handler"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/api/ws"
@@ -61,8 +62,10 @@ func NewServer(deps Deps) *Server {
 		router.Use(authmw.Audit(deps.AuditRepo))
 	}
 
+	// Audit log query (registered below after Huma API is created)
+
 	// Huma API (auto-generates OpenAPI 3.1)
-	config := huma.DefaultConfig("Composer", "0.1.0")
+	config := huma.DefaultConfig("Composer", composer.Version)
 	config.Info.Description = "A lightweight, self-hosted Docker Compose management platform with GitOps, pipelines, and RBAC."
 	api := humachi.New(router, config)
 
@@ -76,17 +79,17 @@ func NewServer(deps Deps) *Server {
 	}, func(ctx context.Context, input *struct{}) (*struct {
 		Body struct {
 			Status  string `json:"status" example:"healthy"`
-			Version string `json:"version" example:"0.1.0"`
+			Version string `json:"version" example:"0.2.2"`
 		}
 	}, error) {
 		resp := &struct {
 			Body struct {
 				Status  string `json:"status" example:"healthy"`
-				Version string `json:"version" example:"0.1.0"`
+				Version string `json:"version" example:"0.2.2"`
 			}
 		}{}
 		resp.Body.Status = "healthy"
-		resp.Body.Version = "0.1.0"
+		resp.Body.Version = composer.Version
 		return resp, nil
 	})
 
@@ -148,6 +151,11 @@ func NewServer(deps Deps) *Server {
 	// Webhook CRUD (requires WebhookRepo)
 	if deps.WebhookRepo != nil {
 		handler.NewWebhookCRUDHandler(deps.WebhookRepo).Register(api)
+	}
+
+	// Audit log (requires AuditRepo)
+	if deps.AuditRepo != nil {
+		handler.NewAuditHandler(deps.AuditRepo).Register(api)
 	}
 
 	// WebSocket terminal (raw HTTP handler with RBAC -- operator+)

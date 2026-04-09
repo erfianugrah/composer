@@ -73,15 +73,27 @@ type PipelineCreatedOutput struct {
 	}
 }
 
+type StepResultDTO struct {
+	StepID     string     `json:"step_id"`
+	StepName   string     `json:"step_name"`
+	Status     string     `json:"status"`
+	Output     string     `json:"output,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	DurationMs int64      `json:"duration_ms"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
 type RunOutput struct {
 	Body struct {
-		ID          string     `json:"id"`
-		PipelineID  string     `json:"pipeline_id"`
-		Status      string     `json:"status"`
-		TriggeredBy string     `json:"triggered_by"`
-		StartedAt   *time.Time `json:"started_at,omitempty"`
-		FinishedAt  *time.Time `json:"finished_at,omitempty"`
-		CreatedAt   time.Time  `json:"created_at"`
+		ID          string          `json:"id"`
+		PipelineID  string          `json:"pipeline_id"`
+		Status      string          `json:"status"`
+		TriggeredBy string          `json:"triggered_by"`
+		StepResults []StepResultDTO `json:"step_results,omitempty"`
+		StartedAt   *time.Time      `json:"started_at,omitempty"`
+		FinishedAt  *time.Time      `json:"finished_at,omitempty"`
+		CreatedAt   time.Time       `json:"created_at"`
 	}
 }
 

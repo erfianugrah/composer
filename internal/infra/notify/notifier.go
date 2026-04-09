@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
+	composer "github.com/erfianugrah/composer"
 	domevent "github.com/erfianugrah/composer/internal/domain/event"
 )
 
@@ -91,7 +92,7 @@ func (n *Notifier) sendWebhook(url string, evt domevent.Event) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Composer/0.1.0")
+	req.Header.Set("User-Agent", "Composer/"+composer.Version)
 
 	resp, err := n.client.Do(req)
 	if err != nil {

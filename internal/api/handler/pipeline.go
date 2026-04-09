@@ -323,5 +323,23 @@ func runToOutput(r *pipeline.Run) *dto.RunOutput {
 	out.Body.StartedAt = r.StartedAt
 	out.Body.FinishedAt = r.FinishedAt
 	out.Body.CreatedAt = r.CreatedAt
+
+	// Include step results if available
+	if len(r.StepResults) > 0 {
+		out.Body.StepResults = make([]dto.StepResultDTO, 0, len(r.StepResults))
+		for _, sr := range r.StepResults {
+			out.Body.StepResults = append(out.Body.StepResults, dto.StepResultDTO{
+				StepID:     sr.StepID,
+				StepName:   sr.StepName,
+				Status:     string(sr.Status),
+				Output:     sr.Output,
+				Error:      sr.Error,
+				DurationMs: sr.Duration.Milliseconds(),
+				StartedAt:  sr.StartedAt,
+				FinishedAt: sr.FinishedAt,
+			})
+		}
+	}
+
 	return out
 }

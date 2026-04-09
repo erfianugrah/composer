@@ -2,7 +2,7 @@ import { useEffect, useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { apiFetch, extractError } from "@/lib/api/errors";
+import { apiFetch } from "@/lib/api/errors";
 
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
 const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
@@ -47,6 +47,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [stack, setStack] = useState<StackData | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
+  const [actionError, setActionError] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"containers" | "compose" | "terminal" | "stats" | "git">("containers");
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
@@ -66,9 +67,24 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
   async function doAction(action: string) {
     setActionLoading(action);
-    await apiFetch(`/api/v1/stacks/${stackName}/${action}`, { method: "POST" });
+    setActionError("");
+    const { error } = await apiFetch(`/api/v1/stacks/${stackName}/${action}`, { method: "POST" });
+    if (error) setActionError(`${action} failed: ${error}`);
     setTimeout(fetchStack, 1000);
     setActionLoading("");
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Delete stack "${stackName}"? This will stop containers and remove all files.`)) return;
+    setActionLoading("delete");
+    setActionError("");
+    const { error } = await apiFetch(`/api/v1/stacks/${stackName}?remove_volumes=true`, { method: "DELETE" });
+    if (error) {
+      setActionError(`Delete failed: ${error}`);
+      setActionLoading("");
+    } else {
+      window.location.hash = "";
+    }
   }
 
   async function handleSaveCompose(content: string) {
@@ -115,8 +131,19 @@ export function StackDetail({ stackName }: { stackName: string }) {
           <Button size="sm" variant="destructive" onClick={() => doAction("down")} disabled={!!actionLoading} data-testid="btn-stop">
             Stop
           </Button>
+          <Button size="sm" variant="destructive" onClick={handleDelete} disabled={!!actionLoading} data-testid="btn-delete">
+            {actionLoading === "delete" ? "Deleting..." : "Delete"}
+          </Button>
         </div>
       </div>
+
+      {/* Action error feedback */}
+      {actionError && (
+        <div className="rounded-lg border border-cp-red/30 bg-cp-red/5 p-3 text-sm text-cp-red" data-testid="action-error">
+          {actionError}
+          <button className="ml-2 underline" onClick={() => setActionError("")}>dismiss</button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
@@ -158,8 +185,20 @@ export function StackDetail({ stackName }: { stackName: string }) {
                       {c.health !== "none" && (
                         <Badge className={statusColor[c.health] || statusColor.unknown}>{c.health}</Badge>
                       )}
+                      {/* Container actions */}
+                      {c.status !== "running" && (
+                        <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                          Start
+                        </Button>
+                      )}
                       {c.status === "running" && (
                         <>
+                          <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                            Restart
+                          </Button>
+                          <Button size="xs" variant="destructive" onClick={() => apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                            Stop
+                          </Button>
                           <Button
                             size="xs" variant="ghost"
                             onClick={() => { setActiveTerminal(c.id); setActiveTab("terminal"); }}
@@ -188,7 +227,16 @@ export function StackDetail({ stackName }: { stackName: string }) {
       {activeTab === "compose" && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">compose.yaml</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">compose.yaml</CardTitle>
+              <Button size="xs" variant="outline" onClick={async () => {
+                const { data, error } = await apiFetch<{ stdout: string; stderr: string }>(`/api/v1/stacks/${stackName}/validate`, { method: "POST" });
+                if (error) setActionError(`Validation failed: ${error}`);
+                else setActionError(""); alert(data?.stderr || data?.stdout || "Valid");
+              }} data-testid="btn-validate">
+                Validate
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
