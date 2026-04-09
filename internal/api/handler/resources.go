@@ -98,7 +98,7 @@ func (h *ResourceHandler) ListNetworks(ctx context.Context, input *struct{}) (*N
 	}
 	nets, err := h.docker.ListNetworks(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	out := &NetworkListOutput{}
 	out.Body.Networks = nets
@@ -160,7 +160,7 @@ func (h *ResourceHandler) ListVolumes(ctx context.Context, input *struct{}) (*Vo
 	}
 	vols, err := h.docker.ListVolumes(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	out := &VolumeListOutput{}
 	out.Body.Volumes = vols
@@ -197,7 +197,7 @@ func (h *ResourceHandler) PruneVolumes(ctx context.Context, input *struct{}) (*P
 	}
 	reclaimed, err := h.docker.PruneVolumes(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	out := &PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
@@ -228,7 +228,7 @@ func (h *ResourceHandler) ListImages(ctx context.Context, input *struct{}) (*Ima
 	}
 	imgs, err := h.docker.ListImages(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	out := &ImageListOutput{}
 	out.Body.Images = imgs
@@ -261,7 +261,7 @@ func (h *ResourceHandler) PruneImages(ctx context.Context, input *struct{}) (*Pr
 	}
 	reclaimed, err := h.docker.PruneImages(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	out := &PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)

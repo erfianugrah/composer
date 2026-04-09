@@ -53,7 +53,7 @@ func (h *AuditHandler) List(ctx context.Context, input *AuditListInput) (*AuditL
 
 	entries, err := h.repo.Recent(ctx, input.Limit)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &AuditListOutput{}

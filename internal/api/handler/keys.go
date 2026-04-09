@@ -51,7 +51,7 @@ func (h *KeyHandler) List(ctx context.Context, input *struct{}) (*dto.KeyListOut
 
 	keys, err := h.auth.ListAPIKeys(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.KeyListOutput{}
@@ -72,7 +72,7 @@ func (h *KeyHandler) Get(ctx context.Context, input *dto.KeyIDInput) (*dto.KeyDe
 
 	keys, err := h.auth.ListAPIKeys(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	for _, k := range keys {
@@ -114,7 +114,7 @@ func (h *KeyHandler) Create(ctx context.Context, input *dto.CreateKeyInput) (*dt
 
 	result, err := h.auth.CreateAPIKey(ctx, input.Body.Name, role, callerID, expiresAt)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.KeyCreatedOutput{}
@@ -133,7 +133,7 @@ func (h *KeyHandler) Delete(ctx context.Context, input *dto.KeyIDInput) (*struct
 	}
 
 	if err := h.auth.DeleteAPIKey(ctx, input.ID); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	return nil, nil
 }

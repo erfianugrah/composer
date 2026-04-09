@@ -65,7 +65,7 @@ func (h *UserHandler) List(ctx context.Context, input *struct{}) (*dto.UserListO
 
 	users, err := h.users.List(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.UserListOutput{}
@@ -95,7 +95,7 @@ func (h *UserHandler) Create(ctx context.Context, input *dto.CreateUserInput) (*
 	}
 
 	if err := h.users.Create(ctx, user); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	return userToOutput(user), nil
@@ -108,7 +108,7 @@ func (h *UserHandler) Get(ctx context.Context, input *dto.UserIDInput) (*dto.Use
 
 	user, err := h.users.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	if user == nil {
 		return nil, huma.Error404NotFound("user not found")
@@ -123,7 +123,7 @@ func (h *UserHandler) Update(ctx context.Context, input *dto.UpdateUserInput) (*
 
 	user, err := h.users.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	if user == nil {
 		return nil, huma.Error404NotFound("user not found")
@@ -145,7 +145,7 @@ func (h *UserHandler) Update(ctx context.Context, input *dto.UpdateUserInput) (*
 	}
 
 	if err := h.users.Update(ctx, user); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	// Invalidate sessions when role changes so they pick up the new role
@@ -161,7 +161,7 @@ func (h *UserHandler) Delete(ctx context.Context, input *dto.UserIDInput) (*stru
 		return nil, err
 	}
 	if err := h.users.Delete(ctx, input.ID); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	return nil, nil
 }
@@ -184,7 +184,7 @@ func (h *UserHandler) ChangePassword(ctx context.Context, input *dto.ChangePassw
 	}
 
 	if err := h.users.Update(ctx, user); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	return nil, nil

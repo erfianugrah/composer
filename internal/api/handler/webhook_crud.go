@@ -66,7 +66,7 @@ func (h *WebhookCRUDHandler) List(ctx context.Context, input *struct{}) (*dto.We
 	// For now, return all -- could add stack filter query param later
 	all, err := h.webhooks.ListAll(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.WebhookListOutput{}
@@ -102,7 +102,7 @@ func (h *WebhookCRUDHandler) Create(ctx context.Context, input *dto.CreateWebhoo
 	}
 
 	if err := h.webhooks.Create(ctx, webhook); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.WebhookOutput{}
@@ -123,7 +123,7 @@ func (h *WebhookCRUDHandler) Get(ctx context.Context, input *dto.WebhookIDInput)
 
 	w, err := h.webhooks.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	if w == nil {
 		return nil, huma.Error404NotFound("webhook not found")
@@ -156,7 +156,7 @@ func (h *WebhookCRUDHandler) Update(ctx context.Context, input *UpdateWebhookInp
 
 	w, err := h.webhooks.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	if w == nil {
 		return nil, huma.Error404NotFound("webhook not found")
@@ -173,7 +173,7 @@ func (h *WebhookCRUDHandler) Update(ctx context.Context, input *UpdateWebhookInp
 	}
 
 	if err := h.webhooks.Update(ctx, w); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.WebhookOutput{}
@@ -193,7 +193,7 @@ func (h *WebhookCRUDHandler) Delete(ctx context.Context, input *dto.WebhookIDInp
 	}
 
 	if err := h.webhooks.Delete(ctx, input.ID); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	return nil, nil
 }
@@ -222,7 +222,7 @@ func (h *WebhookCRUDHandler) ListDeliveries(ctx context.Context, input *dto.Webh
 
 	deliveries, err := h.webhooks.ListDeliveries(ctx, input.ID, 50)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &DeliveryListOutput{}

@@ -64,7 +64,7 @@ func (h *ContainerHandler) List(ctx context.Context, input *struct{}) (*dto.Cont
 
 	containers, err := h.docker.ListContainers(ctx, "")
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.ContainerListOutput{}
@@ -85,7 +85,7 @@ func (h *ContainerHandler) Get(ctx context.Context, input *dto.ContainerIDInput)
 
 	c, err := h.docker.InspectContainer(ctx, input.ID)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.ContainerDetailOutput{}
@@ -118,7 +118,7 @@ func (h *ContainerHandler) Start(ctx context.Context, input *dto.ContainerIDInpu
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.StartContainer(ctx, input.ID); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	return nil, nil
 }
@@ -131,7 +131,7 @@ func (h *ContainerHandler) Stop(ctx context.Context, input *dto.ContainerIDInput
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.StopContainer(ctx, input.ID); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	return nil, nil
 }
@@ -144,7 +144,7 @@ func (h *ContainerHandler) Restart(ctx context.Context, input *dto.ContainerIDIn
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.RestartContainer(ctx, input.ID); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	return nil, nil
 }
@@ -169,7 +169,7 @@ func (h *ContainerHandler) Logs(ctx context.Context, input *ContainerLogsInput) 
 
 	reader, err := h.docker.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	defer reader.Close()
 
@@ -183,7 +183,7 @@ func (h *ContainerHandler) Logs(ctx context.Context, input *ContainerLogsInput) 
 		// Re-read as raw text.
 		reader2, err2 := h.docker.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
 		if err2 != nil {
-			return nil, internalError()
+			return nil, serverError(err)
 		}
 		defer reader2.Close()
 		raw, _ := io.ReadAll(io.LimitReader(reader2, 1<<20))

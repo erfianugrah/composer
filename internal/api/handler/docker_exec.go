@@ -79,7 +79,7 @@ func (h *DockerExecHandler) Exec(ctx context.Context, input *DockerExecInput) (*
 		if result != nil {
 			return out, nil
 		}
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 	return out, nil
 }

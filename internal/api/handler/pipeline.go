@@ -69,7 +69,7 @@ func (h *PipelineHandler) List(ctx context.Context, input *struct{}) (*dto.Pipel
 
 	pipelines, err := h.svc.List(ctx)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.PipelineListOutput{}
@@ -137,7 +137,7 @@ func (h *PipelineHandler) Get(ctx context.Context, input *dto.PipelineIDInput) (
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("pipeline not found")
 		}
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.PipelineDetailOutput{}
@@ -185,7 +185,7 @@ func (h *PipelineHandler) Run(ctx context.Context, input *dto.RunPipelineInput) 
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("pipeline not found")
 		}
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	return runToOutput(run), nil
@@ -198,7 +198,7 @@ func (h *PipelineHandler) ListRuns(ctx context.Context, input *dto.PipelineIDInp
 
 	runs, err := h.svc.ListRuns(ctx, input.ID)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.RunListOutput{}
@@ -222,7 +222,7 @@ func (h *PipelineHandler) GetRun(ctx context.Context, input *dto.RunIDInput) (*d
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("run not found")
 		}
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	return runToOutput(run), nil
@@ -249,7 +249,7 @@ func (h *PipelineHandler) Update(ctx context.Context, input *UpdatePipelineInput
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("pipeline not found")
 		}
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	// Update fields from the request body
@@ -281,7 +281,7 @@ func (h *PipelineHandler) Update(ctx context.Context, input *UpdatePipelineInput
 	}
 
 	if err := h.svc.Update(ctx, existing); err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.PipelineCreatedOutput{}
@@ -298,14 +298,14 @@ func (h *PipelineHandler) Cancel(ctx context.Context, input *dto.PipelineIDInput
 	// Get the latest running run for this pipeline and cancel it
 	runs, err := h.svc.ListRuns(ctx, input.ID)
 	if err != nil {
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	for _, run := range runs {
 		if run.Status == pipeline.RunRunning || run.Status == pipeline.RunPending {
 			// Cancel the goroutine's context + persist status
 			if err := h.svc.CancelRun(ctx, run); err != nil {
-				return nil, internalError()
+				return nil, serverError(err)
 			}
 			return nil, nil
 		}

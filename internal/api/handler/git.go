@@ -66,7 +66,7 @@ func (h *GitHandler) Sync(ctx context.Context, input *dto.GitSyncInput) (*dto.Gi
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.GitSyncOutput{}
@@ -85,7 +85,7 @@ func (h *GitHandler) Log(ctx context.Context, input *dto.GitLogInput) (*dto.GitL
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.GitLogOutput{}
@@ -109,7 +109,7 @@ func (h *GitHandler) Status(ctx context.Context, input *dto.GitStatusInput) (*dt
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found or not git-backed")
 		}
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	out := &dto.GitStatusOutput{}
@@ -132,7 +132,7 @@ func (h *GitHandler) Rollback(ctx context.Context, input *dto.GitRollbackInput) 
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found or not git-backed")
 		}
-		return nil, internalError()
+		return nil, serverError(err)
 	}
 
 	return nil, nil
