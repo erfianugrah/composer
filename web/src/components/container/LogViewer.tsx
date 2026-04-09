@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { highlightLog } from "@/lib/log-highlight";
 
 interface LogLine {
   stream: string;
@@ -124,11 +125,15 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
         ) : (
           <pre className="p-3 whitespace-pre-wrap break-all">
             {lines.map((line, i) => (
-              <div key={i} className={line.stream === "stderr" ? "text-cp-red" : "text-cp-green/80"}>
+              <div key={i} className={line.stream === "stderr" ? "text-cp-red/90" : ""}>
                 <span className="text-muted-foreground select-none">
                   {new Date(line.ts).toLocaleTimeString()}{" "}
                 </span>
-                {line.message}
+                {line.stream === "stderr" ? (
+                  line.message
+                ) : (
+                  <span dangerouslySetInnerHTML={{ __html: highlightLog(line.message) }} />
+                )}
               </div>
             ))}
             <div ref={bottomRef} />
