@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	composer "github.com/erfianugrah/composer"
 	"github.com/erfianugrah/composer/internal/api"
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/infra/store"
@@ -86,7 +87,7 @@ func TestHandler_HealthCheck(t *testing.T) {
 	var body map[string]any
 	json.Unmarshal(resp.Body.Bytes(), &body)
 	assert.Equal(t, "healthy", body["status"])
-	assert.Equal(t, "0.2.2", body["version"])
+	assert.Equal(t, composer.Version, body["version"])
 }
 
 func TestHandler_Bootstrap(t *testing.T) {
@@ -204,7 +205,7 @@ func TestHandler_OpenAPI(t *testing.T) {
 
 	info := spec["info"].(map[string]any)
 	assert.Equal(t, "Composer", info["title"])
-	assert.Equal(t, "0.2.2", info["version"])
+	assert.Equal(t, composer.Version, info["version"])
 
 	// Verify our endpoints are in the spec
 	paths := spec["paths"].(map[string]any)
