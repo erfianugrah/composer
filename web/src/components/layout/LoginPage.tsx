@@ -12,32 +12,38 @@ export function LoginPage() {
   const [mode, setMode] = useState<"loading" | "login" | "bootstrap">("loading");
 
   // Check if bootstrap is needed (zero users).
-  // Uses a deliberately invalid probe (empty email) that triggers 422 if bootstrap
-  // is available, or 409 if users already exist. The empty email ensures no real
-  // user is ever created by the probe.
+  // Try bootstrap with deliberately invalid data. Response tells us the state:
+  //   409 "already completed" = users exist -> login mode
+  //   422 validation error = bootstrap available -> bootstrap mode
+  //   401/403 = auth required (shouldn't happen, bootstrap bypasses auth)
+  //   Network error = server down -> login mode with error
   useEffect(() => {
     async function detectMode() {
-      const health = await apiFetch("/api/v1/system/health");
-      if (health.error) {
-        setError(health.error);
-        setMode("login");
-        return;
-      }
+      try {
+        const res = await fetch("/api/v1/auth/bootstrap", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          credentials: "include",
+          body: JSON.stringify({ email: "", password: "" }),
+        });
 
-      // Probe with intentionally invalid body (empty email fails Huma validation
-      // with 422 before the handler runs, so no user is created)
-      const probe = await apiFetch("/api/v1/auth/bootstrap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "", password: "" }),
-      });
-
-      if (probe.error && probe.error.includes("already")) {
-        // 409: users exist -> login mode
+        if (res.status === 409) {
+          // Users exist -> login mode
+          setMode("login");
+        } else if (res.status === 422 || res.status === 200) {
+          // Validation error (bootstrap available) or unexpected success -> bootstrap mode
+          setMode("bootstrap");
+        } else {
+          // Any other status -> default to login
+          setMode("login");
+        }
+      } catch {
+        // Network error -> show login with error
+        setError("Cannot reach the server. Check that the container is running.");
         setMode("login");
-      } else {
-        // 422 or other: bootstrap endpoint is reachable and no users exist
-        setMode("bootstrap");
       }
     }
     detectMode();
