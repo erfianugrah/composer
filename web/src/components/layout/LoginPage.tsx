@@ -54,7 +54,7 @@ export function LoginPage() {
     setError("");
     setLoading(true);
 
-    const { error: err } = await apiFetch("/api/v1/auth/login", {
+    const { error: lErr } = await apiFetch("/api/v1/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email.trim(), password }),

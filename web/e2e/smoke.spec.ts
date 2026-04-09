@@ -168,7 +168,7 @@ test.describe("Settings Page", () => {
     await expect(title).toHaveText("Settings");
 
     await expect(page.locator("text=User Management")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "System" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Version" })).toBeVisible();
     // Version is dynamically loaded from API
     await expect(page.locator("#settings-version")).toBeVisible();
   });
