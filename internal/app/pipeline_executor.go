@@ -144,22 +144,22 @@ func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) 
 		if stackName == "" {
 			return "", fmt.Errorf("compose_up: missing stack config")
 		}
-		result, err := e.compose.Up(ctx, stackName)
+		result, err := e.compose.Up(ctx, stackName, "")
 		return composeOutput(result, err)
 
 	case pipeline.StepComposeDown:
 		stackName, _ := step.Config["stack"].(string)
-		result, err := e.compose.Down(ctx, stackName, false)
+		result, err := e.compose.Down(ctx, stackName, "", false)
 		return composeOutput(result, err)
 
 	case pipeline.StepComposePull:
 		stackName, _ := step.Config["stack"].(string)
-		result, err := e.compose.Pull(ctx, stackName)
+		result, err := e.compose.Pull(ctx, stackName, "")
 		return composeOutput(result, err)
 
 	case pipeline.StepComposeRestart:
 		stackName, _ := step.Config["stack"].(string)
-		result, err := e.compose.Restart(ctx, stackName)
+		result, err := e.compose.Restart(ctx, stackName, "")
 		return composeOutput(result, err)
 
 	case pipeline.StepShellCommand:

@@ -249,7 +249,8 @@ func (s *StackService) Delete(ctx context.Context, name string, removeVolumes bo
 	}
 
 	// Stop containers first (best effort)
-	s.compose.Down(ctx, st.Path, removeVolumes)
+	cf := s.resolveComposeFile(ctx, name)
+	s.compose.Down(ctx, st.Path, cf, removeVolumes)
 
 	if err := s.stacks.Delete(ctx, name); err != nil {
 		return err
@@ -280,11 +281,12 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 		return nil, ErrNotFound
 	}
 
-	s.log.Info("deploying stack", zap.String("stack", name), zap.String("path", st.Path))
+	cf := s.resolveComposeFile(ctx, name)
+	s.log.Info("deploying stack", zap.String("stack", name), zap.String("path", st.Path), zap.String("compose_file", cf))
 	s.decryptSopsSecrets(ctx, name, st.Path)
 	defer s.reEncryptSopsSecrets(st.Path)
 
-	result, err := s.compose.Up(ctx, st.Path)
+	result, err := s.compose.Up(ctx, st.Path, cf)
 	if err != nil {
 		s.log.Error("deploy failed", zap.String("stack", name), zap.Error(err))
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
@@ -309,11 +311,12 @@ func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker
 		return nil, ErrNotFound
 	}
 
-	s.log.Info("build+deploy stack", zap.String("stack", name), zap.String("path", st.Path))
+	cf := s.resolveComposeFile(ctx, name)
+	s.log.Info("build+deploy stack", zap.String("stack", name), zap.String("path", st.Path), zap.String("compose_file", cf))
 	s.decryptSopsSecrets(ctx, name, st.Path)
 	defer s.reEncryptSopsSecrets(st.Path)
 
-	result, err := s.compose.BuildAndUp(ctx, st.Path)
+	result, err := s.compose.BuildAndUp(ctx, st.Path, cf)
 	if err != nil {
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
 		return result, err
@@ -336,8 +339,9 @@ func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeRe
 		return nil, ErrNotFound
 	}
 
+	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("stopping stack", zap.String("stack", name))
-	result, err := s.compose.Down(ctx, st.Path, false)
+	result, err := s.compose.Down(ctx, st.Path, cf, false)
 	if err != nil {
 		s.log.Error("stop failed", zap.String("stack", name), zap.Error(err))
 		return result, err
@@ -361,8 +365,9 @@ func (s *StackService) Restart(ctx context.Context, name string) (*docker.Compos
 		return nil, ErrNotFound
 	}
 
+	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("restarting stack", zap.String("stack", name))
-	result, err := s.compose.Restart(ctx, st.Path)
+	result, err := s.compose.Restart(ctx, st.Path, cf)
 	if err == nil {
 		s.log.Info("restart completed", zap.String("stack", name))
 		s.publishEvent(event.StackDeployed{Name: name, Timestamp: time.Now()})
@@ -385,8 +390,9 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 		return nil, ErrNotFound
 	}
 
+	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("pulling images", zap.String("stack", name))
-	result, err := s.compose.Pull(ctx, st.Path)
+	result, err := s.compose.Pull(ctx, st.Path, cf)
 	if err == nil {
 		s.log.Info("pull completed", zap.String("stack", name))
 		s.publishEvent(event.StackUpdated{Name: name, Timestamp: time.Now()})
@@ -594,6 +600,17 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(destPath, data, info.Mode())
 	})
+}
+
+// resolveComposeFile returns the compose file name for a stack.
+// For git stacks, uses the configured compose_path. For local stacks, returns ""
+// which lets docker compose auto-discover (compose.yaml, docker-compose.yml, etc).
+func (s *StackService) resolveComposeFile(ctx context.Context, name string) string {
+	cfg, err := s.gitCfgs.GetByStackName(ctx, name)
+	if err == nil && cfg != nil && cfg.ComposePath != "" {
+		return cfg.ComposePath
+	}
+	return ""
 }
 
 // resolveAgeKey returns the age key for SOPS decryption of a stack.

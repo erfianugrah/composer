@@ -35,64 +35,66 @@ func NewCompose(dockerHost string, log *zap.Logger) *Compose {
 // Up runs `docker compose up -d --no-build` in the given stack directory.
 // The --no-build flag prevents auto-building when a Dockerfile is present.
 // Use BuildAndUp for explicit builds.
-func (c *Compose) Up(ctx context.Context, stackDir string, services ...string) (*ComposeResult, error) {
+// composeFile is optional -- if set, passes `-f <file>` to use a specific compose file
+// instead of letting docker compose auto-discover (which may merge multiple files).
+func (c *Compose) Up(ctx context.Context, stackDir string, composeFile string, services ...string) (*ComposeResult, error) {
 	args := []string{"up", "-d", "--no-build", "--remove-orphans"}
 	args = append(args, services...)
-	return c.run(ctx, stackDir, args...)
+	return c.run(ctx, stackDir, composeFile, args...)
 }
 
 // BuildAndUp runs `docker compose up -d --build` -- explicitly builds images
 // from Dockerfiles before starting containers.
-func (c *Compose) BuildAndUp(ctx context.Context, stackDir string) (*ComposeResult, error) {
-	return c.run(ctx, stackDir, "up", "-d", "--build", "--remove-orphans")
+func (c *Compose) BuildAndUp(ctx context.Context, stackDir string, composeFile string) (*ComposeResult, error) {
+	return c.run(ctx, stackDir, composeFile, "up", "-d", "--build", "--remove-orphans")
 }
 
 // Build runs `docker compose build` without starting containers.
-func (c *Compose) Build(ctx context.Context, stackDir string) (*ComposeResult, error) {
-	return c.run(ctx, stackDir, "build")
+func (c *Compose) Build(ctx context.Context, stackDir string, composeFile string) (*ComposeResult, error) {
+	return c.run(ctx, stackDir, composeFile, "build")
 }
 
 // Down runs `docker compose down` in the given stack directory.
-func (c *Compose) Down(ctx context.Context, stackDir string, removeVolumes bool) (*ComposeResult, error) {
+func (c *Compose) Down(ctx context.Context, stackDir string, composeFile string, removeVolumes bool) (*ComposeResult, error) {
 	args := []string{"down", "--remove-orphans"}
 	if removeVolumes {
 		args = append(args, "--volumes")
 	}
-	return c.run(ctx, stackDir, args...)
+	return c.run(ctx, stackDir, composeFile, args...)
 }
 
 // Pull runs `docker compose pull` in the given stack directory.
-func (c *Compose) Pull(ctx context.Context, stackDir string, services ...string) (*ComposeResult, error) {
+func (c *Compose) Pull(ctx context.Context, stackDir string, composeFile string, services ...string) (*ComposeResult, error) {
 	args := []string{"pull"}
 	args = append(args, services...)
-	return c.run(ctx, stackDir, args...)
+	return c.run(ctx, stackDir, composeFile, args...)
 }
 
 // Restart runs `docker compose restart` in the given stack directory.
-func (c *Compose) Restart(ctx context.Context, stackDir string, services ...string) (*ComposeResult, error) {
+func (c *Compose) Restart(ctx context.Context, stackDir string, composeFile string, services ...string) (*ComposeResult, error) {
 	args := []string{"restart"}
 	args = append(args, services...)
-	return c.run(ctx, stackDir, args...)
+	return c.run(ctx, stackDir, composeFile, args...)
 }
 
 // Ps runs `docker compose ps --format json` and returns the raw output.
 func (c *Compose) Ps(ctx context.Context, stackDir string) (*ComposeResult, error) {
-	return c.run(ctx, stackDir, "ps", "--format", "json")
+	return c.run(ctx, stackDir, "", "ps", "--format", "json")
 }
 
 // Validate runs `docker compose config --quiet` to validate a compose file.
 func (c *Compose) Validate(ctx context.Context, stackDir string) (*ComposeResult, error) {
-	return c.run(ctx, stackDir, "config", "--quiet")
+	return c.run(ctx, stackDir, "", "config", "--quiet")
 }
 
 // Config runs `docker compose config` and returns the normalized compose YAML.
 func (c *Compose) Config(ctx context.Context, stackDir string) (*ComposeResult, error) {
-	return c.run(ctx, stackDir, "config")
+	return c.run(ctx, stackDir, "", "config")
 }
 
 // Exec runs an arbitrary docker compose subcommand in the given stack directory.
 func (c *Compose) Exec(ctx context.Context, stackDir string, composeArgs []string) (*ComposeResult, error) {
-	return c.run(ctx, stackDir, composeArgs...)
+	return c.run(ctx, stackDir, "", composeArgs...)
 }
 
 // RunDocker executes a raw `docker` command (not compose-scoped).
@@ -146,14 +148,24 @@ func (c *Compose) RunDocker(ctx context.Context, args []string) (*ComposeResult,
 }
 
 // run executes a docker compose command in the given working directory.
-func (c *Compose) run(ctx context.Context, workDir string, args ...string) (*ComposeResult, error) {
+// If composeFile is non-empty, passes `-f <file>` so docker compose uses
+// exactly that file instead of auto-discovering docker-compose.yml.
+func (c *Compose) run(ctx context.Context, workDir string, composeFile string, args ...string) (*ComposeResult, error) {
 	cmdStr := "docker compose " + strings.Join(args, " ")
+	if composeFile != "" {
+		cmdStr = "docker compose -f " + composeFile + " " + strings.Join(args, " ")
+	}
 	c.log.Info("compose exec",
 		zap.String("command", cmdStr),
 		zap.String("dir", workDir),
 	)
 
-	fullArgs := append([]string{"compose"}, args...)
+	var fullArgs []string
+	if composeFile != "" {
+		fullArgs = append([]string{"compose", "-f", composeFile}, args...)
+	} else {
+		fullArgs = append([]string{"compose"}, args...)
+	}
 	cmd := exec.CommandContext(ctx, "docker", fullArgs...)
 	cmd.Dir = workDir
 

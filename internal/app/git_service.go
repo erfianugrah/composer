@@ -181,7 +181,7 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 		}()
 	}
 
-	_, err = s.compose.Up(ctx, st.Path)
+	_, err = s.compose.Up(ctx, st.Path, cfg.ComposePath)
 	if err != nil {
 		s.publishEvent(domevent.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
 		return "error", fmt.Errorf("redeploying: %w", err)
