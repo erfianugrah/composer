@@ -133,7 +133,7 @@ func (h *WebhookCRUDHandler) Get(ctx context.Context, input *dto.WebhookIDInput)
 	out.Body.ID = w.ID
 	out.Body.StackName = w.StackName
 	out.Body.Provider = w.Provider
-	out.Body.Secret = w.Secret
+	out.Body.Secret = "****" + w.Secret[len(w.Secret)-4:]
 	out.Body.URL = fmt.Sprintf("/api/v1/hooks/%s", w.ID)
 	out.Body.BranchFilter = w.BranchFilter
 	out.Body.AutoRedeploy = w.AutoRedeploy
@@ -180,7 +180,7 @@ func (h *WebhookCRUDHandler) Update(ctx context.Context, input *UpdateWebhookInp
 	out.Body.ID = w.ID
 	out.Body.StackName = w.StackName
 	out.Body.Provider = w.Provider
-	out.Body.Secret = w.Secret
+	out.Body.Secret = "****" + w.Secret[len(w.Secret)-4:]
 	out.Body.URL = fmt.Sprintf("/api/v1/hooks/%s", w.ID)
 	out.Body.BranchFilter = w.BranchFilter
 	out.Body.AutoRedeploy = w.AutoRedeploy

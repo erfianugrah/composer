@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -71,8 +74,19 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create delivery record
+	var dlvBuf [8]byte
+	rand.Read(dlvBuf[:])
+	dlvID := fmt.Sprintf("dlv_%s", hex.EncodeToString(dlvBuf[:]))
+	delivery := &store.WebhookDelivery{
+		ID: dlvID, WebhookID: webhookID, Event: payload.Event,
+		Branch: payload.Branch, CommitSHA: payload.CommitSHA, Status: "received",
+	}
+	h.webhookRepo.CreateDelivery(r.Context(), delivery)
+
 	// Branch filter
 	if webhook.BranchFilter != "" && payload.Branch != webhook.BranchFilter {
+		h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "skipped", "branch_mismatch", "")
 		jsonResponse(w, http.StatusOK, map[string]string{
 			"status": "skipped", "reason": "branch filter mismatch",
 		})
@@ -80,12 +94,15 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// GitOps: sync + redeploy
+	h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "processing", "", "")
 	action, err := h.gitSvc.SyncAndRedeploy(r.Context(), webhook.StackName)
 	if err != nil {
+		h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "failed", "", err.Error())
 		jsonError(w, http.StatusInternalServerError, "sync failed")
 		return
 	}
 
+	h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "success", action, "")
 	jsonResponse(w, http.StatusOK, map[string]string{
 		"status": action, "stack": webhook.StackName,
 	})

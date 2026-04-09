@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"strings"
 	"sync"
@@ -119,6 +120,7 @@ func (e *PipelineExecutor) Execute(ctx context.Context, p *pipeline.Pipeline, ru
 		// Only resume running if ALL failures were continuable
 		if !hasHardFailure && run.Status == pipeline.RunFailed {
 			run.Status = pipeline.RunRunning
+			run.FinishedAt = nil // reset premature FinishedAt
 		}
 	}
 
@@ -165,13 +167,15 @@ func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) 
 		if command == "" {
 			return "", fmt.Errorf("shell_command: missing command config")
 		}
-		// NOTE: This intentionally executes arbitrary commands -- pipelines are operator-only.
-		// Restrict PATH to common system directories and disable history.
+		// WARNING: Executes arbitrary host commands. Pipeline creation requires admin role.
+		// Environment is scrubbed to prevent leaking secrets (DB URLs, API tokens, etc.).
 		cmd := exec.CommandContext(ctx, "sh", "-c", command)
-		cmd.Env = append(cmd.Environ(),
+		cmd.Env = []string{
 			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			"HOME=/tmp",
 			"HISTFILE=/dev/null",
-		)
+			"TERM=xterm",
+		}
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 
@@ -192,14 +196,26 @@ func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) 
 		}
 
 	case pipeline.StepHTTPRequest:
-		// Simple HTTP check (expand later)
-		url, _ := step.Config["url"].(string)
-		if url == "" {
+		urlStr, _ := step.Config["url"].(string)
+		if urlStr == "" {
 			return "", fmt.Errorf("http_request: missing url config")
 		}
-		cmd := exec.CommandContext(ctx, "curl", "-sf", "-o", "/dev/null", "-w", "%{http_code}", url)
-		out, err := cmd.CombinedOutput()
-		return strings.TrimSpace(string(out)), err
+		// Validate URL scheme (only http/https -- block file://, gopher://, etc.)
+		if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
+			return "", fmt.Errorf("http_request: only http:// and https:// URLs are allowed")
+		}
+		// Use Go's http client instead of shelling out to curl (no SSRF via exotic protocols)
+		client := &http.Client{Timeout: 30 * time.Second}
+		req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
+		if err != nil {
+			return "", fmt.Errorf("http_request: %w", err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("http_request: %w", err)
+		}
+		defer resp.Body.Close()
+		return fmt.Sprintf("%d", resp.StatusCode), nil
 
 	case pipeline.StepNotify:
 		target, _ := step.Config["target"].(string)

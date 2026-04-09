@@ -42,7 +42,7 @@ type GitSource struct {
 	SyncStatus    GitSyncStatus
 }
 
-// GitCredentials holds encrypted credential data for git authentication.
+// GitCredentials holds credential data for git authentication.
 type GitCredentials struct {
 	Token            string
 	SSHKey           string // PEM-encoded private key content

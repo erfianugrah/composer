@@ -26,7 +26,7 @@
 | L1   | HIGH     | Logic    | Pipeline cancellation does not actually stop running goroutines | Verified |
 | L2   | HIGH     | Logic    | `RecordStepResult` sets incorrect `FinishedAt` when `ContinueOnError` applies | Verified |
 | L3   | MEDIUM   | Logic    | `Pull` operation missing per-stack lock | Verified |
-| L4   | MEDIUM   | Logic    | Diff endpoint always returns "no changes" | Verified |
+| L4   | MEDIUM   | Logic    | Diff endpoint produces false positives (raw vs normalized comparison) | Verified |
 | L5   | MEDIUM   | Logic    | Container log parsing corrupts TTY output | Verified |
 | L6   | MEDIUM   | Logic    | Cron scheduler triggers duplicate concurrent runs | Verified |
 | L7   | MEDIUM   | Logic    | Webhook delivery history never recorded | Verified |
@@ -181,7 +181,7 @@ Additionally, this shells out to `curl` rather than using Go's `net/http`, which
 
 **Files:**
 - `internal/api/handler/stack.go:356-391`
-- `internal/infra/docker/compose.go:68-73`
+- `internal/infra/docker/compose.go:73-78`
 
 **Verified code in handler:**
 
@@ -197,7 +197,7 @@ if blocked[args[0]] {
 **Verified code in compose wrapper (no additional validation):**
 
 ```go
-// compose.go:68-73
+// compose.go:76-78
 func (c *Compose) Exec(ctx context.Context, stackDir string, composeArgs []string) (*ComposeResult, error) {
     return c.run(ctx, stackDir, composeArgs...)
 }
@@ -660,33 +660,63 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 
 ---
 
-### L4. MEDIUM -- Diff endpoint always returns "no changes"
+### L4. MEDIUM -- Diff endpoint produces false positives (raw vs normalized comparison)
 
 **Files:**
-- `internal/api/handler/stack.go:393-435`
-- `internal/infra/docker/compose.go:63-66`
-- `internal/api/handler/stack.go:328-347`
+- `internal/api/handler/stack.go:393-437`
+- `internal/infra/docker/compose.go:63-66` (Validate with --quiet)
+- `internal/infra/docker/compose.go:68-71` (Config without --quiet)
+- `internal/app/stack_service.go:298-308`
 
-**Verified execution flow:**
+**Correction note:** During the second verification pass, I discovered the Diff handler was updated since the initial read. It now correctly calls `h.stacks.Config()` (line 415) instead of `h.stacks.Validate()`. The original claim that "Diff always returns no changes" is **no longer true**. However, a different issue exists:
 
-1. `Diff` handler calls `h.stacks.Validate(ctx, input.Name)` on line 413
-2. `StackService.Validate` calls `s.compose.Validate(ctx, st.Path)` (stack_service.go:307)
-3. `Compose.Validate` runs `docker compose config --quiet` (compose.go:65)
-4. With `--quiet`, `docker compose config` outputs **nothing** on success (stdout is empty)
-5. Back in Diff handler, `runningResult.Stdout` is `""` (empty string after TrimSpace in compose.go:93)
-6. The Validate **handler** (stack.go:345) would have set `out.Body.Stdout = "valid"`, but the Diff handler bypasses the handler and calls the service directly
-7. Line 418 checks: `if runningContent == "" || runningContent == "valid"` -- empty string matches
-8. Line 421: `runningContent = currentContent` -- sets running content to the same value
-9. Line 424: `diff := app.ComputeDiff(runningContent, currentContent)` -- comparing identical strings
-10. `ComputeDiff` returns `{HasChanges: false, Summary: "No changes"}` (diff.go:28-29)
+**Current behavior (verified):**
 
-**Impact:** The diff endpoint always reports no changes, making it useless. The UI cannot show what would change if the stack is redeployed.
+```go
+// stack.go:414-418
+configResult, err := h.stacks.Config(ctx, input.Name)
+normalizedContent := ""
+if err == nil && configResult != nil && configResult.Stdout != "" {
+    normalizedContent = configResult.Stdout
+}
+```
 
-**Additional note (found during re-verification):** A `Config()` method already exists on both the `Compose` wrapper (`compose.go:68-71`, runs `docker compose config` without `--quiet`) and the `StackService` (`stack_service.go:298-308`). This method would return the resolved compose YAML. The Diff handler simply needs to call `h.stacks.Config()` instead of `h.stacks.Validate()`.
+```go
+// stack.go:426
+diff := app.ComputeDiff(normalizedContent, currentContent)
+```
 
-**Recommendation:** Either:
-1. Change line 413 from `h.stacks.Validate(ctx, input.Name)` to `h.stacks.Config(ctx, input.Name)` -- the `Config` method already exists and returns the resolved YAML
-2. Or store a "last deployed" snapshot of the compose content and diff current vs last-deployed
+The handler compares `normalizedContent` (from `docker compose config`, which outputs fully-resolved, normalized YAML with expanded short syntax, sorted fields, and injected defaults) against `currentContent` (raw file from disk). These will **always differ in formatting** even when semantically identical, producing false-positive diffs.
+
+For example, a simple `compose.yaml`:
+```yaml
+services:
+  web:
+    image: nginx
+    ports:
+      - 8080:80
+```
+
+After `docker compose config` normalization becomes:
+```yaml
+name: mystack
+services:
+  web:
+    image: nginx
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "8080"
+        protocol: tcp
+```
+
+**Fallback:** If `docker compose config` fails (e.g., Docker not running), line 422-423 falls back to `normalizedContent = currentContent`, which compares the file against itself and always shows no changes.
+
+**Impact:** The diff endpoint either shows false-positive changes (every field Docker normalizes) or no changes (when Docker is unavailable). Neither outcome is useful.
+
+**Recommendation:** Store a "last deployed" snapshot of the compose content at deploy time. Diff the current disk content against this snapshot. This shows actual user edits since the last deployment, which is what users care about.
 
 ---
 

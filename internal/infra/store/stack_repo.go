@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/erfianugrah/composer/internal/domain/stack"
+	"github.com/erfianugrah/composer/internal/infra/crypto"
 )
 
 // StackRepo implements stack.StackRepository using database/sql.
@@ -152,8 +153,8 @@ func (r *GitConfigRepo) UpdateSyncStatus(ctx context.Context, stackName string, 
 	return err
 }
 
-// marshalCredentials serializes git credentials to a JSON string for storage.
-// Returns nil (SQL NULL) when no credentials are provided.
+// marshalCredentials serializes and encrypts git credentials for storage.
+// Uses AES-256-GCM if COMPOSER_ENCRYPTION_KEY is set, otherwise stores plaintext.
 func marshalCredentials(creds *stack.GitCredentials) *string {
 	if creds == nil {
 		return nil
@@ -162,6 +163,26 @@ func marshalCredentials(creds *stack.GitCredentials) *string {
 	if err != nil {
 		return nil
 	}
-	s := string(b)
-	return &s
+	encrypted, err := crypto.Encrypt(string(b))
+	if err != nil {
+		s := string(b) // fallback to unencrypted
+		return &s
+	}
+	return &encrypted
+}
+
+// unmarshalCredentials decrypts and deserializes git credentials from storage.
+func unmarshalCredentials(raw string) *stack.GitCredentials {
+	if raw == "" {
+		return nil
+	}
+	decrypted, err := crypto.Decrypt(raw)
+	if err != nil {
+		return nil
+	}
+	var creds stack.GitCredentials
+	if err := json.Unmarshal([]byte(decrypted), &creds); err != nil {
+		return nil
+	}
+	return &creds
 }

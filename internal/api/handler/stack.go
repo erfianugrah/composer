@@ -363,10 +363,15 @@ func (h *StackHandler) ExecCompose(ctx context.Context, input *dto.ExecComposeIn
 		return nil, huma.Error422UnprocessableEntity("command is empty")
 	}
 
-	// Block dangerous subcommands that could escape the stack context
-	blocked := map[string]bool{"rm": true, "kill": true}
-	if blocked[args[0]] {
-		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed via the console; use the UI actions instead")
+	// Allowlist of safe compose subcommands. Anything not listed requires
+	// direct API calls (deploy/stop/etc.) or admin shell access.
+	allowed := map[string]bool{
+		"ps": true, "logs": true, "top": true, "config": true,
+		"images": true, "port": true, "version": true, "ls": true,
+		"events": true, "exec": true, "cp": true,
+	}
+	if !allowed[args[0]] {
+		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed; permitted: ps, logs, top, config, images, port, version, ls, events, exec, cp")
 	}
 
 	result, err := h.stacks.ExecCompose(ctx, input.Name, args)

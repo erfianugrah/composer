@@ -107,6 +107,23 @@ func (r *WebhookRepo) Update(ctx context.Context, w *Webhook) error {
 	return nil
 }
 
+func (r *WebhookRepo) CreateDelivery(ctx context.Context, d *WebhookDelivery) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO webhook_deliveries (id, webhook_id, event, branch, commit_sha, status, action, error)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		d.ID, d.WebhookID, d.Event, d.Branch, d.CommitSHA, d.Status, d.Action, d.Error,
+	)
+	return err
+}
+
+func (r *WebhookRepo) UpdateDeliveryStatus(ctx context.Context, id, status, action, errMsg string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE webhook_deliveries SET status=$2, action=$3, error=$4 WHERE id=$1`,
+		id, status, action, errMsg,
+	)
+	return err
+}
+
 func (r *WebhookRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM webhooks WHERE id = $1`, id)
 	return err

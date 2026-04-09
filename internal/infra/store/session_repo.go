@@ -20,10 +20,13 @@ func NewSessionRepo(db *sql.DB) *SessionRepo {
 }
 
 func (r *SessionRepo) Create(ctx context.Context, s *auth.Session) error {
+	// Store SHA-256 hash of token, not the token itself.
+	// The plain token is in s.ID (returned to client as cookie).
+	hashedID := auth.HashSessionToken(s.ID)
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO sessions (id, user_id, role, created_at, expires_at)
 		 VALUES ($1, $2, $3, $4, $5)`,
-		s.ID, s.UserID, string(s.Role), s.CreatedAt, s.ExpiresAt,
+		hashedID, s.UserID, string(s.Role), s.CreatedAt, s.ExpiresAt,
 	)
 	if err != nil {
 		return fmt.Errorf("inserting session: %w", err)
@@ -32,11 +35,13 @@ func (r *SessionRepo) Create(ctx context.Context, s *auth.Session) error {
 }
 
 func (r *SessionRepo) GetByID(ctx context.Context, id string) (*auth.Session, error) {
+	// Hash the incoming cookie token to match against stored hash
+	hashedID := auth.HashSessionToken(id)
 	s := &auth.Session{}
 	var role string
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, user_id, role, created_at, expires_at
-		 FROM sessions WHERE id = $1`, id,
+		 FROM sessions WHERE id = $1`, hashedID,
 	).Scan(&s.ID, &s.UserID, &role, &s.CreatedAt, &s.ExpiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -49,7 +54,8 @@ func (r *SessionRepo) GetByID(ctx context.Context, id string) (*auth.Session, er
 }
 
 func (r *SessionRepo) DeleteByID(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, id)
+	hashedID := auth.HashSessionToken(id)
+	_, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, hashedID)
 	return err
 }
 

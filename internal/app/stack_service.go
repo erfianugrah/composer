@@ -280,6 +280,9 @@ func (s *StackService) Restart(ctx context.Context, name string) (*docker.Compos
 
 // Pull runs docker compose pull.
 func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeResult, error) {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
 		return nil, err

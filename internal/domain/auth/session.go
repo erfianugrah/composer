@@ -2,10 +2,19 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"time"
 )
+
+// HashSessionToken computes the SHA-256 hex digest of a session token.
+// The plain token is sent in the cookie; only the hash is stored in the DB.
+func HashSessionToken(plaintext string) string {
+	h := sha256.Sum256([]byte(plaintext))
+	return hex.EncodeToString(h[:])
+}
 
 const (
 	sessionTokenBytes = 32

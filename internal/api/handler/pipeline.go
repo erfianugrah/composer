@@ -84,7 +84,8 @@ func (h *PipelineHandler) List(ctx context.Context, input *struct{}) (*dto.Pipel
 }
 
 func (h *PipelineHandler) Create(ctx context.Context, input *dto.CreatePipelineInput) (*dto.PipelineCreatedOutput, error) {
-	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+	// Admin-only: pipelines can execute shell commands on the host
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 

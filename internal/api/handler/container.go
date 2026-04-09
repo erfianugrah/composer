@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/erfianugrah/composer/internal/api/dto"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/domain/auth"
@@ -148,19 +149,26 @@ func (h *ContainerHandler) Logs(ctx context.Context, input *ContainerLogsInput) 
 	}
 	defer reader.Close()
 
-	data, err := io.ReadAll(io.LimitReader(reader, 1<<20)) // 1MB max
+	// Properly demux Docker's multiplexed stream using stdcopy.
+	// For TTY containers, Docker doesn't add multiplex headers -- stdcopy
+	// handles this gracefully by passing through raw data.
+	var stdout, stderr strings.Builder
+	_, err = stdcopy.StdCopy(&stdout, &stderr, io.LimitReader(reader, 1<<20))
 	if err != nil && err != io.EOF {
-		return nil, internalError()
+		// Fallback: TTY mode containers don't use multiplex framing.
+		// Re-read as raw text.
+		reader2, err2 := h.docker.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
+		if err2 != nil {
+			return nil, internalError()
+		}
+		defer reader2.Close()
+		raw, _ := io.ReadAll(io.LimitReader(reader2, 1<<20))
+		stdout.WriteString(string(raw))
 	}
 
-	// Strip Docker multiplex headers (8-byte prefix per frame)
-	raw := string(data)
+	combined := stdout.String() + stderr.String()
 	var lines []string
-	for _, line := range strings.Split(raw, "\n") {
-		// Docker stream header: first 8 bytes are type+size
-		if len(line) > 8 {
-			line = line[8:]
-		}
+	for _, line := range strings.Split(combined, "\n") {
 		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
