@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { highlightJSON } from "@/lib/json-highlight";
 
 interface NetworkInfo { id: string; name: string; driver: string; scope: string; internal: boolean; containers: number; }
 
@@ -72,9 +73,10 @@ export function NetworksPage() {
                     </div>
                   </div>
                   {inspecting === n.id && (
-                    <pre className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap">
-                      {inspectData[n.id] || "Loading..."}
-                    </pre>
+                    <pre
+                      className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap"
+                      dangerouslySetInnerHTML={{ __html: inspectData[n.id] ? highlightJSON(inspectData[n.id]) : "Loading..." }}
+                    />
                   )}
                 </div>
               ))}
