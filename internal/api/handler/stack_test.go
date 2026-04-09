@@ -62,6 +62,7 @@ func setupStackServer(t *testing.T) *api.Server {
 		compose,
 		nil, // no event bus in tests
 		stacksDir,
+		t.TempDir(), // dataDir
 	)
 
 	jobManager := app.NewJobManager()
