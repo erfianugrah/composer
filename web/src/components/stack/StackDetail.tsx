@@ -14,6 +14,11 @@ const DiffViewer = lazy(() => import("./DiffViewer").then(m => ({ default: m.Dif
 import { GitStatus } from "./GitStatus";
 import { EnvEditor } from "./EnvEditor";
 
+interface StackFile {
+  name: string;
+  content: string;
+}
+
 interface StackData {
   name: string;
   path: string;
@@ -21,6 +26,7 @@ interface StackData {
   status: string;
   compose_content: string;
   env_content?: string;
+  dockerfiles?: StackFile[];
   containers: {
     id: string;
     name: string;
@@ -55,7 +61,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [actionError, setActionError] = useState("");
   const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "git">("containers");
+  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "git">("containers");
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
 
   const fetchStack = async () => {
@@ -199,7 +205,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {(["containers", "compose", "env", "diff", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
+        {(["containers", "compose", ...(stack.dockerfiles?.length ? ["dockerfiles" as const] : []), "env", "diff", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -300,6 +306,21 @@ export function StackDetail({ stackName }: { stackName: string }) {
             </Suspense>
           </CardContent>
         </Card>
+      )}
+
+      {activeTab === "dockerfiles" && stack.dockerfiles && (
+        <div className="space-y-4">
+          {stack.dockerfiles.map((df) => (
+            <Card key={df.name}>
+              <CardHeader>
+                <CardTitle className="text-sm font-data">{df.name}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <pre className="text-xs font-data bg-cp-950 border border-border rounded p-3 max-h-96 overflow-auto whitespace-pre-wrap">{df.content}</pre>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
       {activeTab === "env" && (

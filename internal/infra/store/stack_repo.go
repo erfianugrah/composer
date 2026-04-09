@@ -124,11 +124,12 @@ func (r *GitConfigRepo) Upsert(ctx context.Context, stackName string, cfg *stack
 func (r *GitConfigRepo) GetByStackName(ctx context.Context, stackName string) (*stack.GitSource, error) {
 	cfg := &stack.GitSource{}
 	var authMethod, syncStatus string
+	var credsRaw sql.NullString
 	err := r.db.QueryRowContext(ctx,
-		`SELECT repo_url, branch, compose_path, auto_sync, auth_method, last_sync_at, last_commit, sync_status
+		`SELECT repo_url, branch, compose_path, auto_sync, auth_method, credentials, last_sync_at, last_commit, sync_status
 		 FROM stack_git_configs WHERE stack_name = $1`, stackName,
 	).Scan(&cfg.RepoURL, &cfg.Branch, &cfg.ComposePath, &cfg.AutoSync,
-		&authMethod, &cfg.LastSyncAt, &cfg.LastCommitSHA, &syncStatus)
+		&authMethod, &credsRaw, &cfg.LastSyncAt, &cfg.LastCommitSHA, &syncStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -137,6 +138,9 @@ func (r *GitConfigRepo) GetByStackName(ctx context.Context, stackName string) (*
 	}
 	cfg.AuthMethod = stack.GitAuthMethod(authMethod)
 	cfg.SyncStatus = stack.GitSyncStatus(syncStatus)
+	if credsRaw.Valid {
+		cfg.Credentials = unmarshalCredentials(credsRaw.String)
+	}
 	return cfg, nil
 }
 

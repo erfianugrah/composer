@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -275,6 +276,9 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 	if envData, err := os.ReadFile(envPath); err == nil {
 		out.Body.EnvContent = string(envData)
 	}
+
+	// Scan for Dockerfiles in the stack directory
+	out.Body.Dockerfiles = scanDockerfiles(st.Path)
 
 	// Populate containers from Docker
 	containers, err := h.stacks.Containers(ctx, st.Name)
@@ -600,6 +604,60 @@ func (h *StackHandler) ExecCompose(ctx context.Context, input *dto.ExecComposeIn
 	return out, nil
 }
 
+// scanDockerfiles finds Dockerfiles in a stack directory and returns their content.
+// Looks for Dockerfile, Dockerfile.*, and *.dockerfile patterns, including one level
+// of subdirectories (e.g., services/web/Dockerfile). Caps content at 64KB per file.
+func scanDockerfiles(stackDir string) []dto.StackFile {
+	const maxFileSize = 64 * 1024 // 64KB limit per file
+	var files []dto.StackFile
+
+	// Check root directory
+	entries, err := os.ReadDir(stackDir)
+	if err != nil {
+		return nil
+	}
+
+	checkFile := func(dir, name string) {
+		lower := strings.ToLower(name)
+		isDockerfile := lower == "dockerfile" ||
+			strings.HasPrefix(lower, "dockerfile.") ||
+			strings.HasSuffix(lower, ".dockerfile")
+		if !isDockerfile {
+			return
+		}
+		fullPath := filepath.Join(dir, name)
+		info, err := os.Stat(fullPath)
+		if err != nil || info.Size() > maxFileSize {
+			return
+		}
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			return
+		}
+		rel, _ := filepath.Rel(stackDir, fullPath)
+		files = append(files, dto.StackFile{Name: rel, Content: string(data)})
+	}
+
+	for _, e := range entries {
+		if e.IsDir() {
+			// Check one level of subdirectories
+			subEntries, err := os.ReadDir(filepath.Join(stackDir, e.Name()))
+			if err != nil {
+				continue
+			}
+			for _, se := range subEntries {
+				if !se.IsDir() {
+					checkFile(filepath.Join(stackDir, e.Name()), se.Name())
+				}
+			}
+		} else {
+			checkFile(stackDir, e.Name())
+		}
+	}
+
+	return files
+}
+
 // UpdateEnv saves the .env file content for a stack.
 func (h *StackHandler) UpdateEnv(ctx context.Context, input *dto.UpdateEnvInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
@@ -619,7 +677,7 @@ func (h *StackHandler) UpdateEnv(ctx context.Context, input *dto.UpdateEnvInput)
 		// Empty env = delete the .env file
 		os.Remove(envPath)
 	} else {
-		if err := os.WriteFile(envPath, []byte(input.Body.Env), 0644); err != nil {
+		if err := os.WriteFile(envPath, []byte(input.Body.Env), 0600); err != nil {
 			return nil, serverError(err)
 		}
 	}

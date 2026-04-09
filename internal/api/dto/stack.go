@@ -72,11 +72,18 @@ type StackDetailOutput struct {
 		Status         string            `json:"status"`
 		ComposeContent string            `json:"compose_content"`
 		EnvContent     string            `json:"env_content,omitempty"`
+		Dockerfiles    []StackFile       `json:"dockerfiles,omitempty" doc:"Dockerfiles found in the stack directory"`
 		GitConfig      *GitSourceOutput  `json:"git_config,omitempty"`
 		Containers     []ContainerOutput `json:"containers"`
 		CreatedAt      time.Time         `json:"created_at"`
 		UpdatedAt      time.Time         `json:"updated_at"`
 	}
+}
+
+// StackFile represents a file in the stack directory.
+type StackFile struct {
+	Name    string `json:"name" doc:"Relative path within stack directory"`
+	Content string `json:"content" doc:"File content"`
 }
 
 type UpdateEnvInput struct {
