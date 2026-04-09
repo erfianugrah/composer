@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
+
+	"go.uber.org/zap"
 )
 
 // ComposeResult holds the output of a docker compose command.
@@ -18,22 +21,28 @@ type ComposeResult struct {
 // Compose wraps the `docker compose` CLI for stack operations.
 type Compose struct {
 	dockerHost string // passed as DOCKER_HOST env var
+	log        *zap.Logger
 }
 
 // NewCompose creates a new Compose CLI wrapper.
-func NewCompose(dockerHost string) *Compose {
-	return &Compose{dockerHost: dockerHost}
+func NewCompose(dockerHost string, log *zap.Logger) *Compose {
+	if log == nil {
+		log = zap.NewNop()
+	}
+	return &Compose{dockerHost: dockerHost, log: log}
 }
 
-// Up runs `docker compose up -d` in the given stack directory.
+// Up runs `docker compose up -d --no-build` in the given stack directory.
+// The --no-build flag prevents auto-building when a Dockerfile is present.
+// Use BuildAndUp for explicit builds.
 func (c *Compose) Up(ctx context.Context, stackDir string, services ...string) (*ComposeResult, error) {
-	args := []string{"up", "-d", "--remove-orphans"}
+	args := []string{"up", "-d", "--no-build", "--remove-orphans"}
 	args = append(args, services...)
 	return c.run(ctx, stackDir, args...)
 }
 
-// BuildAndUp runs `docker compose up -d --build` -- builds images from Dockerfiles
-// before starting containers. For projects with custom Dockerfiles.
+// BuildAndUp runs `docker compose up -d --build` -- explicitly builds images
+// from Dockerfiles before starting containers.
 func (c *Compose) BuildAndUp(ctx context.Context, stackDir string) (*ComposeResult, error) {
 	return c.run(ctx, stackDir, "up", "-d", "--build", "--remove-orphans")
 }
@@ -82,17 +91,17 @@ func (c *Compose) Config(ctx context.Context, stackDir string) (*ComposeResult, 
 }
 
 // Exec runs an arbitrary docker compose subcommand in the given stack directory.
-// This is for the stack console -- operators can run any compose command.
-// Only compose subcommands are allowed (not arbitrary shell commands).
 func (c *Compose) Exec(ctx context.Context, stackDir string, composeArgs []string) (*ComposeResult, error) {
 	return c.run(ctx, stackDir, composeArgs...)
 }
 
 // RunDocker executes a raw `docker` command (not compose-scoped).
-// For the global docker console -- admin can run docker ps, docker images, etc.
 func (c *Compose) RunDocker(ctx context.Context, args []string) (*ComposeResult, error) {
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	c.log.Info("docker exec",
+		zap.String("command", "docker "+strings.Join(args, " ")),
+	)
 
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	if c.dockerHost != "" {
 		cmd.Env = append(cmd.Environ(), "DOCKER_HOST="+c.dockerHost)
 	}
@@ -101,7 +110,9 @@ func (c *Compose) RunDocker(ctx context.Context, args []string) (*ComposeResult,
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	start := time.Now()
 	err := cmd.Run()
+	duration := time.Since(start)
 
 	result := &ComposeResult{
 		Stdout: strings.TrimSpace(stdout.String()),
@@ -110,22 +121,42 @@ func (c *Compose) RunDocker(ctx context.Context, args []string) (*ComposeResult,
 
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		result.ExitCode = exitErr.ExitCode()
-		return result, nil // return output even on non-zero exit
+		c.log.Warn("docker exec non-zero exit",
+			zap.String("command", "docker "+strings.Join(args, " ")),
+			zap.Int("exit_code", result.ExitCode),
+			zap.Duration("duration", duration),
+			zap.String("stderr", truncate(result.Stderr, 500)),
+		)
+		return result, nil
 	}
 	if err != nil {
+		c.log.Error("docker exec failed",
+			zap.String("command", "docker "+strings.Join(args, " ")),
+			zap.Duration("duration", duration),
+			zap.Error(err),
+		)
 		return result, fmt.Errorf("running docker: %w", err)
 	}
 
+	c.log.Debug("docker exec completed",
+		zap.String("command", "docker "+strings.Join(args, " ")),
+		zap.Duration("duration", duration),
+	)
 	return result, nil
 }
 
 // run executes a docker compose command in the given working directory.
 func (c *Compose) run(ctx context.Context, workDir string, args ...string) (*ComposeResult, error) {
+	cmdStr := "docker compose " + strings.Join(args, " ")
+	c.log.Info("compose exec",
+		zap.String("command", cmdStr),
+		zap.String("dir", workDir),
+	)
+
 	fullArgs := append([]string{"compose"}, args...)
 	cmd := exec.CommandContext(ctx, "docker", fullArgs...)
 	cmd.Dir = workDir
 
-	// Set DOCKER_HOST if using a non-default socket
 	if c.dockerHost != "" {
 		cmd.Env = append(cmd.Environ(), "DOCKER_HOST="+c.dockerHost)
 	}
@@ -134,7 +165,9 @@ func (c *Compose) run(ctx context.Context, workDir string, args ...string) (*Com
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	start := time.Now()
 	err := cmd.Run()
+	duration := time.Since(start)
 
 	result := &ComposeResult{
 		Stdout: strings.TrimSpace(stdout.String()),
@@ -143,12 +176,37 @@ func (c *Compose) run(ctx context.Context, workDir string, args ...string) (*Com
 
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		result.ExitCode = exitErr.ExitCode()
+		c.log.Error("compose exec failed",
+			zap.String("command", cmdStr),
+			zap.String("dir", workDir),
+			zap.Int("exit_code", result.ExitCode),
+			zap.Duration("duration", duration),
+			zap.String("stderr", truncate(result.Stderr, 500)),
+		)
 		return result, fmt.Errorf("docker compose %s failed (exit %d): %s",
 			strings.Join(args, " "), result.ExitCode, result.Stderr)
 	}
 	if err != nil {
+		c.log.Error("compose exec error",
+			zap.String("command", cmdStr),
+			zap.String("dir", workDir),
+			zap.Duration("duration", duration),
+			zap.Error(err),
+		)
 		return result, fmt.Errorf("running docker compose: %w", err)
 	}
 
+	c.log.Info("compose exec completed",
+		zap.String("command", cmdStr),
+		zap.String("dir", workDir),
+		zap.Duration("duration", duration),
+	)
 	return result, nil
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	domevent "github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
@@ -22,6 +24,7 @@ type GitService struct {
 	gitClient *git.Client
 	compose   *docker.Compose
 	bus       domevent.Bus
+	log       *zap.Logger
 	stacksDir string
 }
 
@@ -31,17 +34,22 @@ func NewGitService(
 	gitClient *git.Client,
 	compose *docker.Compose,
 	bus domevent.Bus,
+	log *zap.Logger,
 	stacksDir string,
 ) *GitService {
+	if log == nil {
+		log = zap.NewNop()
+	}
 	return &GitService{
 		stacks: stacks, gitCfgs: gitCfgs, gitClient: gitClient,
-		compose: compose, bus: bus, stacksDir: stacksDir,
+		compose: compose, bus: bus, log: log.Named("git"), stacksDir: stacksDir,
 	}
 }
 
 // CreateGitStack clones a git repo and creates a git-backed stack.
 func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *stack.GitSource) (*stack.Stack, error) {
 	stackPath := filepath.Join(s.stacksDir, name)
+	s.log.Info("cloning git stack", zap.String("stack", name), zap.String("repo", gitCfg.RepoURL), zap.String("branch", gitCfg.Branch))
 
 	// Clone the repo
 	if err := s.gitClient.Clone(gitCfg.RepoURL, gitCfg.Branch, stackPath, gitCfg.Credentials); err != nil {
@@ -94,6 +102,7 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 // Sync pulls latest changes for a git-backed stack.
 // Returns whether the compose file changed and the new commit SHA.
 func (s *GitService) Sync(ctx context.Context, name string) (changed bool, newSHA string, err error) {
+	s.log.Info("syncing git stack", zap.String("stack", name))
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil || st == nil {
 		return false, "", ErrNotFound
@@ -132,8 +141,10 @@ func (s *GitService) Sync(ctx context.Context, name string) (changed bool, newSH
 // SyncAndRedeploy syncs a git-backed stack and redeploys if the compose file changed.
 // This is the core GitOps flow triggered by webhooks.
 func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action string, err error) {
+	s.log.Info("sync+redeploy", zap.String("stack", name))
 	changed, _, err := s.Sync(ctx, name)
 	if err != nil {
+		s.log.Error("sync failed", zap.String("stack", name), zap.Error(err))
 		return "error", err
 	}
 

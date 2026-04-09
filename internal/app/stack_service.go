@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	domcontainer "github.com/erfianugrah/composer/internal/domain/container"
 	"github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/domain/stack"
@@ -22,6 +24,7 @@ type StackService struct {
 	docker    *docker.Client
 	compose   *docker.Compose
 	bus       event.Bus
+	log       *zap.Logger
 	stacksDir string
 	dataDir   string
 	locks     stackLocks // per-stack mutex to prevent concurrent operations
@@ -60,15 +63,20 @@ func NewStackService(
 	dockerClient *docker.Client,
 	compose *docker.Compose,
 	bus event.Bus,
+	log *zap.Logger,
 	stacksDir string,
 	dataDir string,
 ) *StackService {
+	if log == nil {
+		log = zap.NewNop()
+	}
 	return &StackService{
 		stacks:    stacks,
 		gitCfgs:   gitCfgs,
 		docker:    dockerClient,
 		compose:   compose,
 		bus:       bus,
+		log:       log.Named("stacks"),
 		stacksDir: stacksDir,
 		dataDir:   dataDir,
 		locks:     stackLocks{locks: make(map[string]*sync.Mutex)},
@@ -272,16 +280,18 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 		return nil, ErrNotFound
 	}
 
-	// Decrypt SOPS secrets before deploy, re-encrypt after (even on failure)
+	s.log.Info("deploying stack", zap.String("stack", name), zap.String("path", st.Path))
 	s.decryptSopsSecrets(ctx, name, st.Path)
 	defer s.reEncryptSopsSecrets(st.Path)
 
 	result, err := s.compose.Up(ctx, st.Path)
 	if err != nil {
+		s.log.Error("deploy failed", zap.String("stack", name), zap.Error(err))
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
 		return result, err
 	}
 
+	s.log.Info("deploy completed", zap.String("stack", name))
 	s.publishEvent(event.StackDeployed{Name: name, Timestamp: time.Now()})
 	return result, nil
 }
@@ -299,7 +309,7 @@ func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker
 		return nil, ErrNotFound
 	}
 
-	// Decrypt SOPS secrets before build+deploy, re-encrypt after
+	s.log.Info("build+deploy stack", zap.String("stack", name), zap.String("path", st.Path))
 	s.decryptSopsSecrets(ctx, name, st.Path)
 	defer s.reEncryptSopsSecrets(st.Path)
 
@@ -326,11 +336,14 @@ func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeRe
 		return nil, ErrNotFound
 	}
 
+	s.log.Info("stopping stack", zap.String("stack", name))
 	result, err := s.compose.Down(ctx, st.Path, false)
 	if err != nil {
+		s.log.Error("stop failed", zap.String("stack", name), zap.Error(err))
 		return result, err
 	}
 
+	s.log.Info("stop completed", zap.String("stack", name))
 	s.publishEvent(event.StackStopped{Name: name, Timestamp: time.Now()})
 	return result, nil
 }
@@ -348,9 +361,13 @@ func (s *StackService) Restart(ctx context.Context, name string) (*docker.Compos
 		return nil, ErrNotFound
 	}
 
+	s.log.Info("restarting stack", zap.String("stack", name))
 	result, err := s.compose.Restart(ctx, st.Path)
 	if err == nil {
+		s.log.Info("restart completed", zap.String("stack", name))
 		s.publishEvent(event.StackDeployed{Name: name, Timestamp: time.Now()})
+	} else {
+		s.log.Error("restart failed", zap.String("stack", name), zap.Error(err))
 	}
 	return result, err
 }
@@ -368,9 +385,13 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 		return nil, ErrNotFound
 	}
 
+	s.log.Info("pulling images", zap.String("stack", name))
 	result, err := s.compose.Pull(ctx, st.Path)
 	if err == nil {
+		s.log.Info("pull completed", zap.String("stack", name))
 		s.publishEvent(event.StackUpdated{Name: name, Timestamp: time.Now()})
+	} else {
+		s.log.Error("pull failed", zap.String("stack", name), zap.Error(err))
 	}
 	return result, err
 }
@@ -595,24 +616,40 @@ func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackP
 		return
 	}
 	ageKey := s.resolveAgeKey(ctx, stackName)
+	if ageKey == "" {
+		s.log.Debug("no age key available for SOPS decryption", zap.String("stack", stackName))
+		return
+	}
 
-	// Decrypt .env if SOPS-encrypted (saves original as .env.sops)
-	sops.DecryptEnvFile(stackPath, ageKey)
+	if decrypted, err := sops.DecryptEnvFile(stackPath, ageKey); err != nil {
+		s.log.Error("sops: failed to decrypt .env", zap.String("stack", stackName), zap.Error(err))
+	} else if decrypted {
+		s.log.Info("sops: decrypted .env", zap.String("stack", stackName))
+	}
 
-	// Decrypt compose file if SOPS-encrypted (saves original as compose.yaml.sops)
 	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
 		composePath := filepath.Join(stackPath, name)
 		if _, err := os.Stat(composePath); err == nil {
-			sops.DecryptComposeSecrets(composePath, ageKey)
+			if decrypted, err := sops.DecryptComposeSecrets(composePath, ageKey); err != nil {
+				s.log.Error("sops: failed to decrypt compose", zap.String("stack", stackName), zap.String("file", name), zap.Error(err))
+			} else if decrypted {
+				s.log.Info("sops: decrypted compose", zap.String("stack", stackName), zap.String("file", name))
+			}
 		}
 	}
 }
 
-// reEncryptSopsSecrets restores SOPS-encrypted .env and compose files from
-// their .sops backups. Call after deploy completes so secrets are never
-// left decrypted at rest.
 func (s *StackService) reEncryptSopsSecrets(stackPath string) {
-	sops.ReEncryptEnvFile(stackPath)
+	if err := sops.ReEncryptEnvFile(stackPath); err != nil {
+		s.log.Error("sops: failed to re-encrypt .env", zap.String("path", stackPath), zap.Error(err))
+	} else {
+		// Only log if there was a .sops backup to restore
+		envSops := filepath.Join(stackPath, ".env.sops")
+		if _, err := os.Stat(envSops); err != nil {
+			// .sops already cleaned up = re-encrypt happened
+			s.log.Info("sops: re-encrypted .env", zap.String("path", stackPath))
+		}
+	}
 	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
 		sops.ReEncryptComposeSecrets(filepath.Join(stackPath, name))
 	}

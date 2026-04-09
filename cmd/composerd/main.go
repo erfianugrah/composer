@@ -140,7 +140,7 @@ func main() {
 			zap.String("runtime", dockerClient.Runtime()),
 			zap.String("host", dockerClient.Host()),
 		)
-		compose = docker.NewCompose(dockerClient.Host())
+		compose = docker.NewCompose(dockerClient.Host(), logger)
 	}
 
 	// --- Valkey Cache (optional) ---
@@ -223,8 +223,8 @@ func main() {
 	authSvc := app.NewAuthService(userRepo, sessionRepo, apiKeyRepo)
 	var gitSvc *app.GitService
 	if dockerClient != nil {
-		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, cfg.StacksDir, cfg.DataDir)
-		gitSvc = app.NewGitService(stackRepo, gitConfigRepo, gitClient, compose, bus, cfg.StacksDir)
+		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, logger, cfg.StacksDir, cfg.DataDir)
+		gitSvc = app.NewGitService(stackRepo, gitConfigRepo, gitClient, compose, bus, logger, cfg.StacksDir)
 	}
 
 	// --- Pipeline Service ---

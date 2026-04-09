@@ -61,7 +61,7 @@ func TestCompose_ValidateAndUp(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	comp := docker.NewCompose(c.Host())
+	comp := docker.NewCompose(c.Host(), nil)
 	ctx := context.Background()
 
 	// Validate
@@ -103,7 +103,7 @@ func TestCompose_ValidateInvalid(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	comp := docker.NewCompose(c.Host())
+	comp := docker.NewCompose(c.Host(), nil)
 
 	_, err = comp.Validate(context.Background(), dir)
 	assert.Error(t, err, "expected validation to fail for invalid compose")

@@ -52,7 +52,7 @@ func setupStackServer(t *testing.T) *api.Server {
 	require.NoError(t, err)
 	t.Cleanup(func() { dockerClient.Close() })
 
-	compose := docker.NewCompose(dockerClient.Host())
+	compose := docker.NewCompose(dockerClient.Host(), nil)
 	stacksDir := t.TempDir()
 
 	stackSvc := app.NewStackService(
@@ -61,6 +61,7 @@ func setupStackServer(t *testing.T) *api.Server {
 		dockerClient,
 		compose,
 		nil, // no event bus in tests
+		nil, // no logger in tests
 		stacksDir,
 		t.TempDir(), // dataDir
 	)
