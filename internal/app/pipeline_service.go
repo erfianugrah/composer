@@ -12,13 +12,14 @@ import (
 
 // PipelineService orchestrates pipeline CRUD and execution.
 type PipelineService struct {
-	pipelines pipeline.PipelineRepository
-	runs      pipeline.RunRepository
-	executor  *PipelineExecutor
-	wg        sync.WaitGroup
-	cancel    context.CancelFunc
-	runCtx    context.Context
-	logger    *zap.Logger
+	pipelines  pipeline.PipelineRepository
+	runs       pipeline.RunRepository
+	executor   *PipelineExecutor
+	wg         sync.WaitGroup
+	cancel     context.CancelFunc
+	runCtx     context.Context
+	logger     *zap.Logger
+	runCancels sync.Map // map[runID]context.CancelFunc -- per-run cancellation
 }
 
 func NewPipelineService(
@@ -107,11 +108,17 @@ func (s *PipelineService) Run(ctx context.Context, pipelineID, triggeredBy strin
 		return nil, fmt.Errorf("persisting run: %w", err)
 	}
 
-	// Execute asynchronously with cancellable context and WaitGroup tracking
+	// Execute asynchronously with per-run cancellable context
+	runCtx, runCancel := context.WithCancel(s.runCtx)
+	s.runCancels.Store(run.ID, runCancel)
+
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		result := s.executor.Execute(s.runCtx, p, run)
+		defer s.runCancels.Delete(run.ID)
+		defer runCancel()
+
+		result := s.executor.Execute(runCtx, p, run)
 		if err := s.runs.Update(context.Background(), result); err != nil && s.logger != nil {
 			s.logger.Warn("failed to update pipeline run", zap.String("run_id", run.ID), zap.Error(err))
 		}
@@ -137,5 +144,16 @@ func (s *PipelineService) ListRuns(ctx context.Context, pipelineID string) ([]*p
 
 // UpdateRun persists a run's current state (e.g. after cancellation).
 func (s *PipelineService) UpdateRun(ctx context.Context, run *pipeline.Run) error {
+	return s.runs.Update(ctx, run)
+}
+
+// CancelRun cancels a running pipeline's context and persists the cancelled status.
+func (s *PipelineService) CancelRun(ctx context.Context, run *pipeline.Run) error {
+	// Cancel the goroutine's context if it's still running
+	if cancelFn, ok := s.runCancels.Load(run.ID); ok {
+		cancelFn.(context.CancelFunc)()
+	}
+
+	run.Cancel()
 	return s.runs.Update(ctx, run)
 }

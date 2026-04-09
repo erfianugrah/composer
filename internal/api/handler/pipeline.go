@@ -303,9 +303,8 @@ func (h *PipelineHandler) Cancel(ctx context.Context, input *dto.PipelineIDInput
 
 	for _, run := range runs {
 		if run.Status == pipeline.RunRunning || run.Status == pipeline.RunPending {
-			run.Cancel()
-			// Persist the cancellation to the database
-			if err := h.svc.UpdateRun(ctx, run); err != nil {
+			// Cancel the goroutine's context + persist status
+			if err := h.svc.CancelRun(ctx, run); err != nil {
 				return nil, internalError()
 			}
 			return nil, nil

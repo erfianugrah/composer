@@ -210,6 +210,11 @@ func (s *StackService) Delete(ctx context.Context, name string, removeVolumes bo
 
 	s.publishEvent(event.StackDeleted{Name: name, Timestamp: time.Now()})
 
+	// Clean up the per-stack lock to prevent unbounded growth
+	s.locks.mu.Lock()
+	delete(s.locks.locks, name)
+	s.locks.mu.Unlock()
+
 	return nil
 }
 

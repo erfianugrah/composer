@@ -111,9 +111,15 @@ func (n *Notifier) sendSlack(webhookURL string, evt domevent.Event) error {
 	emoji := ":white_check_mark:"
 	color := "#5adecd" // green
 	switch evt.EventType() {
-	case "stack.error", "pipeline.run.finished":
+	case "stack.error":
 		emoji = ":x:"
 		color = "#f37e96" // red
+	case "pipeline.run.finished":
+		// Check actual status for success vs failure
+		if e, ok := evt.(domevent.PipelineRunFinished); ok && e.Status != "success" {
+			emoji = ":x:"
+			color = "#f37e96" // red
+		}
 	case "stack.stopped":
 		emoji = ":octagonal_sign:"
 		color = "#f1a171" // peach

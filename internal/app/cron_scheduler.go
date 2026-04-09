@@ -88,6 +88,19 @@ func (s *CronScheduler) checkSchedules(ctx context.Context) {
 			}
 
 			if shouldRunCron(cronExpr, now) {
+				// Skip if a run is already in progress for this pipeline
+				runs, _ := s.pipelineSvc.ListRuns(ctx, p.ID)
+				hasActive := false
+				for _, r := range runs {
+					if r.Status == pipeline.RunPending || r.Status == pipeline.RunRunning {
+						hasActive = true
+						break
+					}
+				}
+				if hasActive {
+					continue
+				}
+
 				s.logger.Info("cron: triggering pipeline",
 					zap.String("pipeline", p.Name),
 					zap.String("cron", cronExpr),

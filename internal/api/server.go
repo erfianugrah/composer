@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -46,7 +47,11 @@ func NewServer(deps Deps) *Server {
 
 	// Global middleware
 	router.Use(chimiddleware.RequestID)
-	router.Use(chimiddleware.RealIP)
+	// Only trust X-Real-IP/X-Forwarded-For when behind a reverse proxy.
+	// Without this, clients can spoof their IP to bypass rate limiting and audit logs.
+	if os.Getenv("COMPOSER_TRUSTED_PROXIES") != "" {
+		router.Use(chimiddleware.RealIP)
+	}
 	router.Use(chimiddleware.Recoverer)
 	router.Use(authmw.SecurityHeaders)
 	router.Use(authmw.RateLimit(authmw.GeneralRateLimit()))

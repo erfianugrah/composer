@@ -24,9 +24,8 @@ var bypassPaths = map[string]bool{
 	"/api/v1/system/health":  true,
 	"/api/v1/auth/bootstrap": true,
 	"/api/v1/auth/login":     true,
-	"/openapi.json":          true,
-	"/openapi.yaml":          true,
-	"/docs":                  true,
+	// OpenAPI spec and docs require authentication (viewer+).
+	// They expose the full API surface which is an attack surface map.
 }
 
 // bypassPrefixes are path prefixes that skip authentication.

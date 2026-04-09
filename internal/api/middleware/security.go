@@ -14,6 +14,8 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		// CSP: restrict scripts to self + inline (Astro) + Stoplight Elements CDN for /docs
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; connect-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'")
 
 		// HSTS only if request came over TLS or via a trusted proxy
 		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
