@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -31,6 +33,11 @@ func (h *ContainerHandler) Register(api huma.API) {
 		OperationID: "getContainer", Method: http.MethodGet,
 		Path: "/api/v1/containers/{id}", Summary: "Get container detail", Tags: []string{"containers"},
 	}, h.Get)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "containerLogs", Method: http.MethodGet,
+		Path: "/api/v1/containers/{id}/logs", Summary: "Get container logs (snapshot, not streaming)", Tags: []string{"containers"},
+	}, h.Logs)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "startContainer", Method: http.MethodPost,
@@ -115,4 +122,51 @@ func (h *ContainerHandler) Restart(ctx context.Context, input *dto.ContainerIDIn
 		return nil, internalError()
 	}
 	return nil, nil
+}
+
+// ContainerLogsInput adds tail/since query params to the container ID.
+type ContainerLogsInput struct {
+	ID    string `path:"id" doc:"Container ID"`
+	Tail  string `query:"tail" default:"100" doc:"Number of lines from the end"`
+	Since string `query:"since" default:"" doc:"Show logs since (e.g. 5m, 2h, or RFC3339 timestamp)"`
+}
+
+type ContainerLogsOutput struct {
+	Body struct {
+		Lines []string `json:"lines"`
+	}
+}
+
+func (h *ContainerHandler) Logs(ctx context.Context, input *ContainerLogsInput) (*ContainerLogsOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return nil, err
+	}
+
+	reader, err := h.docker.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
+	if err != nil {
+		return nil, internalError()
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(io.LimitReader(reader, 1<<20)) // 1MB max
+	if err != nil && err != io.EOF {
+		return nil, internalError()
+	}
+
+	// Strip Docker multiplex headers (8-byte prefix per frame)
+	raw := string(data)
+	var lines []string
+	for _, line := range strings.Split(raw, "\n") {
+		// Docker stream header: first 8 bytes are type+size
+		if len(line) > 8 {
+			line = line[8:]
+		}
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+
+	out := &ContainerLogsOutput{}
+	out.Body.Lines = lines
+	return out, nil
 }

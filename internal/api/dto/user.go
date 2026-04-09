@@ -82,6 +82,17 @@ type KeyCreatedOutput struct {
 	}
 }
 
+type KeyDetailOutput struct {
+	Body struct {
+		ID         string     `json:"id"`
+		Name       string     `json:"name"`
+		Role       string     `json:"role"`
+		LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+		ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+		CreatedAt  time.Time  `json:"created_at"`
+	}
+}
+
 type KeyListOutput struct {
 	Body struct {
 		Keys []KeySummary `json:"keys"`

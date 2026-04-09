@@ -42,6 +42,11 @@ func (h *WebhookCRUDHandler) Register(api huma.API) {
 	}, h.Get)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "updateWebhook", Method: http.MethodPut,
+		Path: "/api/v1/webhooks/{id}", Summary: "Update webhook settings", Tags: []string{"webhooks"},
+	}, h.Update)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "deleteWebhook", Method: http.MethodDelete,
 		Path: "/api/v1/webhooks/{id}", Summary: "Delete a webhook", Tags: []string{"webhooks"},
 	}, h.Delete)
@@ -122,6 +127,53 @@ func (h *WebhookCRUDHandler) Get(ctx context.Context, input *dto.WebhookIDInput)
 	}
 	if w == nil {
 		return nil, huma.Error404NotFound("webhook not found")
+	}
+
+	out := &dto.WebhookOutput{}
+	out.Body.ID = w.ID
+	out.Body.StackName = w.StackName
+	out.Body.Provider = w.Provider
+	out.Body.Secret = w.Secret
+	out.Body.URL = fmt.Sprintf("/api/v1/hooks/%s", w.ID)
+	out.Body.BranchFilter = w.BranchFilter
+	out.Body.AutoRedeploy = w.AutoRedeploy
+	return out, nil
+}
+
+type UpdateWebhookInput struct {
+	ID   string `path:"id" doc:"Webhook ID"`
+	Body struct {
+		BranchFilter string `json:"branch_filter,omitempty" doc:"Branch filter"`
+		AutoRedeploy *bool  `json:"auto_redeploy,omitempty" doc:"Auto-redeploy on push"`
+		Provider     string `json:"provider,omitempty" doc:"Webhook provider"`
+	}
+}
+
+func (h *WebhookCRUDHandler) Update(ctx context.Context, input *UpdateWebhookInput) (*dto.WebhookOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	w, err := h.webhooks.GetByID(ctx, input.ID)
+	if err != nil {
+		return nil, internalError()
+	}
+	if w == nil {
+		return nil, huma.Error404NotFound("webhook not found")
+	}
+
+	if input.Body.BranchFilter != "" {
+		w.BranchFilter = input.Body.BranchFilter
+	}
+	if input.Body.AutoRedeploy != nil {
+		w.AutoRedeploy = *input.Body.AutoRedeploy
+	}
+	if input.Body.Provider != "" {
+		w.Provider = input.Body.Provider
+	}
+
+	if err := h.webhooks.Update(ctx, w); err != nil {
+		return nil, internalError()
 	}
 
 	out := &dto.WebhookOutput{}

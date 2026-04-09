@@ -34,6 +34,11 @@ func (h *KeyHandler) Register(api huma.API) {
 	}, h.Create)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "getKey", Method: http.MethodGet,
+		Path: "/api/v1/keys/{id}", Summary: "Get API key details", Tags: []string{"keys"},
+	}, h.Get)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "deleteKey", Method: http.MethodDelete,
 		Path: "/api/v1/keys/{id}", Summary: "Revoke API key", Tags: []string{"keys"},
 	}, h.Delete)
@@ -58,6 +63,32 @@ func (h *KeyHandler) List(ctx context.Context, input *struct{}) (*dto.KeyListOut
 		})
 	}
 	return out, nil
+}
+
+func (h *KeyHandler) Get(ctx context.Context, input *dto.KeyIDInput) (*dto.KeyDetailOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	keys, err := h.auth.ListAPIKeys(ctx)
+	if err != nil {
+		return nil, internalError()
+	}
+
+	for _, k := range keys {
+		if k.ID == input.ID {
+			out := &dto.KeyDetailOutput{}
+			out.Body.ID = k.ID
+			out.Body.Name = k.Name
+			out.Body.Role = string(k.Role)
+			out.Body.LastUsedAt = k.LastUsedAt
+			out.Body.ExpiresAt = k.ExpiresAt
+			out.Body.CreatedAt = k.CreatedAt
+			return out, nil
+		}
+	}
+
+	return nil, huma.Error404NotFound("API key not found")
 }
 
 func (h *KeyHandler) Create(ctx context.Context, input *dto.CreateKeyInput) (*dto.KeyCreatedOutput, error) {

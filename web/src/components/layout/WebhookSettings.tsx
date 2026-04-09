@@ -37,6 +37,8 @@ export function WebhookSettings() {
   const [creating, setCreating] = useState(false);
   const [newWebhook, setNewWebhook] = useState<WebhookDetail | null>(null);
   const [error, setError] = useState("");
+  const [deliveries, setDeliveries] = useState<{ id: string; event: string; status: string; branch: string; created_at: string }[]>([]);
+  const [deliveriesFor, setDeliveriesFor] = useState<string | null>(null);
 
   // Form state
   const [stackName, setStackName] = useState("");
@@ -198,6 +200,19 @@ export function WebhookSettings() {
                     <code className="text-xs font-data text-muted-foreground">{wh.url}</code>
                     <Button
                       size="xs"
+                      variant="outline"
+                      onClick={async () => {
+                        if (deliveriesFor === wh.id) { setDeliveriesFor(null); return; }
+                        const { data } = await apiFetch<{ deliveries: typeof deliveries }>(`/api/v1/webhooks/${wh.id}/deliveries`);
+                        if (data) setDeliveries(data.deliveries || []);
+                        setDeliveriesFor(wh.id);
+                      }}
+                      data-testid={`webhook-history-${wh.id}`}
+                    >
+                      {deliveriesFor === wh.id ? "Hide" : "History"}
+                    </Button>
+                    <Button
+                      size="xs"
                       variant="destructive"
                       onClick={() => handleDelete(wh.id)}
                       data-testid={`webhook-delete-${wh.id}`}
@@ -205,6 +220,23 @@ export function WebhookSettings() {
                       Delete
                     </Button>
                   </div>
+                  {/* Delivery history for this webhook */}
+                  {deliveriesFor === wh.id && (
+                    <div className="mt-2 space-y-1">
+                      {deliveries.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No deliveries yet.</p>
+                      ) : deliveries.map((d) => (
+                        <div key={d.id} className="flex items-center gap-2 text-xs rounded border border-border/50 p-2">
+                          <Badge className={d.status === "success" ? "bg-cp-green/20 text-cp-green border-cp-green/30" : d.status === "failed" ? "bg-cp-red/20 text-cp-red border-cp-red/30" : "bg-cp-600/20 text-muted-foreground border-cp-600/30"}>
+                            {d.status}
+                          </Badge>
+                          <span className="font-data">{d.event}</span>
+                          {d.branch && <span className="text-muted-foreground">{d.branch}</span>}
+                          <span className="ml-auto text-muted-foreground font-data">{new Date(d.created_at).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

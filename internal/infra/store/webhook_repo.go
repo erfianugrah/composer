@@ -93,6 +93,20 @@ func (r *WebhookRepo) ListAll(ctx context.Context) ([]*Webhook, error) {
 	return webhooks, rows.Err()
 }
 
+func (r *WebhookRepo) Update(ctx context.Context, w *Webhook) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE webhooks SET branch_filter=$2, auto_redeploy=$3, provider=$4 WHERE id=$1`,
+		w.ID, w.BranchFilter, w.AutoRedeploy, w.Provider,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return ErrNotUpdated
+	}
+	return nil
+}
+
 func (r *WebhookRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM webhooks WHERE id = $1`, id)
 	return err

@@ -118,15 +118,48 @@ export function UserManagement() {
             {users.map((u) => (
               <div key={u.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                 <div className="flex items-center gap-3">
-                  <Badge className={roleColor[u.role] || roleColor.viewer}>{u.role}</Badge>
+                  <select
+                    value={u.role}
+                    onChange={async (e) => {
+                      const newRole = e.target.value;
+                      const { error: err } = await apiFetch(`/api/v1/users/${u.id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ role: newRole }),
+                      });
+                      if (err) setError(err);
+                      else fetchUsers();
+                    }}
+                    className={`text-xs px-2 py-0.5 rounded border font-medium ${roleColor[u.role] || roleColor.viewer}`}
+                    data-testid={`user-role-${u.id}`}
+                  >
+                    <option value="admin">admin</option>
+                    <option value="operator">operator</option>
+                    <option value="viewer">viewer</option>
+                  </select>
                   <span className="text-sm">{u.email}</span>
                   <span className="text-xs text-muted-foreground font-data">
                     {u.last_login_at ? `Last login: ${new Date(u.last_login_at).toLocaleDateString()}` : "Never logged in"}
                   </span>
                 </div>
-                <Button size="xs" variant="destructive" onClick={() => handleDelete(u.id)} data-testid={`user-delete-${u.id}`}>
-                  Delete
-                </Button>
+                <div className="flex gap-1">
+                  <Button size="xs" variant="outline" onClick={async () => {
+                    const newPw = prompt("New password (min 8 chars):");
+                    if (!newPw || newPw.length < 8) return;
+                    const { error: err } = await apiFetch(`/api/v1/users/${u.id}/password`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ password: newPw }),
+                    });
+                    if (err) setError(err);
+                    else setError("");
+                  }} data-testid={`user-pw-${u.id}`}>
+                    Password
+                  </Button>
+                  <Button size="xs" variant="destructive" onClick={() => handleDelete(u.id)} data-testid={`user-delete-${u.id}`}>
+                    Delete
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
