@@ -33,15 +33,20 @@ This is equivalent to root access on the host. There is no way to meaningfully r
 
 ## Encryption at Rest
 
-When `COMPOSER_ENCRYPTION_KEY` is set:
+Encryption is **automatic** -- no configuration needed:
+
 - **Git credentials** (tokens, SSH keys, passwords) are encrypted with AES-256-GCM before storage
 - **Webhook secrets** are encrypted with AES-256-GCM before storage
-- The key is derived from the environment variable via SHA-256
 - A unique 12-byte nonce is generated per encryption operation
 - Encrypted values are prefixed with `enc:` for identification
-- **Backwards compatible**: unencrypted data from before enabling encryption is read normally
+- **Backwards compatible**: unencrypted data from before encryption is read normally
 
-Without the key, credentials are stored in plaintext. **Always set this in production.**
+Key resolution (in priority order):
+1. `COMPOSER_ENCRYPTION_KEY` env var (explicit override, SHA-256 derived)
+2. `COMPOSER_DATA_DIR/encryption.key` file (auto-generated on first run)
+3. If neither exists, a 32-byte random key is generated, saved to the key file, and used
+
+The key file is created with `0600` permissions (owner-read only). Back it up -- losing it means encrypted credentials can't be decrypted.
 
 ## Authentication
 

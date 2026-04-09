@@ -6,10 +6,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -19,16 +21,50 @@ var (
 	encKeyErr  error
 )
 
-// ErrNoKey is returned when COMPOSER_ENCRYPTION_KEY is not set.
-var ErrNoKey = errors.New("COMPOSER_ENCRYPTION_KEY not set -- credentials will not be encrypted")
+// ErrNoKey is returned when no encryption key could be resolved.
+var ErrNoKey = errors.New("no encryption key available")
 
-// deriveKey derives a 32-byte AES-256 key from the env var using SHA-256.
+// deriveKey resolves the encryption key from (in priority order):
+// 1. COMPOSER_ENCRYPTION_KEY env var
+// 2. Persistent key file at COMPOSER_DATA_DIR/encryption.key
+// 3. Auto-generate a new key and save it to the key file
 func deriveKey() ([]byte, error) {
-	raw := os.Getenv("COMPOSER_ENCRYPTION_KEY")
-	if raw == "" {
-		return nil, ErrNoKey
+	// 1. Env var takes priority (explicit override)
+	if raw := os.Getenv("COMPOSER_ENCRYPTION_KEY"); raw != "" {
+		h := sha256.Sum256([]byte(raw))
+		return h[:], nil
 	}
-	h := sha256.Sum256([]byte(raw))
+
+	// 2. Try persistent key file
+	dataDir := os.Getenv("COMPOSER_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "/opt/composer"
+	}
+	keyFile := filepath.Join(dataDir, "encryption.key")
+
+	if data, err := os.ReadFile(keyFile); err == nil && len(data) >= 32 {
+		// Key file exists and has content -- use it
+		h := sha256.Sum256(data)
+		return h[:], nil
+	}
+
+	// 3. Auto-generate and persist
+	var buf [32]byte
+	if _, err := io.ReadFull(rand.Reader, buf[:]); err != nil {
+		return nil, fmt.Errorf("generating encryption key: %w", err)
+	}
+	keyHex := hex.EncodeToString(buf[:])
+
+	// Ensure directory exists
+	os.MkdirAll(dataDir, 0755)
+	if err := os.WriteFile(keyFile, []byte(keyHex), 0600); err != nil {
+		// Can't persist -- use the key in memory only this run
+		// (won't be able to decrypt on restart, but at least this run works)
+		h := sha256.Sum256([]byte(keyHex))
+		return h[:], nil
+	}
+
+	h := sha256.Sum256([]byte(keyHex))
 	return h[:], nil
 }
 
@@ -41,7 +77,7 @@ func getKey() ([]byte, error) {
 
 // Encrypt encrypts plaintext using AES-256-GCM.
 // Returns base64-encoded ciphertext (nonce prepended).
-// If COMPOSER_ENCRYPTION_KEY is not set, returns plaintext unchanged (backwards compat).
+// Key is auto-generated and persisted if not explicitly set.
 func Encrypt(plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil
@@ -49,7 +85,7 @@ func Encrypt(plaintext string) (string, error) {
 
 	key, err := getKey()
 	if err != nil {
-		// No key configured -- store unencrypted (backwards compatible)
+		// Should never happen now (auto-generate), but fallback to plaintext
 		return plaintext, nil
 	}
 
@@ -86,7 +122,7 @@ func Decrypt(encoded string) (string, error) {
 
 	key, err := getKey()
 	if err != nil {
-		return "", fmt.Errorf("decryption requires COMPOSER_ENCRYPTION_KEY: %w", err)
+		return "", fmt.Errorf("decryption requires encryption key: %w", err)
 	}
 
 	data, err := base64.StdEncoding.DecodeString(encoded[4:])
