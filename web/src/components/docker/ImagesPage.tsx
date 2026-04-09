@@ -39,7 +39,7 @@ export function ImagesPage() {
         <CardHeader><CardTitle className="text-sm">Pull Image</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={async (e) => { e.preventDefault(); setError(""); setPulling(true);
-            const { error: err } = await apiFetch("/api/v1/images/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref }) });
+            const { error: err } = await apiFetch("/api/v1/images/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref: ref.trim() }) });
             if (err) setError(err); else { setRef(""); fetch_(); }
             setPulling(false);
           }} className="flex gap-2">

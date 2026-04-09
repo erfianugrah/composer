@@ -28,7 +28,7 @@ export function NetworksPage() {
         <CardHeader><CardTitle className="text-sm">Create Network</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={async (e) => { e.preventDefault(); setError("");
-            const { error: err } = await apiFetch("/api/v1/networks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, driver }) });
+            const { error: err } = await apiFetch("/api/v1/networks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), driver }) });
             if (err) setError(err); else { setName(""); fetch_(); }
           }} className="flex gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Network name" required className="flex-1" />

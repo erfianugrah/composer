@@ -57,15 +57,15 @@ export function LoginPage() {
     const { error: err } = await apiFetch("/api/v1/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: email.trim(), password }),
     });
 
-    if (err) {
-      setError(err);
-      setLoading(false);
-      return;
+    if (lErr) {
+      setError(lErr);
+    } else {
+      window.location.href = "/";
     }
-    window.location.href = "/";
+    setLoading(false);
   }
 
   async function handleBootstrap(e: React.FormEvent) {
@@ -76,7 +76,7 @@ export function LoginPage() {
     const { error: bErr } = await apiFetch("/api/v1/auth/bootstrap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: email.trim(), password }),
     });
 
     if (bErr) {
@@ -89,7 +89,7 @@ export function LoginPage() {
     const { error: lErr } = await apiFetch("/api/v1/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: email.trim(), password }),
     });
 
     if (lErr) {

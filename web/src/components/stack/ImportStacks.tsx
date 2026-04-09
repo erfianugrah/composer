@@ -25,7 +25,7 @@ export function ImportStacks() {
     const { data, error: err } = await apiFetch<ImportResult>("/api/v1/stacks/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source_dir: sourceDir }),
+      body: JSON.stringify({ source_dir: sourceDir.trim() }),
     });
 
     if (err) setError(err);

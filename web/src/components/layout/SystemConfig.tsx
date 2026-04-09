@@ -68,7 +68,7 @@ export function SystemConfig() {
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ age_key: ageKeyInput }),
+        body: JSON.stringify({ age_key: ageKeyInput.trim() }),
       }
     );
     if (err) {

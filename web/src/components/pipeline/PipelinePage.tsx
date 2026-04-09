@@ -80,13 +80,13 @@ export function PipelinePage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: createName,
-        description: createDesc,
+        name: createName.trim(),
+        description: createDesc.trim(),
         steps: [{
           id: "step-1",
-          name: createStepStack ? `Deploy ${createStepStack}` : "Deploy",
-          type: createStepStack ? "compose_up" : "shell_command",
-          config: createStepStack ? { stack: createStepStack } : { command: "echo hello" },
+          name: createStepStack.trim() ? `Deploy ${createStepStack.trim()}` : "Deploy",
+          type: createStepStack.trim() ? "compose_up" : "shell_command",
+          config: createStepStack.trim() ? { stack: createStepStack.trim() } : { command: "echo hello" },
         }],
         triggers: [{ type: "manual", config: {} }],
       }),

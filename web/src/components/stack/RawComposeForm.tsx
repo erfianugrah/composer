@@ -22,7 +22,7 @@ export function RawComposeForm({ onCreated }: Props) {
     const { error: err } = await apiFetch("/api/v1/stacks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, compose }),
+      body: JSON.stringify({ name: name.trim(), compose }),
     });
 
     if (err) {

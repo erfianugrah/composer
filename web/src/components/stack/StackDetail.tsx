@@ -155,7 +155,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
               apiFetch(`/api/v1/stacks/${stackName}/convert/git`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ repo_url: repoUrl }),
+                body: JSON.stringify({ repo_url: repoUrl.trim() }),
               }).then(({ error }) => {
                 if (error) setActionError(error);
                 else fetchStack();

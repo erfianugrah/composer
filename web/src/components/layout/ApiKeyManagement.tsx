@@ -50,7 +50,7 @@ export function ApiKeyManagement() {
     const { data, error: err } = await apiFetch<KeyCreated>("/api/v1/keys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, role, ...(expiresAt ? { expires_at: new Date(expiresAt).toISOString() } : {}) }),
+      body: JSON.stringify({ name: name.trim(), role, ...(expiresAt ? { expires_at: new Date(expiresAt).toISOString() } : {}) }),
     });
     if (err) setError(err);
     else if (data) {

@@ -51,7 +51,7 @@ export function UserManagement() {
     const { error: err } = await apiFetch("/api/v1/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, role }),
+      body: JSON.stringify({ email: email.trim(), password, role }),
     });
     if (err) {
       setError(err);

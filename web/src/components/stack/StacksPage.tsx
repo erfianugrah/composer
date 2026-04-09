@@ -38,9 +38,9 @@ export function StacksPage() {
     const { error } = await apiFetch("/api/v1/stacks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, compose }),
+      body: JSON.stringify({ name: name.trim(), compose }),
     });
-    if (!error) handleCreated(name);
+    if (!error) handleCreated(name.trim());
   }
 
   if (selectedStack) {

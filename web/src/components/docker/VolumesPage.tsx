@@ -26,7 +26,7 @@ export function VolumesPage() {
         <CardHeader><CardTitle className="text-sm">Create Volume</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={async (e) => { e.preventDefault(); setError("");
-            const { error: err } = await apiFetch("/api/v1/volumes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+            const { error: err } = await apiFetch("/api/v1/volumes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
             if (err) setError(err); else { setName(""); fetch_(); }
           }} className="flex gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Volume name" required className="flex-1" />

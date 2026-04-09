@@ -65,9 +65,9 @@ export function WebhookSettings() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-          stack_name: stackName,
+          stack_name: stackName.trim(),
           provider,
-          branch_filter: branchFilter || undefined,
+          branch_filter: branchFilter.trim() || undefined,
           auto_redeploy: autoRedeploy,
       }),
     });
