@@ -6,21 +6,16 @@
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/erfianugrah/composer</Support>
+  <Support>https://github.com/erfianugrah/composer/issues</Support>
   <Project>https://github.com/erfianugrah/composer</Project>
-  <Overview>
-    PostgreSQL database for Composer (Docker Compose management platform).
-    
-    Create this container FIRST, then create the Composer container.
-    Note the container's IP address for the Composer DB_URL setting.
-  </Overview>
+  <Overview>PostgreSQL database for Composer (Docker Compose management platform).[br][br]Optional -- Composer works with embedded SQLite by default. Only needed for multi-instance PostgreSQL deployments.[br][br]Create this container first, then set COMPOSER_DB_URL in the Composer container.</Overview>
   <Category>Tools: Database:</Category>
   <TemplateURL>https://raw.githubusercontent.com/erfianugrah/composer/main/deploy/unraid/composer-postgres.xml</TemplateURL>
   <Icon>https://wiki.postgresql.org/images/a/a4/PostgreSQL_logo.3colors.svg</Icon>
-  <PostArgs/>
-  <Config Name="Postgres Port" Target="5432" Default="5432" Mode="tcp" Description="PostgreSQL port" Type="Port" Display="always" Required="true" Mask="false">5432</Config>
-  <Config Name="Data Directory" Target="/var/lib/postgresql/data" Default="/mnt/user/appdata/composer/postgres" Mode="rw" Description="Database data directory" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/composer/postgres</Config>
-  <Config Name="Postgres User" Target="POSTGRES_USER" Default="composer" Mode="" Description="Database username" Type="Variable" Display="always" Required="true" Mask="false">composer</Config>
-  <Config Name="Postgres Password" Target="POSTGRES_PASSWORD" Default="composer" Mode="" Description="Database password (CHANGE THIS!)" Type="Variable" Display="always" Required="true" Mask="true">composer</Config>
-  <Config Name="Postgres Database" Target="POSTGRES_DB" Default="composer" Mode="" Description="Database name" Type="Variable" Display="always" Required="true" Mask="false">composer</Config>
+  <Requires>Only needed if using PostgreSQL instead of SQLite. Most users should skip this and use the built-in SQLite.</Requires>
+  <Config Name="Postgres Port" Target="5432" Default="5432" Mode="tcp" Description="PostgreSQL port." Type="Port" Display="always" Required="true" Mask="false">5432</Config>
+  <Config Name="Data Directory" Target="/var/lib/postgresql/data" Default="/mnt/user/composer/postgres" Mode="rw" Description="Database data directory." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/composer/postgres</Config>
+  <Config Name="Postgres User" Target="POSTGRES_USER" Default="composer" Mode="" Description="Database username." Type="Variable" Display="always" Required="true" Mask="false">composer</Config>
+  <Config Name="Postgres Password" Target="POSTGRES_PASSWORD" Default="" Mode="" Description="Database password. Change this!" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Postgres Database" Target="POSTGRES_DB" Default="composer" Mode="" Description="Database name." Type="Variable" Display="always" Required="true" Mask="false">composer</Config>
 </Container>

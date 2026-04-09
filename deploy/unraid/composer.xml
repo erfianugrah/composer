@@ -26,6 +26,8 @@
   <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID for file permissions (Unraid default: 100)." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
   <Config Name="SSH Keys" Target="/home/composer/.ssh" Default="/mnt/user/composer/ssh" Mode="rw" Description="SSH keys for git-backed stacks (optional)." Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/composer/ssh</Config>
   <Config Name="Valkey URL" Target="COMPOSER_VALKEY_URL" Default="" Mode="" Description="Valkey/Redis URL for session caching (optional). Leave empty to disable." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Encryption Key" Target="COMPOSER_ENCRYPTION_KEY" Default="" Mode="" Description="Encrypts git credentials and webhook secrets at rest (AES-256-GCM). Strongly recommended." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="Trusted Proxies" Target="COMPOSER_TRUSTED_PROXIES" Default="true" Mode="" Description="Trust X-Real-IP headers from reverse proxy. Set when behind Caddy/nginx." Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
   <Config Name="Log Level" Target="COMPOSER_LOG_LEVEL" Default="info|debug|warn|error" Mode="" Description="Application log level." Type="Variable" Display="advanced" Required="false" Mask="false">info</Config>
   <Config Name="Log Format" Target="COMPOSER_LOG_FORMAT" Default="json|console" Mode="" Description="Log output format." Type="Variable" Display="advanced" Required="false" Mask="false">json</Config>
 </Container>

@@ -1,8 +1,20 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { DashboardOverview } from "@/components/stack/DashboardOverview";
+import { EventStream } from "@/components/container/EventStream";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 ---
 
 <Layout title="Dashboard" active="dashboard">
   <DashboardOverview client:load />
+  <div class="mt-6">
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Docker Events</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <EventStream client:load />
+      </CardContent>
+    </Card>
+  </div>
 </Layout>

@@ -232,7 +232,7 @@ test.describe("Navigation", () => {
 
     for (const path of ["/", "/login", "/stacks", "/pipelines", "/settings"]) {
       await page.goto(path);
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
     }
 
     // Filter out expected network errors (API calls fail in static preview)

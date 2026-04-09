@@ -46,7 +46,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*auth.User, er
 func (r *UserRepo) List(ctx context.Context) ([]*auth.User, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, email, password_hash, role, auth_provider, created_at, updated_at, last_login_at
-		 FROM users ORDER BY created_at ASC`)
+		 FROM users ORDER BY created_at ASC LIMIT 500`)
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
 	}

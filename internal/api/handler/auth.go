@@ -14,7 +14,7 @@ import (
 	"github.com/erfianugrah/composer/internal/app"
 )
 
-const defaultSessionTTL = 24 * time.Hour
+const defaultSessionTTL = 7 * 24 * time.Hour
 
 // AuthHandler registers auth-related API endpoints.
 type AuthHandler struct {

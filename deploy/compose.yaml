@@ -1,5 +1,8 @@
 # Composer - Self-hosting Docker Compose file
 #
+# This is the full Postgres+Valkey deployment. For a simpler setup with SQLite,
+# just run the composer service alone (remove postgres/valkey and unset DB_URL).
+#
 # Usage:
 #   docker compose -f deploy/compose.yaml up -d
 #
@@ -34,6 +37,9 @@ services:
       COMPOSER_STACKS_DIR: "/opt/stacks"
       COMPOSER_LOG_FORMAT: "${LOG_FORMAT:-json}"
       COMPOSER_LOG_LEVEL: "${LOG_LEVEL:-info}"
+      COMPOSER_COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      COMPOSER_ENCRYPTION_KEY: "${ENCRYPTION_KEY:-}"
+      COMPOSER_TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,9 +47,6 @@ services:
         condition: service_started
     restart: unless-stopped
     # Security hardening
-    # Note: read_only is NOT used because the entrypoint needs to modify
-    # /etc/passwd and /etc/group for PUID/PGID + Docker socket GID setup.
-    # Security is maintained via cap_drop, no-new-privileges, and non-root user.
     tmpfs:
       - /tmp
     security_opt:

@@ -59,7 +59,7 @@ func (r *PipelineRepo) GetByID(ctx context.Context, id string) (*pipeline.Pipeli
 func (r *PipelineRepo) List(ctx context.Context) ([]*pipeline.Pipeline, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, name, description, config, created_by, created_at, updated_at
-		 FROM pipelines ORDER BY name ASC`)
+		 FROM pipelines ORDER BY name ASC LIMIT 500`)
 	if err != nil {
 		return nil, err
 	}

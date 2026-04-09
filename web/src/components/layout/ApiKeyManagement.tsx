@@ -30,6 +30,7 @@ export function ApiKeyManagement() {
 
   const [name, setName] = useState("");
   const [role, setRole] = useState("operator");
+  const [expiresAt, setExpiresAt] = useState("");
 
   function fetchKeys() {
     apiFetch<{ keys: KeySummary[] }>("/api/v1/keys").then(({ data, error: err }) => {
@@ -49,7 +50,7 @@ export function ApiKeyManagement() {
     const { data, error: err } = await apiFetch<KeyCreated>("/api/v1/keys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, role }),
+      body: JSON.stringify({ name, role, ...(expiresAt ? { expires_at: new Date(expiresAt).toISOString() } : {}) }),
     });
     if (err) setError(err);
     else if (data) {
@@ -89,6 +90,15 @@ export function ApiKeyManagement() {
             <option value="operator">Operator</option>
             <option value="admin">Admin</option>
           </select>
+          <input
+            type="date"
+            value={expiresAt}
+            onChange={(e) => setExpiresAt(e.target.value)}
+            className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+            placeholder="Expires (optional)"
+            title="Expiration date (optional)"
+            data-testid="key-expires"
+          />
           <Button type="submit" disabled={creating || !name} size="sm" data-testid="key-create-btn">
             {creating ? "..." : "Create"}
           </Button>

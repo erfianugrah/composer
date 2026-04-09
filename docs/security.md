@@ -20,25 +20,39 @@ This is equivalent to root access on the host. There is no way to meaningfully r
 |------------|-----|
 | **Non-root process** | `composerd` runs as the `composer` user (not root), via `su-exec` privilege drop |
 | **Minimal capabilities** | `cap_drop: ALL` + only CHOWN, SETUID, SETGID, DAC_OVERRIDE (for entrypoint PUID/PGID setup) |
-| **Read-only rootfs** | Container filesystem is immutable (`read_only: true`). Only `/tmp` is writable (tmpfs) |
 | **No new privileges** | `security_opt: no-new-privileges:true` prevents privilege escalation |
-| **No `:ro` on socket** | We intentionally do NOT use `:ro` on the Docker socket mount -- it's security theater on Unix sockets (the `read()` flag doesn't restrict `sendmsg()`/`recvmsg()` which is how sockets communicate) |
+| **Container scope validation** | Container start/stop/restart restricted to Docker Compose-managed containers |
+| **Compose exec allowlist** | Stack console only permits safe subcommands (ps, logs, top, config, images, exec, etc.) |
 
 ### Recommendations
 
-1. **Run Composer on a trusted network** -- don't expose port 8080 to the internet without a reverse proxy with TLS. See [reverse-proxy.md](reverse-proxy.md) for Caddy, Traefik, and nginx configs
-2. **Use strong passwords** -- the bootstrap password becomes the admin account
-3. **Use API keys with minimal roles** -- for automation, create Operator or Viewer keys, not Admin
+1. **Run Composer behind a reverse proxy with TLS** -- see [reverse-proxy.md](reverse-proxy.md) for Caddy, Traefik, and nginx configs
+2. **Set `COMPOSER_ENCRYPTION_KEY`** -- encrypts git credentials and webhook secrets at rest
+3. **Use strong passwords** -- the bootstrap password becomes the admin account
+4. **Use API keys with minimal roles** -- for automation, create Operator or Viewer keys, not Admin
+
+## Encryption at Rest
+
+When `COMPOSER_ENCRYPTION_KEY` is set:
+- **Git credentials** (tokens, SSH keys, passwords) are encrypted with AES-256-GCM before storage
+- **Webhook secrets** are encrypted with AES-256-GCM before storage
+- The key is derived from the environment variable via SHA-256
+- A unique 12-byte nonce is generated per encryption operation
+- Encrypted values are prefixed with `enc:` for identification
+- **Backwards compatible**: unencrypted data from before enabling encryption is read normally
+
+Without the key, credentials are stored in plaintext. **Always set this in production.**
 
 ## Authentication
 
 ### Session Cookies
 
 - 32 bytes of `crypto/rand`, base64url-encoded
-- Stored in PostgreSQL (persistent across restarts)
+- **Hashed with SHA-256 before storage** -- database leak does not expose usable tokens
 - `HttpOnly`, `SameSite=Lax`, `Path=/`
-- 24-hour TTL with background cleanup every 5 minutes
+- 7-day TTL with background cleanup every 5 minutes
 - Session fixation prevention: old sessions are revoked on new login
+- Role changes invalidate existing sessions
 
 ### API Keys
 
@@ -69,34 +83,51 @@ Admin > Operator > Viewer
 | Create/update/delete stacks | Yes | Yes | No |
 | Deploy/stop/restart/pull | Yes | Yes | No |
 | Terminal exec | Yes | Yes | No |
+| Stack console (compose commands) | Yes | Yes | No |
+| Create/run pipelines | Yes | No | No |
 | Manage users | Yes | No | No |
 | Manage API keys | Yes | Yes (own) | No |
-| System settings | Yes | No | No |
+| View audit log | Yes | No | No |
 
-RBAC is enforced at the handler level via `middleware.CheckRole()`. The WebSocket terminal endpoint additionally uses chi's `RequireRole` middleware.
+RBAC is enforced at the handler level via `middleware.CheckRole()`. Pipeline creation requires admin role because pipelines can execute shell commands on the host.
 
 ## CSRF Protection
 
-CSRF protection is enforced via `X-Requested-With` header requirement on mutating requests (POST/PUT/DELETE) that use cookie-based authentication. API key and webhook requests are exempt. `SameSite=Lax` cookie attribute provides additional browser-level protection.
+CSRF protection is enforced via `X-Requested-With: XMLHttpRequest` header requirement on mutating requests (POST/PUT/DELETE) that use cookie-based authentication. API key and webhook requests are exempt. `SameSite=Lax` cookie attribute provides additional browser-level protection.
 
 ## OAuth/OIDC Security
 
 When OAuth is enabled (via `COMPOSER_GITHUB_CLIENT_ID` or `COMPOSER_GOOGLE_CLIENT_ID`):
 
 - **Auto-creation**: Users who authenticate via OAuth are automatically created with the `viewer` role. If no users exist, the first OAuth user gets `admin`.
-- **Password**: OAuth users get a cryptographically random placeholder password (64 bytes from `crypto/rand`). They cannot login via email/password.
-- **Session**: OAuth sessions are persisted to PostgreSQL (same as password-based sessions). 24-hour TTL.
-- **Session secret**: Set `COMPOSER_SESSION_SECRET` for the goth OAuth flow state cookie. If not set, a random key is generated per startup (OAuth flow state won't survive restarts).
+- **Provider tracking**: The `auth_provider` column records whether a user authenticated via `local`, `github`, or `google`
+- **Password**: OAuth users get a cryptographically random placeholder password (64 bytes from `crypto/rand`)
+- **Session**: OAuth sessions use the same SHA-256 hashed storage as password-based sessions
 
 ## Security Headers
 
 All responses include:
+- `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; ...`
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `X-XSS-Protection: 1; mode=block`
 - `Referrer-Policy: strict-origin-when-cross-origin`
 - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
 - `Strict-Transport-Security` (when behind TLS proxy)
+
+## Network Security
+
+- **OpenAPI spec** (`/openapi.json`, `/docs`) requires authentication (viewer+ role)
+- **Proxy headers** (`X-Real-IP`, `X-Forwarded-For`) only trusted when `COMPOSER_TRUSTED_PROXIES` is set
+- **Rate limiting** uses `RemoteAddr` directly (not spoofable headers) unless behind a trusted proxy
+
+## Pipeline Security
+
+Pipeline `shell_command` steps execute arbitrary commands on the host. Mitigations:
+- **Admin-only**: Pipeline creation requires admin role
+- **Scrubbed environment**: Shell commands run with a clean environment (no inherited DB URLs, API tokens, or OAuth secrets)
+- **PATH restricted**: Only standard system directories
+- **HTTP requests**: Use Go's `net/http` (not curl), only `http://` and `https://` schemes allowed
 
 ## Reporting Vulnerabilities
 

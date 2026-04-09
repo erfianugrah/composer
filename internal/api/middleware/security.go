@@ -32,6 +32,7 @@ type RateLimiter struct {
 	buckets map[string]*bucket
 	rate    float64 // tokens per second
 	burst   int     // max tokens
+	done    chan struct{}
 }
 
 type bucket struct {
@@ -45,18 +46,29 @@ func NewRateLimiter(rate float64, burst int) *RateLimiter {
 		buckets: make(map[string]*bucket),
 		rate:    rate,
 		burst:   burst,
+		done:    make(chan struct{}),
 	}
 
 	// Cleanup old buckets every 60 seconds
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
-			rl.cleanup()
+		for {
+			select {
+			case <-ticker.C:
+				rl.cleanup()
+			case <-rl.done:
+				return
+			}
 		}
 	}()
 
 	return rl
+}
+
+// Close stops the cleanup goroutine.
+func (rl *RateLimiter) Close() {
+	close(rl.done)
 }
 
 // Allow returns true if the request from this IP is allowed.

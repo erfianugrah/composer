@@ -54,7 +54,7 @@ func (r *StackRepo) GetByName(ctx context.Context, name string) (*stack.Stack, e
 func (r *StackRepo) List(ctx context.Context) ([]*stack.Stack, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT name, path, source, created_at, updated_at
-		 FROM stacks ORDER BY name ASC`)
+		 FROM stacks ORDER BY name ASC LIMIT 500`)
 	if err != nil {
 		return nil, fmt.Errorf("listing stacks: %w", err)
 	}

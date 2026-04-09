@@ -81,7 +81,7 @@ func (r *WebhookRepo) ListByStack(ctx context.Context, stackName string) ([]*Web
 func (r *WebhookRepo) ListAll(ctx context.Context) ([]*Webhook, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, stack_name, provider, secret, branch_filter, auto_redeploy, created_by
-		 FROM webhooks ORDER BY created_at ASC`,
+		 FROM webhooks ORDER BY created_at ASC LIMIT 500`,
 	)
 	if err != nil {
 		return nil, err

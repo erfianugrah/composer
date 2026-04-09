@@ -51,7 +51,7 @@ func (r *APIKeyRepo) GetByHashedKey(ctx context.Context, hashedKey string) (*aut
 func (r *APIKeyRepo) List(ctx context.Context) ([]*auth.APIKey, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, name, hashed_key, role, created_by, last_used_at, expires_at, created_at
-		 FROM api_keys ORDER BY created_at ASC`)
+		 FROM api_keys ORDER BY created_at ASC LIMIT 500`)
 	if err != nil {
 		return nil, fmt.Errorf("listing api keys: %w", err)
 	}

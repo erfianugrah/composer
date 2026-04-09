@@ -1900,7 +1900,7 @@ Response:
     "valkey": { "status": "up", "latency_ms": 1 },
     "docker": { "status": "up", "runtime": "docker", "api_version": "1.54" }
   },
-  "version": "0.1.0",
+  "version": "0.3.0",
   "uptime_seconds": 3600
 }
 ```

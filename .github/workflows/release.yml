@@ -9,6 +9,9 @@ permissions:
   contents: write
   packages: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
     name: Build & Push
@@ -25,7 +28,7 @@ jobs:
 
       # Run tests before releasing
       - name: Unit tests
-        run: go test -count=1 -timeout=2m ./internal/domain/... ./internal/infra/eventbus/...
+        run: go test -count=1 -timeout=2m ./internal/domain/... ./internal/infra/eventbus/... ./internal/infra/crypto/...
 
       # Build Go binaries for release artifacts (standalone, without embedded frontend)
       - name: Build linux/amd64

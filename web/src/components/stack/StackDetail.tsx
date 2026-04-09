@@ -10,6 +10,7 @@ const ComposeEditor = lazy(() => import("./ComposeEditor").then(m => ({ default:
 const ContainerStats = lazy(() => import("@/components/container/ContainerStats").then(m => ({ default: m.ContainerStats })));
 const LogViewer = lazy(() => import("@/components/container/LogViewer").then(m => ({ default: m.LogViewer })));
 const StackConsole = lazy(() => import("./StackConsole").then(m => ({ default: m.StackConsole })));
+const DiffViewer = lazy(() => import("./DiffViewer").then(m => ({ default: m.DiffViewer })));
 import { GitStatus } from "./GitStatus";
 
 interface StackData {
@@ -52,7 +53,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [actionError, setActionError] = useState("");
   const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "logs" | "console" | "terminal" | "stats" | "git">("containers");
+  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "diff" | "logs" | "console" | "terminal" | "stats" | "git">("containers");
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
 
   const fetchStack = async () => {
@@ -167,7 +168,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {(["containers", "compose", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
+        {(["containers", "compose", "diff", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -268,6 +269,12 @@ export function StackDetail({ stackName }: { stackName: string }) {
             </Suspense>
           </CardContent>
         </Card>
+      )}
+
+      {activeTab === "diff" && (
+        <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
+          <DiffViewer stackName={stackName} />
+        </Suspense>
       )}
 
       {activeTab === "logs" && (
