@@ -603,13 +603,32 @@ func copyDir(src, dst string) error {
 }
 
 // resolveComposeFile returns the compose file name for a stack.
-// For git stacks, uses the configured compose_path. For local stacks, returns ""
-// which lets docker compose auto-discover (compose.yaml, docker-compose.yml, etc).
+// Priority: git config compose_path > detect from disk (sane defaults).
+// Always returns a specific file to prevent docker compose from merging
+// multiple compose files in the same directory.
 func (s *StackService) resolveComposeFile(ctx context.Context, name string) string {
+	// 1. Git config compose_path
 	cfg, err := s.gitCfgs.GetByStackName(ctx, name)
 	if err == nil && cfg != nil && cfg.ComposePath != "" {
 		return cfg.ComposePath
 	}
+
+	// 2. Detect from disk -- check common names in priority order
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil || st == nil {
+		return ""
+	}
+	for _, candidate := range []string{
+		"compose.yaml",
+		"compose.yml",
+		"docker-compose.yaml",
+		"docker-compose.yml",
+	} {
+		if _, err := os.Stat(filepath.Join(st.Path, candidate)); err == nil {
+			return candidate
+		}
+	}
+
 	return ""
 }
 
