@@ -88,6 +88,37 @@ func (c *Compose) Exec(ctx context.Context, stackDir string, composeArgs []strin
 	return c.run(ctx, stackDir, composeArgs...)
 }
 
+// RunDocker executes a raw `docker` command (not compose-scoped).
+// For the global docker console -- admin can run docker ps, docker images, etc.
+func (c *Compose) RunDocker(ctx context.Context, args []string) (*ComposeResult, error) {
+	cmd := exec.CommandContext(ctx, "docker", args...)
+
+	if c.dockerHost != "" {
+		cmd.Env = append(cmd.Environ(), "DOCKER_HOST="+c.dockerHost)
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	result := &ComposeResult{
+		Stdout: strings.TrimSpace(stdout.String()),
+		Stderr: strings.TrimSpace(stderr.String()),
+	}
+
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		result.ExitCode = exitErr.ExitCode()
+		return result, nil // return output even on non-zero exit
+	}
+	if err != nil {
+		return result, fmt.Errorf("running docker: %w", err)
+	}
+
+	return result, nil
+}
+
 // run executes a docker compose command in the given working directory.
 func (c *Compose) run(ctx context.Context, workDir string, args ...string) (*ComposeResult, error) {
 	fullArgs := append([]string{"compose"}, args...)

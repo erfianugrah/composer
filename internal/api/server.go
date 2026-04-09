@@ -39,6 +39,7 @@ type Deps struct {
 	AuditRepo       *store.AuditRepo       // nil disables audit logging
 	EventBus        event.Bus              // nil disables SSE events endpoint
 	DockerClient    *docker.Client         // nil disables container/SSE/terminal endpoints
+	Compose         *docker.Compose        // nil disables docker exec
 }
 
 // NewServer creates a new API server with all routes registered.
@@ -84,13 +85,13 @@ func NewServer(deps Deps) *Server {
 	}, func(ctx context.Context, input *struct{}) (*struct {
 		Body struct {
 			Status  string `json:"status" example:"healthy"`
-			Version string `json:"version" example:"0.3.1"`
+			Version string `json:"version" example:"0.3.2"`
 		}
 	}, error) {
 		resp := &struct {
 			Body struct {
 				Status  string `json:"status" example:"healthy"`
-				Version string `json:"version" example:"0.3.1"`
+				Version string `json:"version" example:"0.3.2"`
 			}
 		}{}
 		resp.Body.Status = "healthy"
@@ -161,6 +162,11 @@ func NewServer(deps Deps) *Server {
 	// Audit log (requires AuditRepo)
 	if deps.AuditRepo != nil {
 		handler.NewAuditHandler(deps.AuditRepo).Register(api)
+	}
+
+	// Global docker command runner (admin only)
+	if deps.Compose != nil {
+		handler.NewDockerExecHandler(deps.Compose).Register(api)
 	}
 
 	// WebSocket terminal (raw HTTP handler with RBAC -- operator+)

@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/errors";
+
+const LogViewer = lazy(() => import("./LogViewer").then(m => ({ default: m.LogViewer })));
+const ContainerStats = lazy(() => import("./ContainerStats").then(m => ({ default: m.ContainerStats })));
+const DockerConsole = lazy(() => import("./DockerConsole").then(m => ({ default: m.DockerConsole })));
 
 interface ContainerInfo {
   id: string;
@@ -27,6 +31,9 @@ export function ContainerListPage() {
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [viewLogs, setViewLogs] = useState<string | null>(null);
+  const [viewStats, setViewStats] = useState<string | null>(null);
+  const [showConsole, setShowConsole] = useState(false);
 
   function fetchContainers() {
     apiFetch<{ containers: ContainerInfo[] }>("/api/v1/containers").then(({ data, error: err }) => {
@@ -95,6 +102,12 @@ export function ContainerListPage() {
                     )}
                     {c.status === "running" && (
                       <>
+                        <Button size="xs" variant="ghost" onClick={() => setViewLogs(viewLogs === c.id ? null : c.id)}>
+                          {viewLogs === c.id ? "Hide Logs" : "Logs"}
+                        </Button>
+                        <Button size="xs" variant="ghost" onClick={() => setViewStats(viewStats === c.id ? null : c.id)}>
+                          {viewStats === c.id ? "Hide Stats" : "Stats"}
+                        </Button>
                         <Button size="xs" variant="outline" onClick={async () => {
                           await apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" });
                           setTimeout(fetchContainers, 1000);
@@ -106,11 +119,46 @@ export function ContainerListPage() {
                       </>
                     )}
                   </div>
+                  {/* Inline logs viewer */}
+                  {viewLogs === c.id && (
+                    <div className="mt-2">
+                      <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
+                        <LogViewer containerId={c.id} tail="50" maxLines={200} />
+                      </Suspense>
+                    </div>
+                  )}
+                  {/* Inline stats viewer */}
+                  {viewStats === c.id && (
+                    <div className="mt-2">
+                      <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
+                        <ContainerStats containerId={c.id} />
+                      </Suspense>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </CardContent>
+      </Card>
+
+      {/* Docker Console */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm">Docker Console</CardTitle>
+            <Button size="xs" variant="outline" onClick={() => setShowConsole(!showConsole)}>
+              {showConsole ? "Hide" : "Show"}
+            </Button>
+          </div>
+        </CardHeader>
+        {showConsole && (
+          <CardContent>
+            <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
+              <DockerConsole />
+            </Suspense>
+          </CardContent>
+        )}
       </Card>
     </div>
   );

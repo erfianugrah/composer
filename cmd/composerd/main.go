@@ -229,6 +229,7 @@ func main() {
 		AuditRepo:       auditRepo,
 		EventBus:        bus,
 		DockerClient:    dockerClient,
+		Compose:         compose,
 	})
 
 	// --- Embedded frontend (serves web/dist if built) ---

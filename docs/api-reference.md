@@ -4,11 +4,11 @@ Composer exposes a REST API with auto-generated OpenAPI 3.1 spec.
 
 **Live spec:** `GET /openapi.json` or `GET /openapi.yaml`
 
-**Total endpoints:** 60+
+**Total endpoints:** 68
 
 ## Authentication
 
-All endpoints except health, bootstrap, login, OpenAPI spec, and webhook receiver require authentication via session cookie or API key.
+All endpoints except health, bootstrap, and login require authentication via session cookie or API key. OpenAPI spec and docs also require authentication (viewer+).
 
 ### Session Cookie
 
@@ -50,41 +50,55 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `DELETE` | `/api/v1/users/{id}` | Delete user |
 | `PUT` | `/api/v1/users/{id}/password` | Change password (admin or self) |
 
-### API Keys (3 endpoints, operator+)
+### API Keys (4 endpoints, operator+)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/keys` | List API keys (secrets redacted) |
+| `GET` | `/api/v1/keys/{id}` | Get key details |
 | `POST` | `/api/v1/keys` | Create key (plaintext shown once!) |
 | `DELETE` | `/api/v1/keys/{id}` | Revoke key |
 
-### Stacks (9 endpoints)
+### Stacks (16 endpoints)
 
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
 | `GET` | `/api/v1/stacks` | Viewer+ | List all stacks with status |
-| `POST` | `/api/v1/stacks` | Operator+ | Create stack |
+| `POST` | `/api/v1/stacks` | Operator+ | Create local stack from YAML |
+| `POST` | `/api/v1/stacks/git` | Operator+ | Clone a git repo and create git-backed stack |
+| `POST` | `/api/v1/stacks/import` | Admin | Import stacks from external directory (Dockge migration) |
 | `GET` | `/api/v1/stacks/{name}` | Viewer+ | Get stack detail + containers |
 | `PUT` | `/api/v1/stacks/{name}` | Operator+ | Update compose content |
 | `DELETE` | `/api/v1/stacks/{name}` | Operator+ | Delete stack. `?remove_volumes=true` |
 | `POST` | `/api/v1/stacks/{name}/up` | Operator+ | Deploy (docker compose up) |
+| `POST` | `/api/v1/stacks/{name}/build` | Operator+ | Build & deploy (docker compose up --build) |
 | `POST` | `/api/v1/stacks/{name}/down` | Operator+ | Stop (docker compose down) |
 | `POST` | `/api/v1/stacks/{name}/restart` | Operator+ | Restart all services |
 | `POST` | `/api/v1/stacks/{name}/pull` | Operator+ | Pull latest images |
 | `POST` | `/api/v1/stacks/{name}/validate` | Operator+ | Validate compose syntax |
+| `POST` | `/api/v1/stacks/{name}/exec` | Operator+ | Run docker compose command (console) |
+| `POST` | `/api/v1/stacks/{name}/convert/git` | Operator+ | Convert local stack to git-backed |
+| `POST` | `/api/v1/stacks/{name}/convert/local` | Operator+ | Detach git, convert to local |
 | `GET` | `/api/v1/stacks/{name}/diff` | Viewer+ | Show pending compose changes |
 
-### Containers (5 endpoints)
+### Containers (6 endpoints)
 
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
 | `GET` | `/api/v1/containers` | Viewer+ | List all containers |
 | `GET` | `/api/v1/containers/{id}` | Viewer+ | Get container detail |
-| `POST` | `/api/v1/containers/{id}/start` | Operator+ | Start container |
-| `POST` | `/api/v1/containers/{id}/stop` | Operator+ | Stop container |
-| `POST` | `/api/v1/containers/{id}/restart` | Operator+ | Restart container |
+| `GET` | `/api/v1/containers/{id}/logs` | Viewer+ | Get container logs snapshot. `?tail=100&since=5m` |
+| `POST` | `/api/v1/containers/{id}/start` | Operator+ | Start container (Compose-managed only) |
+| `POST` | `/api/v1/containers/{id}/stop` | Operator+ | Stop container (Compose-managed only) |
+| `POST` | `/api/v1/containers/{id}/restart` | Operator+ | Restart container (Compose-managed only) |
 
-### Git Operations (3 endpoints, requires git-backed stack)
+### Docker Console (1 endpoint, admin)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/docker/exec` | Run a docker command on the host (ps, images, network ls, etc.) |
+
+### Git Operations (5 endpoints, requires git-backed stack)
 
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
@@ -114,7 +128,8 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 |--------|------|-------------|
 | `GET` | `/api/v1/webhooks` | List all webhooks |
 | `POST` | `/api/v1/webhooks` | Create webhook (returns secret + URL) |
-| `GET` | `/api/v1/webhooks/{id}` | Get webhook detail + secret |
+| `GET` | `/api/v1/webhooks/{id}` | Get webhook detail (secret redacted) |
+| `PUT` | `/api/v1/webhooks/{id}` | Update webhook (branch filter, auto-redeploy, provider) |
 | `DELETE` | `/api/v1/webhooks/{id}` | Delete webhook |
 | `GET` | `/api/v1/webhooks/{id}/deliveries` | List webhook delivery history |
 
@@ -126,7 +141,13 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 
 Supported providers: GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), Gitea (`X-Gitea-Signature`), Generic (`X-Webhook-Signature`).
 
-### System (1 endpoint)
+### Audit Log (1 endpoint, admin)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/audit` | List recent audit log entries. `?limit=50` |
+
+### System (3 endpoints)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|

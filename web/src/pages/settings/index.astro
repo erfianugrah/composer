@@ -4,6 +4,7 @@ import { UserManagement } from "@/components/layout/UserManagement";
 import { ApiKeyManagement } from "@/components/layout/ApiKeyManagement";
 import { WebhookSettings } from "@/components/layout/WebhookSettings";
 import { ImportStacks } from "@/components/stack/ImportStacks";
+import { AuditLog } from "@/components/layout/AuditLog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 ---
 
@@ -13,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
     <ApiKeyManagement client:load />
     <WebhookSettings client:load />
     <ImportStacks client:load />
+    <AuditLog client:load />
 
     <Card>
       <CardHeader>

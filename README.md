@@ -6,13 +6,16 @@ Think Dockge's simplicity meets Portainer's power -- built from scratch with Go,
 
 ## Features
 
-- **Stack management** -- Create, deploy, stop, restart, pull, delete Docker Compose stacks via REST API or web UI
+- **Stack management** -- Create, deploy, stop, restart, pull, delete, build Docker Compose stacks via REST API or web UI
 - **Three creation modes** -- From template (10 presets), clone from Git repo, or paste raw YAML
-- **REST API first** -- 64 endpoints with auto-generated OpenAPI 3.1 spec. Every operation is scriptable
+- **Build & Deploy** -- `docker compose up --build` for projects with Dockerfiles. Build images live
+- **REST API first** -- 69 endpoints with auto-generated OpenAPI 3.1 spec. Every operation is scriptable
 - **Stack console** -- Run `docker compose` commands per stack without SSH access. Usable by humans, scripts, and LLM agents
+- **Dockge migration** -- Import stacks from external directories with one click
+- **Stack conversion** -- Convert local stacks to git-backed and vice versa (neither Dockge nor Portainer can do this)
 - **Real-time logs** -- SSE streaming of container logs (per-container and stack-level aggregated)
 - **Container terminal** -- Interactive shell via WebSocket (xterm.js)
-- **Container stats** -- Live CPU, memory, network, and disk I/O via SSE
+- **Container management** -- Global container page with start/stop/restart, stats, health badges
 - **Docker events** -- Real-time Docker event stream on dashboard
 - **GitOps** -- Git-backed stacks with webhook-triggered auto-redeploy (GitHub, GitLab, Gitea) + delivery history
 - **Pipelines** -- CI-esque workflows with DAG execution, concurrent steps, 8 step types, cron scheduling
@@ -50,7 +53,7 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 |----------|-------------|
 | [Getting Started](docs/getting-started.md) | Installation, first run, bootstrap |
 | [Configuration](docs/configuration.md) | All environment variables, encryption, PUID/PGID |
-| [API Reference](docs/api-reference.md) | 64 REST endpoints, SSE streams, WebSocket |
+| [API Reference](docs/api-reference.md) | 69 REST endpoints, SSE streams, WebSocket |
 | [Deployment](docs/deployment.md) | Docker, Unraid, TrueNAS, bare metal, Podman |
 | [Security](docs/security.md) | Docker socket, RBAC, encryption, hardening |
 | [Architecture](docs/architecture.md) | DDD, tech stack, domain model |
@@ -73,7 +76,7 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 
 ## Status
 
-64 API endpoints, 6 pages, 25 components, 45 Playwright tests, 14k+ lines of Go, 28 Go test files.
+69 API endpoints, 6 pages, 28 components, 45 Playwright tests, 15k+ lines of Go.
 
 ## License
 
