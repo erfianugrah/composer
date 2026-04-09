@@ -130,6 +130,7 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to create user", http.StatusInternalServerError)
 			return
 		}
+		user.AuthProvider = provider // "github" or "google"
 		if err := h.users.Create(r.Context(), user); err != nil {
 			http.Error(w, "Failed to create user", http.StatusInternalServerError)
 			return

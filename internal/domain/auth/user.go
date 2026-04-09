@@ -22,6 +22,7 @@ type User struct {
 	Email        string
 	PasswordHash string
 	Role         Role
+	AuthProvider string // "local", "github", "google"
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	LastLoginAt  *time.Time
@@ -56,6 +57,7 @@ func NewUser(email, password string, role Role) (*User, error) {
 		Email:        email,
 		PasswordHash: string(hash),
 		Role:         role,
+		AuthProvider: "local",
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}, nil

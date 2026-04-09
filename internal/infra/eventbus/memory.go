@@ -2,6 +2,7 @@ package eventbus
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/erfianugrah/composer/internal/domain/event"
 )
@@ -13,6 +14,7 @@ type MemoryBus struct {
 	subs    map[uint64]chan event.Event
 	nextID  uint64
 	closed  bool
+	Dropped atomic.Int64 // count of dropped events (observable)
 	bufSize int
 }
 
@@ -41,6 +43,7 @@ func (b *MemoryBus) Publish(evt event.Event) {
 		case ch <- evt:
 		default:
 			// Subscriber is slow -- drop event to avoid blocking
+			b.Dropped.Add(1)
 			_ = id
 		}
 	}

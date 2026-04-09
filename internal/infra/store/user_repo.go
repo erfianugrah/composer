@@ -21,9 +21,9 @@ func NewUserRepo(db *sql.DB) *UserRepo {
 
 func (r *UserRepo) Create(ctx context.Context, u *auth.User) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO users (id, email, password_hash, role, created_at, updated_at, last_login_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		u.ID, u.Email, u.PasswordHash, string(u.Role), u.CreatedAt, u.UpdatedAt, u.LastLoginAt,
+		`INSERT INTO users (id, email, password_hash, role, auth_provider, created_at, updated_at, last_login_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		u.ID, u.Email, u.PasswordHash, string(u.Role), u.AuthProvider, u.CreatedAt, u.UpdatedAt, u.LastLoginAt,
 	)
 	if err != nil {
 		return fmt.Errorf("inserting user: %w", err)
@@ -33,19 +33,19 @@ func (r *UserRepo) Create(ctx context.Context, u *auth.User) error {
 
 func (r *UserRepo) GetByID(ctx context.Context, id string) (*auth.User, error) {
 	return scanUser(r.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, role, created_at, updated_at, last_login_at
+		`SELECT id, email, password_hash, role, auth_provider, created_at, updated_at, last_login_at
 		 FROM users WHERE id = $1`, id))
 }
 
 func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*auth.User, error) {
 	return scanUser(r.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, role, created_at, updated_at, last_login_at
+		`SELECT id, email, password_hash, role, auth_provider, created_at, updated_at, last_login_at
 		 FROM users WHERE email = $1`, email))
 }
 
 func (r *UserRepo) List(ctx context.Context) ([]*auth.User, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, email, password_hash, role, created_at, updated_at, last_login_at
+		`SELECT id, email, password_hash, role, auth_provider, created_at, updated_at, last_login_at
 		 FROM users ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
@@ -56,7 +56,7 @@ func (r *UserRepo) List(ctx context.Context) ([]*auth.User, error) {
 	for rows.Next() {
 		u := &auth.User{}
 		var role string
-		err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &role, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
+		err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &role, &u.AuthProvider, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
 		if err != nil {
 			return nil, fmt.Errorf("scanning user row: %w", err)
 		}
@@ -102,7 +102,7 @@ func (r *UserRepo) Count(ctx context.Context) (int, error) {
 func scanUser(row *sql.Row) (*auth.User, error) {
 	u := &auth.User{}
 	var role string
-	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &role, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
+	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &role, &u.AuthProvider, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil // not found
 	}
