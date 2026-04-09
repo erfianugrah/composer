@@ -217,6 +217,9 @@ func main() {
 	webhookRepo := store.NewWebhookRepo(db.SQL)
 	auditRepo := store.NewAuditRepo(db.SQL)
 
+	// --- Job Manager ---
+	jobManager := app.NewJobManager()
+
 	// --- API Server ---
 	srv := api.NewServer(api.Deps{
 		AuthService:     authSvc,
@@ -230,6 +233,7 @@ func main() {
 		EventBus:        bus,
 		DockerClient:    dockerClient,
 		Compose:         compose,
+		Jobs:            jobManager,
 	})
 
 	// --- Embedded frontend (serves web/dist if built) ---

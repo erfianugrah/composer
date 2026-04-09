@@ -120,13 +120,31 @@ func (s *StackService) Get(ctx context.Context, name string) (*stack.Stack, erro
 		return nil, ErrNotFound
 	}
 
-	composePath := filepath.Join(st.Path, "compose.yaml")
-	content, err := os.ReadFile(composePath)
-	if err == nil {
-		st.ComposeContent = string(content)
-	}
-
+	// Read compose content -- try git config's compose path first, then common names
+	var composeContent string
 	if st.Source == stack.SourceGit {
+		cfg, err := s.gitCfgs.GetByStackName(ctx, name)
+		if err == nil && cfg != nil {
+			st.GitConfig = cfg
+			// Use the git config's compose path
+			gitComposePath := filepath.Join(st.Path, cfg.ComposePath)
+			if data, err := os.ReadFile(gitComposePath); err == nil {
+				composeContent = string(data)
+			}
+		}
+	}
+	if composeContent == "" {
+		// Fallback: try common compose file names
+		for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
+			if data, err := os.ReadFile(filepath.Join(st.Path, name)); err == nil {
+				composeContent = string(data)
+				break
+			}
+		}
+	}
+	st.ComposeContent = composeContent
+
+	if st.Source == stack.SourceGit && st.GitConfig == nil {
 		cfg, err := s.gitCfgs.GetByStackName(ctx, name)
 		if err == nil && cfg != nil {
 			st.GitConfig = cfg

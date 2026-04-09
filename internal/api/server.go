@@ -40,6 +40,7 @@ type Deps struct {
 	EventBus        event.Bus              // nil disables SSE events endpoint
 	DockerClient    *docker.Client         // nil disables container/SSE/terminal endpoints
 	Compose         *docker.Compose        // nil disables docker exec
+	Jobs            *app.JobManager        // background job tracker
 }
 
 // NewServer creates a new API server with all routes registered.
@@ -85,13 +86,13 @@ func NewServer(deps Deps) *Server {
 	}, func(ctx context.Context, input *struct{}) (*struct {
 		Body struct {
 			Status  string `json:"status" example:"healthy"`
-			Version string `json:"version" example:"0.4.1"`
+			Version string `json:"version" example:"0.4.2"`
 		}
 	}, error) {
 		resp := &struct {
 			Body struct {
 				Status  string `json:"status" example:"healthy"`
-				Version string `json:"version" example:"0.4.1"`
+				Version string `json:"version" example:"0.4.2"`
 			}
 		}{}
 		resp.Body.Status = "healthy"
@@ -162,6 +163,11 @@ func NewServer(deps Deps) *Server {
 	// Audit log (requires AuditRepo)
 	if deps.AuditRepo != nil {
 		handler.NewAuditHandler(deps.AuditRepo).Register(api)
+	}
+
+	// Background jobs
+	if deps.Jobs != nil {
+		handler.NewJobHandler(deps.Jobs).Register(api)
 	}
 
 	// Docker resource management (networks, volumes, images)
