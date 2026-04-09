@@ -96,6 +96,25 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 
 	s.publishEvent(domevent.StackCreated{Name: name, Timestamp: time.Now()})
 
+	// Auto-deploy after clone
+	s.log.Info("auto-deploying cloned stack", zap.String("stack", name))
+	if sops.IsAvailable() {
+		var perStackAgeKey string
+		if gitCfg.Credentials != nil {
+			perStackAgeKey = gitCfg.Credentials.AgeKey
+		}
+		ageKey := sops.ResolveAgeKey(perStackAgeKey, s.stacksDir)
+		sops.DecryptEnvFile(stackPath, ageKey)
+		sops.DecryptComposeSecrets(filepath.Join(stackPath, gitCfg.ComposePath), ageKey)
+	}
+	if _, err := s.compose.Up(ctx, stackPath, gitCfg.ComposePath); err != nil {
+		s.log.Warn("auto-deploy failed (stack cloned but not running)", zap.String("stack", name), zap.Error(err))
+	} else {
+		sops.ReEncryptEnvFile(stackPath)
+		sops.ReEncryptComposeSecrets(filepath.Join(stackPath, gitCfg.ComposePath))
+		s.publishEvent(domevent.StackDeployed{Name: name, Timestamp: time.Now()})
+	}
+
 	return st, nil
 }
 

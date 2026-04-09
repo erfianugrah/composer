@@ -119,6 +119,18 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string) 
 
 	s.publishEvent(event.StackCreated{Name: name, Timestamp: time.Now()})
 
+	// Auto-deploy after create
+	s.log.Info("auto-deploying new stack", zap.String("stack", name))
+	cf := s.resolveComposeFile(ctx, name)
+	s.decryptSopsSecrets(ctx, name, st.Path)
+	if _, err := s.compose.Up(ctx, st.Path, cf); err != nil {
+		s.log.Warn("auto-deploy failed (stack created but not running)", zap.String("stack", name), zap.Error(err))
+		// Don't fail the create -- stack is saved, user can deploy manually
+	} else {
+		s.reEncryptSopsSecrets(st.Path)
+		s.publishEvent(event.StackDeployed{Name: name, Timestamp: time.Now()})
+	}
+
 	return st, nil
 }
 
