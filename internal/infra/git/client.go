@@ -2,6 +2,8 @@ package git
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -277,4 +279,87 @@ func fileChangedBetweenCommits(repo *git.Repository, oldHash, newHash plumbing.H
 	}
 
 	return oldEntry.Hash != newEntry.Hash, nil
+}
+
+// DiffLine represents a single line in a diff output.
+type DiffLine struct {
+	Type    string // "add", "remove", "context"
+	Content string
+	OldLine int
+	NewLine int
+}
+
+// WorkingDiff compares the working tree version of a file against HEAD.
+// Returns the diff lines showing what changed.
+func (c *Client) WorkingDiff(stackDir, composePath string) ([]DiffLine, bool, error) {
+	repo, err := git.PlainOpen(stackDir)
+	if err != nil {
+		return nil, false, fmt.Errorf("opening repo: %w", err)
+	}
+
+	// Get committed content from HEAD
+	head, err := repo.Head()
+	if err != nil {
+		return nil, false, fmt.Errorf("getting HEAD: %w", err)
+	}
+
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return nil, false, fmt.Errorf("getting commit: %w", err)
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, false, fmt.Errorf("getting tree: %w", err)
+	}
+
+	var committedContent string
+	entry, err := tree.File(composePath)
+	if err == nil {
+		committedContent, _ = entry.Contents()
+	}
+
+	// Get working tree content from disk
+	diskPath := filepath.Join(stackDir, composePath)
+	diskBytes, err := os.ReadFile(diskPath)
+	if err != nil {
+		return nil, false, fmt.Errorf("reading disk file: %w", err)
+	}
+	workingContent := string(diskBytes)
+
+	if committedContent == workingContent {
+		return nil, false, nil
+	}
+
+	// Produce a simple line-by-line diff
+	oldLines := strings.Split(committedContent, "\n")
+	newLines := strings.Split(workingContent, "\n")
+
+	var diff []DiffLine
+	oi, ni := 0, 0
+	for oi < len(oldLines) || ni < len(newLines) {
+		if oi < len(oldLines) && ni < len(newLines) && oldLines[oi] == newLines[ni] {
+			diff = append(diff, DiffLine{Type: "context", Content: oldLines[oi], OldLine: oi + 1, NewLine: ni + 1})
+			oi++
+			ni++
+		} else if oi < len(oldLines) && (ni >= len(newLines) || !containsLine(newLines[ni:], oldLines[oi])) {
+			diff = append(diff, DiffLine{Type: "remove", Content: oldLines[oi], OldLine: oi + 1})
+			oi++
+		} else {
+			diff = append(diff, DiffLine{Type: "add", Content: newLines[ni], NewLine: ni + 1})
+			ni++
+		}
+	}
+
+	return diff, true, nil
+}
+
+// containsLine checks if a line exists in the remaining slice (simple lookahead).
+func containsLine(lines []string, target string) bool {
+	for i, l := range lines {
+		if l == target && i < 10 { // only look ahead 10 lines
+			return true
+		}
+	}
+	return false
 }

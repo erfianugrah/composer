@@ -60,9 +60,14 @@ func (c *Compose) Ps(ctx context.Context, stackDir string) (*ComposeResult, erro
 	return c.run(ctx, stackDir, "ps", "--format", "json")
 }
 
-// Validate runs `docker compose config` to validate a compose file.
+// Validate runs `docker compose config --quiet` to validate a compose file.
 func (c *Compose) Validate(ctx context.Context, stackDir string) (*ComposeResult, error) {
 	return c.run(ctx, stackDir, "config", "--quiet")
+}
+
+// Config runs `docker compose config` and returns the normalized compose YAML.
+func (c *Compose) Config(ctx context.Context, stackDir string) (*ComposeResult, error) {
+	return c.run(ctx, stackDir, "config")
 }
 
 // Exec runs an arbitrary docker compose subcommand in the given stack directory.

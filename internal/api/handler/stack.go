@@ -403,25 +403,27 @@ func (h *StackHandler) Diff(ctx context.Context, input *dto.GetStackInput) (*dto
 		return nil, internalError()
 	}
 
-	// Compare compose content on disk vs what docker compose reports as running config
+	// Compare current compose.yaml on disk vs the normalized config Docker would use.
+	// `docker compose config` outputs the fully-resolved, normalized YAML that Docker
+	// actually sees. Differences mean the file has changes not yet applied.
 	currentContent := st.ComposeContent
 	if currentContent == "" {
 		currentContent = "(no compose content)"
 	}
 
-	// Get the running compose config from Docker
-	runningResult, err := h.stacks.Validate(ctx, input.Name)
-	runningContent := ""
-	if err == nil && runningResult != nil {
-		runningContent = runningResult.Stdout
-	}
-	if runningContent == "" || runningContent == "valid" {
-		// Validate returns "valid" on success, not the actual config.
-		// Without a separate "last deployed" snapshot, compare against self.
-		runningContent = currentContent
+	// Get the normalized config from Docker
+	configResult, err := h.stacks.Config(ctx, input.Name)
+	normalizedContent := ""
+	if err == nil && configResult != nil && configResult.Stdout != "" {
+		normalizedContent = configResult.Stdout
 	}
 
-	diff := app.ComputeDiff(runningContent, currentContent)
+	// If we can't get the normalized config, compare disk content against itself (no changes)
+	if normalizedContent == "" {
+		normalizedContent = currentContent
+	}
+
+	diff := app.ComputeDiff(normalizedContent, currentContent)
 
 	out := &dto.DiffOutput{}
 	out.Body.HasChanges = diff.HasChanges

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -149,13 +150,31 @@ func (h *GitHandler) GitDiff(ctx context.Context, input *dto.GitDiffInput) (*dto
 	}
 	_ = st
 
-	// For a proper diff, we'd compare the working tree vs last commit.
-	// For now, return empty diff (compose content matches committed content
-	// unless edited outside Composer).
+	// Compare working tree (disk) vs committed (HEAD) version
+	diffLines, hasChanges, err := h.git.WorkingDiff(ctx, input.Name)
+	if err != nil {
+		// If diff fails (e.g., no commits yet), return empty diff
+		out := &dto.DiffOutput{}
+		out.Body.HasChanges = false
+		out.Body.Summary = "Could not compute diff"
+		out.Body.Lines = []dto.DiffLine{}
+		return out, nil
+	}
+
 	out := &dto.DiffOutput{}
-	out.Body.HasChanges = false
-	out.Body.Summary = "No uncommitted changes"
-	out.Body.Lines = []dto.DiffLine{}
+	out.Body.HasChanges = hasChanges
+	if hasChanges {
+		out.Body.Summary = fmt.Sprintf("%d lines changed", len(diffLines))
+		out.Body.Lines = make([]dto.DiffLine, 0, len(diffLines))
+		for _, l := range diffLines {
+			out.Body.Lines = append(out.Body.Lines, dto.DiffLine{
+				Type: l.Type, Content: l.Content, OldLine: l.OldLine, NewLine: l.NewLine,
+			})
+		}
+	} else {
+		out.Body.Summary = "No uncommitted changes"
+		out.Body.Lines = []dto.DiffLine{}
+	}
 	return out, nil
 }
 

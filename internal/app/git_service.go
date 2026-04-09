@@ -201,6 +201,24 @@ func (s *GitService) Rollback(ctx context.Context, name, commitSHA string) error
 	return nil
 }
 
+// WorkingDiff returns the diff between the committed and working tree version of the compose file.
+func (s *GitService) WorkingDiff(ctx context.Context, name string) ([]git.DiffLine, bool, error) {
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil || st == nil {
+		return nil, false, ErrNotFound
+	}
+	if st.Source != stack.SourceGit {
+		return nil, false, fmt.Errorf("stack %s is not git-backed", name)
+	}
+
+	cfg, err := s.gitCfgs.GetByStackName(ctx, name)
+	if err != nil || cfg == nil {
+		return nil, false, fmt.Errorf("git config not found for %s", name)
+	}
+
+	return s.gitClient.WorkingDiff(st.Path, cfg.ComposePath)
+}
+
 func (s *GitService) publishEvent(evt domevent.Event) {
 	if s.bus != nil {
 		s.bus.Publish(evt)
