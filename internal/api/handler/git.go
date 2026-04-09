@@ -217,7 +217,7 @@ func (h *GitHandler) CreateGitStack(ctx context.Context, input *dto.CreateGitSta
 
 	st, err := h.git.CreateGitStack(ctx, input.Body.Name, gitCfg)
 	if err != nil {
-		return nil, internalError()
+		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 
 	out := &dto.StackCreatedOutput{}

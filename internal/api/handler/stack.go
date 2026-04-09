@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -130,6 +131,14 @@ func (h *StackHandler) Register(api huma.API) {
 	}, h.ExecCompose)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "updateStackEnv",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/stacks/{name}/env",
+		Summary:     "Update .env file for a stack",
+		Tags:        []string{"stacks"},
+	}, h.UpdateEnv)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "importStacks",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/import",
@@ -166,12 +175,27 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 	out := &dto.StackListOutput{}
 	out.Body.Stacks = make([]dto.StackSummary, 0, len(stacks))
 	for _, s := range stacks {
+		// Get container counts for this stack
+		var containerCount, runningCount int
+		if h.stacks != nil {
+			containers, err := h.stacks.Containers(ctx, s.Name)
+			if err == nil {
+				containerCount = len(containers)
+				for _, c := range containers {
+					if c.IsRunning() {
+						runningCount++
+					}
+				}
+			}
+		}
 		out.Body.Stacks = append(out.Body.Stacks, dto.StackSummary{
-			Name:      s.Name,
-			Source:    string(s.Source),
-			Status:    string(s.Status),
-			CreatedAt: s.CreatedAt,
-			UpdatedAt: s.UpdatedAt,
+			Name:           s.Name,
+			Source:         string(s.Source),
+			Status:         string(s.Status),
+			ContainerCount: containerCount,
+			RunningCount:   runningCount,
+			CreatedAt:      s.CreatedAt,
+			UpdatedAt:      s.UpdatedAt,
 		})
 	}
 	return out, nil
@@ -213,6 +237,12 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 	out.Body.ComposeContent = st.ComposeContent
 	out.Body.CreatedAt = st.CreatedAt
 	out.Body.UpdatedAt = st.UpdatedAt
+
+	// Read .env file if it exists
+	envPath := st.Path + "/.env"
+	if envData, err := os.ReadFile(envPath); err == nil {
+		out.Body.EnvContent = string(envData)
+	}
 
 	// Populate containers from Docker
 	containers, err := h.stacks.Containers(ctx, st.Name)
@@ -519,6 +549,32 @@ func (h *StackHandler) ExecCompose(ctx context.Context, input *dto.ExecComposeIn
 		return nil, internalError()
 	}
 	return out, nil
+}
+
+// UpdateEnv saves the .env file content for a stack.
+func (h *StackHandler) UpdateEnv(ctx context.Context, input *dto.UpdateEnvInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	st, err := h.stacks.Get(ctx, input.Name)
+	if err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		return nil, internalError()
+	}
+
+	envPath := st.Path + "/.env"
+	if input.Body.Env == "" {
+		// Empty env = delete the .env file
+		os.Remove(envPath)
+	} else {
+		if err := os.WriteFile(envPath, []byte(input.Body.Env), 0644); err != nil {
+			return nil, internalError()
+		}
+	}
+	return nil, nil
 }
 
 func (h *StackHandler) Diff(ctx context.Context, input *dto.GetStackInput) (*dto.DiffOutput, error) {

@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	sshlib "golang.org/x/crypto/ssh"
 
 	domstack "github.com/erfianugrah/composer/internal/domain/stack"
 )
@@ -28,6 +29,8 @@ func buildAuth(creds *domstack.GitCredentials) transport.AuthMethod {
 		if err != nil {
 			return nil // fall back to no auth
 		}
+		// Accept any host key (container environment, no known_hosts)
+		keys.HostKeyCallback = sshlib.InsecureIgnoreHostKey()
 		return keys
 	}
 	if creds.Token != "" {
@@ -45,6 +48,27 @@ func buildAuth(creds *domstack.GitCredentials) transport.AuthMethod {
 	return nil
 }
 
+// buildSSHAuthFromAgent tries to use the SSH agent or default key files
+// for SSH URLs when no explicit credentials are provided.
+func buildSSHAuthFromAgent() transport.AuthMethod {
+	// Try common SSH key paths
+	for _, keyPath := range []string{
+		filepath.Join(os.Getenv("HOME"), ".ssh", "id_ed25519"),
+		filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa"),
+		"/home/composer/.ssh/id_ed25519",
+		"/home/composer/.ssh/id_rsa",
+	} {
+		if _, err := os.Stat(keyPath); err == nil {
+			keys, err := ssh.NewPublicKeysFromFile("git", keyPath, "")
+			if err == nil {
+				keys.HostKeyCallback = sshlib.InsecureIgnoreHostKey()
+				return keys
+			}
+		}
+	}
+	return nil
+}
+
 // Client wraps go-git for stack git operations.
 type Client struct{}
 
@@ -52,14 +76,28 @@ func NewClient() *Client {
 	return &Client{}
 }
 
+// isSSHURL returns true if the URL uses SSH protocol.
+func isSSHURL(url string) bool {
+	return strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://")
+}
+
 // Clone clones a git repository into the target directory.
+// Supports both HTTPS and SSH URLs. For SSH without explicit credentials,
+// tries the SSH agent and default key files (~/.ssh/id_ed25519, id_rsa).
 func (c *Client) Clone(repoURL, branch, targetDir string, creds *domstack.GitCredentials) error {
+	auth := buildAuth(creds)
+
+	// For SSH URLs without explicit credentials, try system SSH keys
+	if auth == nil && isSSHURL(repoURL) {
+		auth = buildSSHAuthFromAgent()
+	}
+
 	opts := &git.CloneOptions{
 		URL:           repoURL,
 		ReferenceName: plumbing.NewBranchReferenceName(branch),
 		SingleBranch:  true,
 		Depth:         0, // full clone for log/diff
-		Auth:          buildAuth(creds),
+		Auth:          auth,
 	}
 
 	_, err := git.PlainClone(targetDir, false, opts)
@@ -88,10 +126,17 @@ func (c *Client) Pull(stackDir, composePath string, creds *domstack.GitCredentia
 	}
 	oldSHA := oldHead.Hash().String()
 
-	// Pull with credentials
+	// Pull with credentials (SSH fallback for git@ URLs)
+	auth := buildAuth(creds)
+	if auth == nil {
+		remote, _ := repo.Remote("origin")
+		if remote != nil && len(remote.Config().URLs) > 0 && isSSHURL(remote.Config().URLs[0]) {
+			auth = buildSSHAuthFromAgent()
+		}
+	}
 	pullOpts := &git.PullOptions{
 		RemoteName: "origin",
-		Auth:       buildAuth(creds),
+		Auth:       auth,
 	}
 	err = wt.Pull(pullOpts)
 	if err == git.NoErrAlreadyUpToDate {

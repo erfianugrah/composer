@@ -48,11 +48,13 @@ type StackNameInput struct {
 // --- Response types ---
 
 type StackSummary struct {
-	Name      string    `json:"name" doc:"Stack name"`
-	Source    string    `json:"source" doc:"local or git"`
-	Status    string    `json:"status" doc:"running, stopped, partial, unknown"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Name           string    `json:"name" doc:"Stack name"`
+	Source         string    `json:"source" doc:"local or git"`
+	Status         string    `json:"status" doc:"running, stopped, partial, unknown"`
+	ContainerCount int       `json:"container_count" doc:"Number of containers in this stack"`
+	RunningCount   int       `json:"running_count" doc:"Number of running containers"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type StackListOutput struct {
@@ -68,10 +70,18 @@ type StackDetailOutput struct {
 		Source         string            `json:"source"`
 		Status         string            `json:"status"`
 		ComposeContent string            `json:"compose_content"`
+		EnvContent     string            `json:"env_content,omitempty"`
 		GitConfig      *GitSourceOutput  `json:"git_config,omitempty"`
 		Containers     []ContainerOutput `json:"containers"`
 		CreatedAt      time.Time         `json:"created_at"`
 		UpdatedAt      time.Time         `json:"updated_at"`
+	}
+}
+
+type UpdateEnvInput struct {
+	Name string `path:"name" doc:"Stack name"`
+	Body struct {
+		Env string `json:"env" doc:".env file content"`
 	}
 }
 

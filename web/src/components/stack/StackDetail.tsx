@@ -327,42 +327,71 @@ export function StackDetail({ stackName }: { stackName: string }) {
         </Card>
       )}
 
-      {activeTab === "terminal" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Terminal</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {activeTerminal ? (
-              <Suspense fallback={<div className="h-96 animate-pulse bg-muted rounded" />}>
-                <Terminal containerId={activeTerminal} />
-              </Suspense>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Select a running container from the Containers tab to open a terminal.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-      {activeTab === "stats" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Container Stats</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {statsContainerId ? (
-              <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
-                <ContainerStats containerId={statsContainerId} />
-              </Suspense>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Select a running container from the Containers tab to view stats.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {activeTab === "terminal" && (() => {
+        // Auto-select first running container if none selected
+        const target = activeTerminal || stack.containers.find(c => c.status === "running")?.id;
+        return (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">Terminal</CardTitle>
+                {stack.containers.filter(c => c.status === "running").length > 1 && (
+                  <select
+                    value={target || ""}
+                    onChange={(e) => setActiveTerminal(e.target.value)}
+                    className="text-xs rounded border border-input bg-transparent px-2 py-1 font-data"
+                  >
+                    {stack.containers.filter(c => c.status === "running").map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {target ? (
+                <Suspense fallback={<div className="h-96 animate-pulse bg-muted rounded" />}>
+                  <Terminal containerId={target} />
+                </Suspense>
+              ) : (
+                <p className="text-sm text-muted-foreground">No running containers.</p>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+      {activeTab === "stats" && (() => {
+        const target = statsContainerId || stack.containers.find(c => c.status === "running")?.id;
+        return (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">Container Stats</CardTitle>
+                {stack.containers.filter(c => c.status === "running").length > 1 && (
+                  <select
+                    value={target || ""}
+                    onChange={(e) => setStatsContainerId(e.target.value)}
+                    className="text-xs rounded border border-input bg-transparent px-2 py-1 font-data"
+                  >
+                    {stack.containers.filter(c => c.status === "running").map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {target ? (
+                <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
+                  <ContainerStats containerId={target} />
+                </Suspense>
+              ) : (
+                <p className="text-sm text-muted-foreground">No running containers.</p>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {activeTab === "git" && stack.source === "git" && (
         <GitStatus stackName={stack.name} />

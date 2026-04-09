@@ -7,6 +7,8 @@ interface StackSummary {
   name: string;
   source: string;
   status: string;
+  container_count: number;
+  running_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -102,9 +104,16 @@ export function DashboardOverview() {
                       </Badge>
                     )}
                   </div>
-                  <Badge className={statusColor[stack.status] || statusColor.unknown}>
-                    {stack.status}
-                  </Badge>
+                  <div className="flex items-center gap-3">
+                    {stack.container_count > 0 && (
+                      <span className="text-[10px] font-data text-muted-foreground">
+                        {stack.running_count}/{stack.container_count} containers
+                      </span>
+                    )}
+                    <Badge className={statusColor[stack.status] || statusColor.unknown}>
+                      {stack.status}
+                    </Badge>
+                  </div>
                 </a>
               ))}
             </div>
