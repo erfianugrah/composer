@@ -114,7 +114,7 @@ export function SystemConfig() {
           <CardTitle className="text-sm">SSH Keys</CardTitle>
         </CardHeader>
         <CardContent>
-          {config.ssh_keys.length === 0 ? (
+          {(!config.ssh_keys || config.ssh_keys.length === 0) ? (
             <p className="text-sm text-muted-foreground">No SSH keys detected. Mount keys to <code className="font-data">/home/composer/.ssh/</code></p>
           ) : (
             <div className="space-y-2">

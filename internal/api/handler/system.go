@@ -145,8 +145,11 @@ func (h *SystemHandler) Config(ctx context.Context, input *struct{}) (*ConfigOut
 
 	out := &ConfigOutput{}
 
-	// SSH keys
+	// SSH keys (never nil -- empty array for JSON serialization)
 	out.Body.SSHKeys = listSSHKeys()
+	if out.Body.SSHKeys == nil {
+		out.Body.SSHKeys = []SSHKeyInfo{}
+	}
 
 	// Encryption key source
 	if os.Getenv("COMPOSER_ENCRYPTION_KEY") != "" {
