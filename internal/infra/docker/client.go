@@ -11,7 +11,10 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
+	"github.com/docker/docker/api/types/volume"
 	dockerclient "github.com/docker/docker/client"
 
 	domcontainer "github.com/erfianugrah/composer/internal/domain/container"
@@ -269,4 +272,134 @@ func firstOrEmpty(s []string) string {
 		return s[0]
 	}
 	return ""
+}
+
+// --- Network Management ---
+
+type NetworkInfo struct {
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Driver     string            `json:"driver"`
+	Scope      string            `json:"scope"`
+	Internal   bool              `json:"internal"`
+	Containers int               `json:"containers"`
+	Labels     map[string]string `json:"labels,omitempty"`
+}
+
+func (c *Client) ListNetworks(ctx context.Context) ([]NetworkInfo, error) {
+	nets, err := c.cli.NetworkList(ctx, network.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("listing networks: %w", err)
+	}
+	result := make([]NetworkInfo, 0, len(nets))
+	for _, n := range nets {
+		result = append(result, NetworkInfo{
+			ID: n.ID[:12], Name: n.Name, Driver: n.Driver,
+			Scope: n.Scope, Internal: n.Internal,
+			Containers: len(n.Containers), Labels: n.Labels,
+		})
+	}
+	return result, nil
+}
+
+func (c *Client) CreateNetwork(ctx context.Context, name, driver string) error {
+	_, err := c.cli.NetworkCreate(ctx, name, network.CreateOptions{Driver: driver})
+	return err
+}
+
+func (c *Client) RemoveNetwork(ctx context.Context, id string) error {
+	return c.cli.NetworkRemove(ctx, id)
+}
+
+// --- Volume Management ---
+
+type VolumeInfo struct {
+	Name       string            `json:"name"`
+	Driver     string            `json:"driver"`
+	Mountpoint string            `json:"mountpoint"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	CreatedAt  string            `json:"created_at"`
+}
+
+func (c *Client) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
+	resp, err := c.cli.VolumeList(ctx, volume.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("listing volumes: %w", err)
+	}
+	result := make([]VolumeInfo, 0, len(resp.Volumes))
+	for _, v := range resp.Volumes {
+		result = append(result, VolumeInfo{
+			Name: v.Name, Driver: v.Driver, Mountpoint: v.Mountpoint,
+			Labels: v.Labels, CreatedAt: v.CreatedAt,
+		})
+	}
+	return result, nil
+}
+
+func (c *Client) CreateVolume(ctx context.Context, name, driver string) error {
+	_, err := c.cli.VolumeCreate(ctx, volume.CreateOptions{Name: name, Driver: driver})
+	return err
+}
+
+func (c *Client) RemoveVolume(ctx context.Context, name string) error {
+	return c.cli.VolumeRemove(ctx, name, false)
+}
+
+func (c *Client) PruneVolumes(ctx context.Context) (uint64, error) {
+	report, err := c.cli.VolumesPrune(ctx, filters.Args{})
+	if err != nil {
+		return 0, err
+	}
+	return report.SpaceReclaimed, nil
+}
+
+// --- Image Management ---
+
+type ImageInfo struct {
+	ID      string   `json:"id"`
+	Tags    []string `json:"tags"`
+	Size    int64    `json:"size"`
+	Created int64    `json:"created"`
+}
+
+func (c *Client) ListImages(ctx context.Context) ([]ImageInfo, error) {
+	imgs, err := c.cli.ImageList(ctx, image.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("listing images: %w", err)
+	}
+	result := make([]ImageInfo, 0, len(imgs))
+	for _, img := range imgs {
+		id := img.ID
+		if strings.HasPrefix(id, "sha256:") {
+			id = id[7:19] // short hash
+		}
+		result = append(result, ImageInfo{
+			ID: id, Tags: img.RepoTags, Size: img.Size, Created: img.Created,
+		})
+	}
+	return result, nil
+}
+
+func (c *Client) PullImage(ctx context.Context, ref string) error {
+	reader, err := c.cli.ImagePull(ctx, ref, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("pulling image: %w", err)
+	}
+	defer reader.Close()
+	// Drain the reader to complete the pull
+	io.Copy(io.Discard, reader)
+	return nil
+}
+
+func (c *Client) RemoveImage(ctx context.Context, id string) error {
+	_, err := c.cli.ImageRemove(ctx, id, image.RemoveOptions{PruneChildren: true})
+	return err
+}
+
+func (c *Client) PruneImages(ctx context.Context) (uint64, error) {
+	report, err := c.cli.ImagesPrune(ctx, filters.Args{})
+	if err != nil {
+		return 0, err
+	}
+	return report.SpaceReclaimed, nil
 }

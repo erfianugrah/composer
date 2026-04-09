@@ -1,0 +1,7 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { NetworksPage } from "@/components/docker/NetworksPage";
+---
+<Layout title="Networks" active="networks">
+  <NetworksPage client:load />
+</Layout>

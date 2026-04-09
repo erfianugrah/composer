@@ -164,6 +164,11 @@ func NewServer(deps Deps) *Server {
 		handler.NewAuditHandler(deps.AuditRepo).Register(api)
 	}
 
+	// Docker resource management (networks, volumes, images)
+	if deps.DockerClient != nil {
+		handler.NewResourceHandler(deps.DockerClient).Register(api)
+	}
+
 	// Global docker command runner (admin only)
 	if deps.Compose != nil {
 		handler.NewDockerExecHandler(deps.Compose).Register(api)

@@ -12,6 +12,7 @@ const LogViewer = lazy(() => import("@/components/container/LogViewer").then(m =
 const StackConsole = lazy(() => import("./StackConsole").then(m => ({ default: m.StackConsole })));
 const DiffViewer = lazy(() => import("./DiffViewer").then(m => ({ default: m.DiffViewer })));
 import { GitStatus } from "./GitStatus";
+import { EnvEditor } from "./EnvEditor";
 
 interface StackData {
   name: string;
@@ -19,6 +20,7 @@ interface StackData {
   source: string;
   status: string;
   compose_content: string;
+  env_content?: string;
   containers: {
     id: string;
     name: string;
@@ -53,7 +55,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [actionError, setActionError] = useState("");
   const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "diff" | "logs" | "console" | "terminal" | "stats" | "git">("containers");
+  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "git">("containers");
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
 
   const fetchStack = async () => {
@@ -192,7 +194,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {(["containers", "compose", "diff", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
+        {(["containers", "compose", "env", "diff", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -291,6 +293,17 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 onSave={handleSaveCompose}
               />
             </Suspense>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === "env" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">.env</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EnvEditor stackName={stackName} initialContent={stack.env_content || ""} />
           </CardContent>
         </Card>
       )}
