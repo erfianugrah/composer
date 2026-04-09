@@ -292,12 +292,15 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 		out.Body.Containers = make([]dto.ContainerOutput, 0, len(containers))
 		for _, c := range containers {
 			out.Body.Containers = append(out.Body.Containers, dto.ContainerOutput{
-				ID:          c.ID,
-				Name:        c.Name,
-				ServiceName: c.ServiceName,
-				Image:       c.Image,
-				Status:      string(c.Status),
-				Health:      string(c.Health),
+				ID:              c.ID,
+				Name:            c.Name,
+				ServiceName:     c.ServiceName,
+				Image:           c.Image,
+				Status:          string(c.Status),
+				Health:          string(c.Health),
+				ExitCode:        c.ExitCode,
+				RestartPolicy:   c.RestartPolicy,
+				CompletedOneOff: c.IsCompletedOneOff(),
 			})
 		}
 	} else {

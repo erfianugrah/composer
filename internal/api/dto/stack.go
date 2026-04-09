@@ -110,12 +110,15 @@ type GitSourceOutput struct {
 }
 
 type ContainerOutput struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	ServiceName string `json:"service_name"`
-	Image       string `json:"image"`
-	Status      string `json:"status"`
-	Health      string `json:"health"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	ServiceName     string `json:"service_name"`
+	Image           string `json:"image"`
+	Status          string `json:"status"`
+	Health          string `json:"health"`
+	ExitCode        int    `json:"exit_code,omitempty"`
+	RestartPolicy   string `json:"restart_policy,omitempty"`
+	CompletedOneOff bool   `json:"completed_one_off,omitempty" doc:"True if this is an init/one-off container that exited successfully"`
 }
 
 type StackCreatedOutput struct {

@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
@@ -185,6 +187,9 @@ func detectSocket() string {
 	return dockerclient.DefaultDockerHost
 }
 
+// exitCodeRe matches "Exited (0)" or "Exited (137)" in Docker status strings.
+var exitCodeRe = regexp.MustCompile(`Exited \((\d+)\)`)
+
 func toDomainContainer(c container.Summary) domcontainer.Container {
 	dc := domcontainer.Container{
 		ID:          c.ID[:12],
@@ -194,6 +199,15 @@ func toDomainContainer(c container.Summary) domcontainer.Container {
 		StackName:   c.Labels["com.docker.compose.project"],
 		ServiceName: c.Labels["com.docker.compose.service"],
 	}
+
+	// Extract exit code from status string (e.g., "Exited (0) 5 minutes ago")
+	if matches := exitCodeRe.FindStringSubmatch(c.Status); len(matches) == 2 {
+		dc.ExitCode, _ = strconv.Atoi(matches[1])
+	}
+
+	// Restart policy from compose label (set by docker compose)
+	// Values: "no", "always", "on-failure", "unless-stopped"
+	dc.RestartPolicy = c.Labels["com.docker.compose.restart"]
 
 	for _, p := range c.Ports {
 		dc.Ports = append(dc.Ports, domcontainer.PortBinding{
@@ -220,12 +234,14 @@ func toDomainContainer(c container.Summary) domcontainer.Container {
 
 func inspectToDomain(c container.InspectResponse) domcontainer.Container {
 	dc := domcontainer.Container{
-		ID:          c.ID[:12],
-		Name:        strings.TrimPrefix(c.Name, "/"),
-		Image:       c.Config.Image,
-		Status:      mapStatus(c.State.Status),
-		StackName:   c.Config.Labels["com.docker.compose.project"],
-		ServiceName: c.Config.Labels["com.docker.compose.service"],
+		ID:            c.ID[:12],
+		Name:          strings.TrimPrefix(c.Name, "/"),
+		Image:         c.Config.Image,
+		Status:        mapStatus(c.State.Status),
+		ExitCode:      c.State.ExitCode,
+		RestartPolicy: string(c.HostConfig.RestartPolicy.Name),
+		StackName:     c.Config.Labels["com.docker.compose.project"],
+		ServiceName:   c.Config.Labels["com.docker.compose.service"],
 	}
 
 	if c.State.Health != nil {

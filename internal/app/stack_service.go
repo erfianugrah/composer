@@ -754,14 +754,24 @@ func deriveStackStatus(containers []domcontainer.Container) stack.Status {
 	}
 
 	running := 0
+	completedOneOff := 0
 	for _, c := range containers {
 		if c.IsRunning() {
 			running++
+		} else if c.IsCompletedOneOff() {
+			completedOneOff++
 		}
 	}
 
+	// Long-running services = total minus completed one-off containers
+	longRunning := len(containers) - completedOneOff
+
 	switch {
-	case running == len(containers):
+	case longRunning == 0 && completedOneOff > 0:
+		// All containers are completed one-offs (unusual but possible)
+		return stack.StatusStopped
+	case running == longRunning:
+		// All long-running services are up (one-offs completed successfully)
 		return stack.StatusRunning
 	case running == 0:
 		return stack.StatusStopped

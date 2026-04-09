@@ -27,16 +27,18 @@ const (
 
 // Container is a running (or stopped) Docker container within a stack.
 type Container struct {
-	ID          string // short 12-char Docker ID
-	Name        string
-	StackName   string // compose project name
-	ServiceName string // compose service name
-	Image       string
-	Status      ContainerStatus
-	Health      HealthStatus
-	Ports       []PortBinding
-	CreatedAt   time.Time
-	StartedAt   time.Time
+	ID            string // short 12-char Docker ID
+	Name          string
+	StackName     string // compose project name
+	ServiceName   string // compose service name
+	Image         string
+	Status        ContainerStatus
+	Health        HealthStatus
+	ExitCode      int    // exit code (only meaningful when Status == exited)
+	RestartPolicy string // "no", "always", "on-failure", "unless-stopped"
+	Ports         []PortBinding
+	CreatedAt     time.Time
+	StartedAt     time.Time
 }
 
 // PortBinding maps a container port to a host port.
@@ -50,4 +52,12 @@ type PortBinding struct {
 // IsRunning returns true if the container is in the running state.
 func (c *Container) IsRunning() bool {
 	return c.Status == StatusRunning
+}
+
+// IsCompletedOneOff returns true if this container exited successfully (code 0)
+// and is not configured to restart. These are init containers, migration runners,
+// config generators, etc. that are expected to exit.
+func (c *Container) IsCompletedOneOff() bool {
+	return c.Status == StatusExited && c.ExitCode == 0 &&
+		(c.RestartPolicy == "no" || c.RestartPolicy == "" || c.RestartPolicy == "on-failure")
 }

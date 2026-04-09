@@ -35,6 +35,9 @@ interface StackData {
     image: string;
     status: string;
     health: string;
+    exit_code?: number;
+    restart_policy?: string;
+    completed_one_off?: boolean;
   }[];
   git_config?: {
     repo_url: string;
@@ -240,12 +243,16 @@ export function StackDetail({ stackName }: { stackName: string }) {
                       <div className="text-xs text-muted-foreground font-data">{c.image}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge className={statusColor[c.status] || statusColor.unknown}>{c.status}</Badge>
+                      {c.completed_one_off ? (
+                        <Badge className="bg-cp-blue/20 text-cp-blue border-cp-blue/30">completed</Badge>
+                      ) : (
+                        <Badge className={statusColor[c.status] || statusColor.unknown}>{c.status}</Badge>
+                      )}
                       {c.health !== "none" && (
                         <Badge className={statusColor[c.health] || statusColor.unknown}>{c.health}</Badge>
                       )}
                       {/* Container actions */}
-                      {c.status !== "running" && (
+                      {c.status !== "running" && !c.completed_one_off && (
                         <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
                           Start
                         </Button>
