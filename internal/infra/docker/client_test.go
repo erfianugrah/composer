@@ -69,7 +69,7 @@ func TestCompose_ValidateAndUp(t *testing.T) {
 	require.NoError(t, err, "validate stderr: %s", result.Stderr)
 
 	// Up
-	result, err = comp.Up(ctx, dir)
+	result, err = comp.Up(ctx, dir, "")
 	require.NoError(t, err, "up stderr: %s", result.Stderr)
 	t.Logf("compose up stdout: %s", result.Stdout)
 
@@ -88,7 +88,7 @@ func TestCompose_ValidateAndUp(t *testing.T) {
 	assert.True(t, found, "expected to find running nginx:alpine container")
 
 	// Down
-	result, err = comp.Down(ctx, dir, true)
+	result, err = comp.Down(ctx, dir, "", true)
 	require.NoError(t, err, "down stderr: %s", result.Stderr)
 	t.Logf("compose down stdout: %s", result.Stdout)
 }
