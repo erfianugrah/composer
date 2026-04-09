@@ -11,6 +11,8 @@ export function VolumesPage() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [inspecting, setInspecting] = useState<string | null>(null);
+  const [inspectData, setInspectData] = useState<Record<string, string>>({});
 
   function fetch_() {
     apiFetch<{ volumes: VolumeInfo[] }>("/api/v1/volumes").then(({ data, error: e }) => {
@@ -19,6 +21,15 @@ export function VolumesPage() {
     });
   }
   useEffect(() => { fetch_(); }, []);
+
+  async function handleInspect(volName: string) {
+    if (inspecting === volName) { setInspecting(null); return; }
+    setInspecting(volName);
+    if (inspectData[volName]) return;
+    const { data, error: err } = await apiFetch<Record<string, unknown>>(`/api/v1/volumes/${volName}`);
+    if (err) { setInspectData(prev => ({ ...prev, [volName]: `Error: ${err}` })); }
+    else { setInspectData(prev => ({ ...prev, [volName]: JSON.stringify(data, null, 2) })); }
+  }
 
   return (
     <div className="space-y-6">
@@ -49,12 +60,19 @@ export function VolumesPage() {
           {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : volumes.length === 0 ? <p className="text-sm text-muted-foreground">No volumes.</p> : (
             <div className="space-y-1">
               {volumes.map((v) => (
-                <div key={v.name} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div>
-                    <div className="font-medium text-sm">{v.name}</div>
-                    <div className="text-[10px] text-muted-foreground font-data">{v.driver} &middot; {v.mountpoint}</div>
+                <div key={v.name}>
+                  <div className="flex items-center justify-between rounded-lg border border-border p-3 cursor-pointer hover:bg-accent/30 transition-colors" onClick={() => handleInspect(v.name)}>
+                    <div>
+                      <div className="font-medium text-sm">{v.name}</div>
+                      <div className="text-[10px] text-muted-foreground font-data">{v.driver} &middot; {v.mountpoint}</div>
+                    </div>
+                    <Button size="xs" variant="destructive" onClick={async (e) => { e.stopPropagation(); if (!confirm(`Remove volume ${v.name}?`)) return; await apiFetch(`/api/v1/volumes/${v.name}`, { method: "DELETE" }); fetch_(); }}>Remove</Button>
                   </div>
-                  <Button size="xs" variant="destructive" onClick={async () => { if (!confirm(`Remove volume ${v.name}?`)) return; await apiFetch(`/api/v1/volumes/${v.name}`, { method: "DELETE" }); fetch_(); }}>Remove</Button>
+                  {inspecting === v.name && (
+                    <pre className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap">
+                      {inspectData[v.name] || "Loading..."}
+                    </pre>
+                  )}
                 </div>
               ))}
             </div>

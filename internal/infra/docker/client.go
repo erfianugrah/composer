@@ -311,6 +311,11 @@ func (c *Client) RemoveNetwork(ctx context.Context, id string) error {
 	return c.cli.NetworkRemove(ctx, id)
 }
 
+// InspectNetwork returns the full raw inspect data for a network.
+func (c *Client) InspectNetwork(ctx context.Context, id string) (network.Inspect, error) {
+	return c.cli.NetworkInspect(ctx, id, network.InspectOptions{Verbose: true})
+}
+
 // --- Volume Management ---
 
 type VolumeInfo struct {
@@ -343,6 +348,11 @@ func (c *Client) CreateVolume(ctx context.Context, name, driver string) error {
 
 func (c *Client) RemoveVolume(ctx context.Context, name string) error {
 	return c.cli.VolumeRemove(ctx, name, false)
+}
+
+// InspectVolume returns the full raw inspect data for a volume.
+func (c *Client) InspectVolume(ctx context.Context, name string) (volume.Volume, error) {
+	return c.cli.VolumeInspect(ctx, name)
 }
 
 func (c *Client) PruneVolumes(ctx context.Context) (uint64, error) {

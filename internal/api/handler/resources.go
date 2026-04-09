@@ -10,6 +10,9 @@ import (
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/infra/docker"
+
+	dockernetwork "github.com/docker/docker/api/types/network"
+	dockervolume "github.com/docker/docker/api/types/volume"
 )
 
 // ResourceHandler manages Docker networks, volumes, and images.
@@ -32,6 +35,10 @@ func (h *ResourceHandler) Register(api huma.API) {
 		Path: "/api/v1/networks", Summary: "Create a Docker network", Tags: []string{"networks"},
 	}, h.CreateNetwork)
 	huma.Register(api, huma.Operation{
+		OperationID: "inspectNetwork", Method: http.MethodGet,
+		Path: "/api/v1/networks/{id}", Summary: "Inspect a Docker network (full JSON)", Tags: []string{"networks"},
+	}, h.InspectNetwork)
+	huma.Register(api, huma.Operation{
 		OperationID: "removeNetwork", Method: http.MethodDelete,
 		Path: "/api/v1/networks/{id}", Summary: "Remove a Docker network", Tags: []string{"networks"},
 	}, h.RemoveNetwork)
@@ -45,6 +52,10 @@ func (h *ResourceHandler) Register(api huma.API) {
 		OperationID: "createVolume", Method: http.MethodPost,
 		Path: "/api/v1/volumes", Summary: "Create a Docker volume", Tags: []string{"volumes"},
 	}, h.CreateVolume)
+	huma.Register(api, huma.Operation{
+		OperationID: "inspectVolume", Method: http.MethodGet,
+		Path: "/api/v1/volumes/{name}", Summary: "Inspect a Docker volume (full JSON)", Tags: []string{"volumes"},
+	}, h.InspectVolume)
 	huma.Register(api, huma.Operation{
 		OperationID: "removeVolume", Method: http.MethodDelete,
 		Path: "/api/v1/volumes/{name}", Summary: "Remove a Docker volume", Tags: []string{"volumes"},
@@ -129,6 +140,21 @@ func (h *ResourceHandler) RemoveNetwork(ctx context.Context, input *NetworkIDInp
 	return nil, nil
 }
 
+type NetworkInspectOutput struct {
+	Body dockernetwork.Inspect
+}
+
+func (h *ResourceHandler) InspectNetwork(ctx context.Context, input *NetworkIDInput) (*NetworkInspectOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return nil, err
+	}
+	data, err := h.docker.InspectNetwork(ctx, input.ID)
+	if err != nil {
+		return nil, huma.Error404NotFound("network not found: " + err.Error())
+	}
+	return &NetworkInspectOutput{Body: data}, nil
+}
+
 // --- Volumes ---
 
 type VolumeListOutput struct {
@@ -189,6 +215,21 @@ func (h *ResourceHandler) RemoveVolume(ctx context.Context, input *VolumeNameInp
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return nil, nil
+}
+
+type VolumeInspectOutput struct {
+	Body dockervolume.Volume
+}
+
+func (h *ResourceHandler) InspectVolume(ctx context.Context, input *VolumeNameInput) (*VolumeInspectOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
+		return nil, err
+	}
+	data, err := h.docker.InspectVolume(ctx, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound("volume not found: " + err.Error())
+	}
+	return &VolumeInspectOutput{Body: data}, nil
 }
 
 func (h *ResourceHandler) PruneVolumes(ctx context.Context, input *struct{}) (*PruneOutput, error) {
