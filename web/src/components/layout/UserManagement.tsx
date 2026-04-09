@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { apiFetch } from "@/lib/api/errors";
 
 interface UserSummary {
   id: string;
@@ -30,16 +31,15 @@ export function UserManagement() {
   const [role, setRole] = useState("viewer");
 
   function fetchUsers() {
-    fetch("/api/v1/users", { credentials: "include" })
-      .then(async (res) => {
-        if (res.status === 401) { window.location.href = "/login"; return; }
-        if (res.status === 403) { setError("Admin access required"); return; }
-        if (!res.ok) return;
-        const data = await res.json();
-        setUsers(data.users || []);
-      })
-      .catch(() => setError("Failed to load users"))
-      .finally(() => setLoading(false));
+    apiFetch<{ users: UserSummary[] }>("/api/v1/users").then(({ data, error: err }) => {
+      if (err) {
+        if (err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
+        setError(err);
+      } else {
+        setUsers(data?.users || []);
+      }
+      setLoading(false);
+    });
   }
 
   useEffect(() => { fetchUsers(); }, []);
@@ -48,30 +48,25 @@ export function UserManagement() {
     e.preventDefault();
     setCreating(true);
     setError("");
-    try {
-      const res = await fetch("/api/v1/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, role }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.detail || "Failed to create user");
-        return;
-      }
+    const { error: err } = await apiFetch("/api/v1/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, role }),
+    });
+    if (err) {
+      setError(err);
+    } else {
       setEmail("");
       setPassword("");
       setRole("viewer");
       fetchUsers();
-    } finally {
-      setCreating(false);
     }
+    setCreating(false);
   }
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this user?")) return;
-    await fetch(`/api/v1/users/${id}`, { method: "DELETE", credentials: "include" });
+    await apiFetch(`/api/v1/users/${id}`, { method: "DELETE" });
     fetchUsers();
   }
 

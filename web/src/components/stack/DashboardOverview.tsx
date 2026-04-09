@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { apiFetch } from "@/lib/api/errors";
 
 interface StackSummary {
   name: string;
@@ -23,18 +24,17 @@ export function DashboardOverview() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/v1/stacks", { credentials: "include" })
-      .then(async (res) => {
-        if (res.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-        if (!res.ok) throw new Error("Failed to fetch stacks");
-        const data = await res.json();
-        setStacks(data.stacks || []);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    async function load() {
+      const { data, error: err } = await apiFetch<{ stacks: StackSummary[] }>("/api/v1/stacks");
+      if (err) {
+        if (err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
+        setError(err);
+      } else {
+        setStacks(data?.stacks || []);
+      }
+      setLoading(false);
+    }
+    load();
   }, []);
 
   if (loading) {

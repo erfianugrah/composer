@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiFetch } from "@/lib/api/errors";
 
 interface GitStatusData {
   repo_url: string;
@@ -36,22 +37,15 @@ export function GitStatus({ stackName }: { stackName: string }) {
   const [error, setError] = useState("");
 
   function fetchStatus() {
-    fetch(`/api/v1/stacks/${stackName}/git/status`, { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) return;
-        setStatus(await res.json());
-      })
-      .catch(() => {});
+    apiFetch<GitStatusData>(`/api/v1/stacks/${stackName}/git/status`).then(({ data }) => {
+      if (data) setStatus(data);
+    });
   }
 
   function fetchLog() {
-    fetch(`/api/v1/stacks/${stackName}/git/log?limit=10`, { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) return;
-        const data = await res.json();
-        setCommits(data.commits || []);
-      })
-      .catch(() => {});
+    apiFetch<{ commits: GitCommit[] }>(`/api/v1/stacks/${stackName}/git/log?limit=10`).then(({ data }) => {
+      if (data) setCommits(data.commits || []);
+    });
   }
 
   useEffect(() => {
@@ -62,27 +56,11 @@ export function GitStatus({ stackName }: { stackName: string }) {
   async function handleSync() {
     setSyncing(true);
     setError("");
-    try {
-      const res = await fetch(`/api/v1/stacks/${stackName}/sync`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.detail || "Sync failed");
-      } else {
-        const data = await res.json();
-        if (data.changed) {
-          setError("");
-        }
-      }
-      fetchStatus();
-      fetchLog();
-    } catch {
-      setError("Network error");
-    } finally {
-      setSyncing(false);
-    }
+    const { error: err } = await apiFetch(`/api/v1/stacks/${stackName}/sync`, { method: "POST" });
+    if (err) setError(err);
+    fetchStatus();
+    fetchLog();
+    setSyncing(false);
   }
 
   if (!status) return null;

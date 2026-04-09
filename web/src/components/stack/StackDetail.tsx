@@ -2,6 +2,7 @@ import { useEffect, useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { apiFetch, extractError } from "@/lib/api/errors";
 
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
 const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
@@ -50,42 +51,33 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [activeTab, setActiveTab] = useState<"containers" | "compose" | "terminal" | "stats" | "git">("containers");
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
 
-  const fetchStack = () => {
-    fetch(`/api/v1/stacks/${stackName}`, { credentials: "include" })
-      .then(async (res) => {
-        if (res.status === 401) { window.location.href = "/login"; return; }
-        if (!res.ok) throw new Error("Stack not found");
-        setStack(await res.json());
-      })
-      .catch(() => setStack(null))
-      .finally(() => setLoading(false));
+  const fetchStack = async () => {
+    const { data, error } = await apiFetch<StackData>(`/api/v1/stacks/${stackName}`);
+    if (error) {
+      if (error.includes("Invalid credentials")) { window.location.href = "/login"; return; }
+      setStack(null);
+    } else {
+      setStack(data);
+    }
+    setLoading(false);
   };
 
   useEffect(() => { fetchStack(); }, [stackName]);
 
   async function doAction(action: string) {
     setActionLoading(action);
-    try {
-      await fetch(`/api/v1/stacks/${stackName}/${action}`, {
-        method: "POST", credentials: "include",
-      });
-      setTimeout(fetchStack, 1000);
-    } finally {
-      setActionLoading("");
-    }
+    await apiFetch(`/api/v1/stacks/${stackName}/${action}`, { method: "POST" });
+    setTimeout(fetchStack, 1000);
+    setActionLoading("");
   }
 
   async function handleSaveCompose(content: string) {
-    const res = await fetch(`/api/v1/stacks/${stackName}`, {
+    const { error } = await apiFetch(`/api/v1/stacks/${stackName}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ compose: content }),
-      credentials: "include",
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Save failed");
-    }
+    if (error) throw new Error(error);
     fetchStack();
   }
 

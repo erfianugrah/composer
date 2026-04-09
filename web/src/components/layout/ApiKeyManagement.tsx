@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { apiFetch } from "@/lib/api/errors";
 
 interface KeySummary {
   id: string;
@@ -30,14 +31,10 @@ export function ApiKeyManagement() {
   const [role, setRole] = useState("operator");
 
   function fetchKeys() {
-    fetch("/api/v1/keys", { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) return;
-        const data = await res.json();
-        setKeys(data.keys || []);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    apiFetch<{ keys: KeySummary[] }>("/api/v1/keys").then(({ data }) => {
+      if (data) setKeys(data.keys || []);
+      setLoading(false);
+    });
   }
 
   useEffect(() => { fetchKeys(); }, []);
@@ -46,25 +43,21 @@ export function ApiKeyManagement() {
     e.preventDefault();
     setCreating(true);
     setNewKey(null);
-    try {
-      const res = await fetch("/api/v1/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, role }),
-        credentials: "include",
-      });
-      if (!res.ok) return;
-      const data = await res.json();
+    const { data } = await apiFetch<KeyCreated>("/api/v1/keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, role }),
+    });
+    if (data) {
       setNewKey(data);
       setName("");
       fetchKeys();
-    } finally {
-      setCreating(false);
     }
+    setCreating(false);
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/v1/keys/${id}`, { method: "DELETE", credentials: "include" });
+    await apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" });
     fetchKeys();
   }
 

@@ -3,6 +3,7 @@ import { DashboardOverview } from "./DashboardOverview";
 import { StackDetail } from "./StackDetail";
 import { TemplatePicker } from "./TemplatePicker";
 import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api/errors";
 
 export function StacksPage() {
   const [selectedStack, setSelectedStack] = useState<string | null>(() => {
@@ -24,13 +25,12 @@ export function StacksPage() {
   }, []);
 
   async function handleTemplateCreate(name: string, compose: string) {
-    const res = await fetch("/api/v1/stacks", {
+    const { error } = await apiFetch("/api/v1/stacks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, compose }),
-      credentials: "include",
     });
-    if (res.ok) {
+    if (!error) {
       setShowCreate(false);
       window.location.hash = name;
       setSelectedStack(name);

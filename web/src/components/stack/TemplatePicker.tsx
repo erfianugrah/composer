@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { apiFetch } from "@/lib/api/errors";
 
 interface Template {
   id: string;
@@ -22,26 +23,17 @@ export function TemplatePicker({ onSelect }: Props) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/v1/templates")
-      .then(async (res) => {
-        if (!res.ok) return;
-        const data = await res.json();
-        setTemplates(data.templates || []);
-      })
-      .catch(() => {});
+    apiFetch<{ templates: Template[] }>("/api/v1/templates").then(({ data }) => {
+      if (data) setTemplates(data.templates || []);
+    });
   }, []);
 
   async function handleCreate() {
     if (!selected || !stackName) return;
     setLoading(true);
-    try {
-      const tplRes = await fetch(`/api/v1/templates/${selected}`);
-      if (!tplRes.ok) return;
-      const tpl = await tplRes.json();
-      onSelect(stackName, tpl.compose);
-    } finally {
-      setLoading(false);
-    }
+    const { data } = await apiFetch<{ compose: string }>(`/api/v1/templates/${selected}`);
+    if (data) onSelect(stackName, data.compose);
+    setLoading(false);
   }
 
   // Group by category

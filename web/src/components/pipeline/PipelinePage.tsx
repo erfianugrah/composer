@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api/errors";
 
 interface PipelineSummary {
   id: string;
@@ -36,25 +37,17 @@ export function PipelinePage() {
   const [running, setRunning] = useState("");
 
   function fetchPipelines() {
-    fetch("/api/v1/pipelines", { credentials: "include" })
-      .then(async (res) => {
-        if (res.status === 401) { window.location.href = "/login"; return; }
-        if (!res.ok) return;
-        const data = await res.json();
-        setPipelines(data.pipelines || []);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    apiFetch<{ pipelines: PipelineSummary[] }>("/api/v1/pipelines").then(({ data, error: err }) => {
+      if (err && err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
+      if (data) setPipelines(data.pipelines || []);
+      setLoading(false);
+    });
   }
 
   function fetchRuns(pipelineId: string) {
-    fetch(`/api/v1/pipelines/${pipelineId}/runs`, { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) return;
-        const data = await res.json();
-        setRuns(data.runs || []);
-      })
-      .catch(() => {});
+    apiFetch<{ runs: RunSummary[] }>(`/api/v1/pipelines/${pipelineId}/runs`).then(({ data }) => {
+      if (data) setRuns(data.runs || []);
+    });
   }
 
   useEffect(() => { fetchPipelines(); }, []);
@@ -65,17 +58,11 @@ export function PipelinePage() {
 
   async function handleRun(pipelineId: string) {
     setRunning(pipelineId);
-    try {
-      await fetch(`/api/v1/pipelines/${pipelineId}/run`, {
-        method: "POST", credentials: "include",
-      });
-      // Refresh runs after a short delay
-      setTimeout(() => {
-        if (selectedPipeline === pipelineId) fetchRuns(pipelineId);
-      }, 1000);
-    } finally {
-      setRunning("");
-    }
+    await apiFetch(`/api/v1/pipelines/${pipelineId}/run`, { method: "POST" });
+    setTimeout(() => {
+      if (selectedPipeline === pipelineId) fetchRuns(pipelineId);
+    }, 1000);
+    setRunning("");
   }
 
   if (loading) {

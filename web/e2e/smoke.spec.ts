@@ -241,6 +241,157 @@ test.describe("Navigation", () => {
   });
 });
 
+test.describe("Login Page - Bootstrap Detection", () => {
+  test("shows loading state initially then resolves to login or bootstrap", async ({ page }) => {
+    // Mock to simulate existing users (login mode)
+    await page.route("**/api/v1/system/health", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
+    );
+    await page.route("**/api/v1/auth/bootstrap", (route) =>
+      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+    );
+
+    await page.goto("/login");
+
+    // Should resolve to login mode
+    await expect(page.locator("text=Sign in to your account")).toBeVisible({ timeout: 5000 });
+  });
+
+  test("bootstrap mode hides OAuth buttons", async ({ page }) => {
+    // Mock: health OK, bootstrap probe returns 422 (validation error = bootstrap available)
+    await page.route("**/api/v1/system/health", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
+    );
+    await page.route("**/api/v1/auth/bootstrap", (route) =>
+      route.fulfill({ status: 422, contentType: "application/json", body: '{"detail":"email is required"}' })
+    );
+
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { name: "Create admin account" })).toBeVisible({ timeout: 5000 });
+
+    // OAuth buttons should NOT be visible in bootstrap mode
+    await expect(page.getByTestId("oauth-github")).toBeHidden();
+    await expect(page.getByTestId("oauth-google")).toBeHidden();
+  });
+
+  test("login mode shows OAuth buttons", async ({ page }) => {
+    // Mock responses to simulate existing users
+    await page.route("**/api/v1/system/health", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
+    );
+    await page.route("**/api/v1/auth/bootstrap", (route) =>
+      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+    );
+
+    await page.goto("/login");
+    await expect(page.locator("text=Sign in to your account")).toBeVisible({ timeout: 5000 });
+
+    // OAuth buttons should be visible in login mode
+    await expect(page.getByTestId("oauth-github")).toBeVisible();
+    await expect(page.getByTestId("oauth-google")).toBeVisible();
+  });
+
+  test("password field has minLength=8 in bootstrap mode", async ({ page }) => {
+    await page.route("**/api/v1/system/health", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
+    );
+    await page.route("**/api/v1/auth/bootstrap", (route) =>
+      route.fulfill({ status: 422, contentType: "application/json", body: '{"detail":"email is required"}' })
+    );
+
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { name: "Create admin account" })).toBeVisible({ timeout: 5000 });
+
+    const pw = page.getByTestId("login-password");
+    await expect(pw).toHaveAttribute("minlength", "8");
+    await expect(pw).toHaveAttribute("placeholder", "Choose a strong password");
+  });
+});
+
+test.describe("Login Page - Error Handling", () => {
+  test("shows user-friendly message on WAF 403 block", async ({ page }) => {
+    await page.route("**/api/v1/system/health", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
+    );
+    await page.route("**/api/v1/auth/bootstrap", (route) =>
+      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+    );
+    // Login returns 403 (WAF block with HTML body)
+    await page.route("**/api/v1/auth/login", (route) =>
+      route.fulfill({ status: 403, contentType: "text/html", body: "<html><body>Forbidden by WAF</body></html>" })
+    );
+
+    await page.goto("/login");
+    await expect(page.locator("text=Sign in to your account")).toBeVisible({ timeout: 5000 });
+
+    await page.getByTestId("login-email").fill("user@test.com");
+    await page.getByTestId("login-password").fill("testpassword123");
+    await page.getByTestId("login-submit").click();
+
+    const error = page.getByTestId("login-error");
+    await expect(error).toBeVisible({ timeout: 5000 });
+    await expect(error).toContainText("Access denied");
+  });
+
+  test("shows server error message from API response detail", async ({ page }) => {
+    await page.route("**/api/v1/system/health", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
+    );
+    await page.route("**/api/v1/auth/bootstrap", (route) =>
+      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+    );
+    await page.route("**/api/v1/auth/login", (route) =>
+      route.fulfill({ status: 401, contentType: "application/json", body: '{"status":401,"title":"Unauthorized","detail":"invalid email or password"}' })
+    );
+
+    await page.goto("/login");
+    await expect(page.locator("text=Sign in to your account")).toBeVisible({ timeout: 5000 });
+
+    await page.getByTestId("login-email").fill("wrong@test.com");
+    await page.getByTestId("login-password").fill("wrongpassword");
+    await page.getByTestId("login-submit").click();
+
+    const error = page.getByTestId("login-error");
+    await expect(error).toBeVisible({ timeout: 5000 });
+    await expect(error).toContainText("invalid email or password");
+  });
+
+  test("shows rate limit message on 429", async ({ page }) => {
+    await page.route("**/api/v1/system/health", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
+    );
+    await page.route("**/api/v1/auth/bootstrap", (route) =>
+      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+    );
+    await page.route("**/api/v1/auth/login", (route) =>
+      route.fulfill({ status: 429, contentType: "application/json", body: '{"status":429,"title":"Too Many Requests","detail":"Rate limit exceeded"}' })
+    );
+
+    await page.goto("/login");
+    await expect(page.locator("text=Sign in to your account")).toBeVisible({ timeout: 5000 });
+
+    await page.getByTestId("login-email").fill("user@test.com");
+    await page.getByTestId("login-password").fill("testpassword123");
+    await page.getByTestId("login-submit").click();
+
+    const error = page.getByTestId("login-error");
+    await expect(error).toBeVisible({ timeout: 5000 });
+    await expect(error).toContainText("Rate limit exceeded");
+  });
+
+  test("shows connectivity error when server is unreachable", async ({ page }) => {
+    // Abort all API requests to simulate server down
+    await page.route("**/api/**", (route) => route.abort("connectionrefused"));
+
+    await page.goto("/login");
+
+    // Should show the login form (fallback) with an error
+    const error = page.getByTestId("login-error");
+    await expect(error).toBeVisible({ timeout: 5000 });
+    await expect(error).toContainText("Cannot reach the server");
+  });
+});
+
 test.describe("Lovelace Theme", () => {
   test("login page has dark background (cp-950)", async ({ page }) => {
     await page.goto("/login");

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { apiFetch } from "@/lib/api/errors";
 
 interface WebhookSummary {
   id: string;
@@ -42,15 +43,11 @@ export function WebhookSettings() {
   const [branchFilter, setBranchFilter] = useState("");
 
   function fetchWebhooks() {
-    fetch("/api/v1/webhooks", { credentials: "include" })
-      .then(async (res) => {
-        if (res.status === 401) { window.location.href = "/login"; return; }
-        if (!res.ok) return;
-        const data = await res.json();
-        setWebhooks(data.webhooks || []);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    apiFetch<{ webhooks: WebhookSummary[] }>("/api/v1/webhooks").then(({ data, error: err }) => {
+      if (err && err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
+      if (data) setWebhooks(data.webhooks || []);
+      setLoading(false);
+    });
   }
 
   useEffect(() => { fetchWebhooks(); }, []);
@@ -59,33 +56,27 @@ export function WebhookSettings() {
     e.preventDefault();
     setCreating(true);
     setNewWebhook(null);
-
-    try {
-      const res = await fetch("/api/v1/webhooks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stack_name: stackName,
-          provider,
-          branch_filter: branchFilter || undefined,
-          auto_redeploy: true,
-        }),
-        credentials: "include",
-      });
-
-      if (!res.ok) return;
-      const data = await res.json();
+    const { data } = await apiFetch<WebhookDetail>("/api/v1/webhooks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stack_name: stackName,
+        provider,
+        branch_filter: branchFilter || undefined,
+        auto_redeploy: true,
+      }),
+    });
+    if (data) {
       setNewWebhook(data);
       setStackName("");
       setBranchFilter("");
       fetchWebhooks();
-    } finally {
-      setCreating(false);
     }
+    setCreating(false);
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/v1/webhooks/${id}`, { method: "DELETE", credentials: "include" });
+    await apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" });
     fetchWebhooks();
   }
 
