@@ -103,6 +103,21 @@ type StackCreatedOutput struct {
 	}
 }
 
+type ExecComposeInput struct {
+	Name string `path:"name" doc:"Stack name"`
+	Body struct {
+		Command string `json:"command" minLength:"1" doc:"Docker compose subcommand (e.g. 'ps', 'logs --tail 50', 'exec web sh -c env')"`
+	}
+}
+
+type ExecComposeOutput struct {
+	Body struct {
+		Stdout   string `json:"stdout"`
+		Stderr   string `json:"stderr"`
+		ExitCode int    `json:"exit_code"`
+	}
+}
+
 type ComposeOpOutput struct {
 	Body struct {
 		Stdout string `json:"stdout"`

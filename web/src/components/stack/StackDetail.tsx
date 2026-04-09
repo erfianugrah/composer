@@ -8,6 +8,8 @@ import { apiFetch } from "@/lib/api/errors";
 const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
 const ComposeEditor = lazy(() => import("./ComposeEditor").then(m => ({ default: m.ComposeEditor })));
 const ContainerStats = lazy(() => import("@/components/container/ContainerStats").then(m => ({ default: m.ContainerStats })));
+const LogViewer = lazy(() => import("@/components/container/LogViewer").then(m => ({ default: m.LogViewer })));
+const StackConsole = lazy(() => import("./StackConsole").then(m => ({ default: m.StackConsole })));
 import { GitStatus } from "./GitStatus";
 
 interface StackData {
@@ -48,8 +50,9 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
   const [actionError, setActionError] = useState("");
+  const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "terminal" | "stats" | "git">("containers");
+  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "logs" | "console" | "terminal" | "stats" | "git">("containers");
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
 
   const fetchStack = async () => {
@@ -68,8 +71,14 @@ export function StackDetail({ stackName }: { stackName: string }) {
   async function doAction(action: string) {
     setActionLoading(action);
     setActionError("");
-    const { error } = await apiFetch(`/api/v1/stacks/${stackName}/${action}`, { method: "POST" });
-    if (error) setActionError(`${action} failed: ${error}`);
+    setActionOutput("");
+    const { data, error } = await apiFetch<{ stdout: string; stderr: string }>(`/api/v1/stacks/${stackName}/${action}`, { method: "POST" });
+    if (error) {
+      setActionError(`${action} failed: ${error}`);
+    } else if (data) {
+      const output = [data.stdout, data.stderr].filter(Boolean).join("\n");
+      if (output) setActionOutput(output);
+    }
     setTimeout(fetchStack, 1000);
     setActionLoading("");
   }
@@ -145,9 +154,20 @@ export function StackDetail({ stackName }: { stackName: string }) {
         </div>
       )}
 
+      {/* Action output (stdout/stderr from deploy/stop/restart/pull) */}
+      {actionOutput && (
+        <div className="rounded-lg border border-border bg-cp-950 p-3" data-testid="action-output">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider">Command Output</span>
+            <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setActionOutput("")}>close</button>
+          </div>
+          <pre className="text-xs font-data text-cp-green/80 whitespace-pre-wrap max-h-48 overflow-y-auto">{actionOutput}</pre>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {(["containers", "compose", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
+        {(["containers", "compose", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -245,6 +265,32 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 stackName={stack.name}
                 onSave={handleSaveCompose}
               />
+            </Suspense>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === "logs" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Logs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
+              <LogViewer stackName={stackName} tail="200" />
+            </Suspense>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === "console" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Console</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
+              <StackConsole stackName={stackName} />
             </Suspense>
           </CardContent>
         </Card>

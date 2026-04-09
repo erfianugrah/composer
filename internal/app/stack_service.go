@@ -319,6 +319,20 @@ func (s *StackService) Containers(ctx context.Context, stackName string) ([]domc
 	return s.docker.ListContainers(ctx, stackName)
 }
 
+// ExecCompose runs an arbitrary docker compose subcommand against a stack.
+// The command string is split into args and passed to `docker compose <args>`.
+// Returns stdout, stderr, and exit code.
+func (s *StackService) ExecCompose(ctx context.Context, name string, args []string) (*docker.ComposeResult, error) {
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if st == nil {
+		return nil, ErrNotFound
+	}
+	return s.compose.Exec(ctx, st.Path, args)
+}
+
 func deriveStackStatus(containers []domcontainer.Container) stack.Status {
 	if len(containers) == 0 {
 		return stack.StatusStopped

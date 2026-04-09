@@ -65,6 +65,13 @@ func (c *Compose) Validate(ctx context.Context, stackDir string) (*ComposeResult
 	return c.run(ctx, stackDir, "config", "--quiet")
 }
 
+// Exec runs an arbitrary docker compose subcommand in the given stack directory.
+// This is for the stack console -- operators can run any compose command.
+// Only compose subcommands are allowed (not arbitrary shell commands).
+func (c *Compose) Exec(ctx context.Context, stackDir string, composeArgs []string) (*ComposeResult, error) {
+	return c.run(ctx, stackDir, composeArgs...)
+}
+
 // run executes a docker compose command in the given working directory.
 func (c *Compose) run(ctx context.Context, workDir string, args ...string) (*ComposeResult, error) {
 	fullArgs := append([]string{"compose"}, args...)

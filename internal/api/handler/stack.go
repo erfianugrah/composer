@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -110,6 +111,14 @@ func (h *StackHandler) Register(api huma.API) {
 		Summary:     "Show pending compose changes vs saved version",
 		Tags:        []string{"stacks"},
 	}, h.Diff)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "execComposeCommand",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/stacks/{name}/exec",
+		Summary:     "Run a docker compose command against this stack",
+		Tags:        []string{"stacks"},
+	}, h.ExecCompose)
 }
 
 func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackListOutput, error) {
@@ -334,6 +343,50 @@ func (h *StackHandler) Validate(ctx context.Context, input *dto.StackNameInput) 
 
 	out := &dto.ComposeOpOutput{}
 	out.Body.Stdout = "valid"
+	return out, nil
+}
+
+// ExecCompose runs an arbitrary docker compose subcommand against a stack.
+// Requires operator+ role. The command string is split by whitespace into args
+// and passed to `docker compose <args>` in the stack's directory.
+//
+// Example: {"command": "logs --tail 50 web"} runs `docker compose logs --tail 50 web`
+// Example: {"command": "ps"} runs `docker compose ps`
+// Example: {"command": "exec web env"} runs `docker compose exec web env`
+func (h *StackHandler) ExecCompose(ctx context.Context, input *dto.ExecComposeInput) (*dto.ExecComposeOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	args := strings.Fields(input.Body.Command)
+	if len(args) == 0 {
+		return nil, huma.Error422UnprocessableEntity("command is empty")
+	}
+
+	// Block dangerous subcommands that could escape the stack context
+	blocked := map[string]bool{"rm": true, "kill": true}
+	if blocked[args[0]] {
+		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed via the console; use the UI actions instead")
+	}
+
+	result, err := h.stacks.ExecCompose(ctx, input.Name, args)
+
+	out := &dto.ExecComposeOutput{}
+	if result != nil {
+		out.Body.Stdout = result.Stdout
+		out.Body.Stderr = result.Stderr
+		out.Body.ExitCode = result.ExitCode
+	}
+	if err != nil {
+		// Still return output even on non-zero exit (the output is the useful part)
+		if result != nil {
+			return out, nil
+		}
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		return nil, internalError()
+	}
 	return out, nil
 }
 
