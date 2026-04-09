@@ -12,6 +12,7 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
+	"github.com/erfianugrah/composer/internal/infra/sops"
 )
 
 // StackService orchestrates stack management operations.
@@ -22,6 +23,7 @@ type StackService struct {
 	compose   *docker.Compose
 	bus       event.Bus
 	stacksDir string
+	dataDir   string
 	locks     stackLocks // per-stack mutex to prevent concurrent operations
 }
 
@@ -59,6 +61,7 @@ func NewStackService(
 	compose *docker.Compose,
 	bus event.Bus,
 	stacksDir string,
+	dataDir string,
 ) *StackService {
 	return &StackService{
 		stacks:    stacks,
@@ -67,6 +70,7 @@ func NewStackService(
 		compose:   compose,
 		bus:       bus,
 		stacksDir: stacksDir,
+		dataDir:   dataDir,
 		locks:     stackLocks{locks: make(map[string]*sync.Mutex)},
 	}
 }
@@ -268,6 +272,9 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 		return nil, ErrNotFound
 	}
 
+	// Decrypt SOPS-encrypted secrets before deploy
+	s.decryptSopsSecrets(ctx, name, st.Path)
+
 	result, err := s.compose.Up(ctx, st.Path)
 	if err != nil {
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
@@ -290,6 +297,9 @@ func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker
 	if st == nil {
 		return nil, ErrNotFound
 	}
+
+	// Decrypt SOPS-encrypted secrets before build+deploy
+	s.decryptSopsSecrets(ctx, name, st.Path)
 
 	result, err := s.compose.BuildAndUp(ctx, st.Path)
 	if err != nil {
@@ -561,6 +571,35 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(destPath, data, info.Mode())
 	})
+}
+
+// decryptSopsSecrets decrypts SOPS-encrypted .env and compose files in the stack
+// directory before docker compose operations. Uses per-stack age key if available,
+// falls back to global age key. No-op if sops binary is not installed or files
+// are not SOPS-encrypted.
+func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackPath string) {
+	if !sops.IsAvailable() {
+		return
+	}
+
+	// Resolve age key: per-stack > global
+	var perStackAgeKey string
+	cfg, err := s.gitCfgs.GetByStackName(ctx, stackName)
+	if err == nil && cfg != nil && cfg.Credentials != nil {
+		perStackAgeKey = cfg.Credentials.AgeKey
+	}
+	ageKey := sops.ResolveAgeKey(perStackAgeKey, s.dataDir)
+
+	// Decrypt .env if SOPS-encrypted
+	sops.DecryptEnvFile(stackPath, ageKey)
+
+	// Decrypt compose file if SOPS-encrypted
+	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
+		composePath := filepath.Join(stackPath, name)
+		if _, err := os.Stat(composePath); err == nil {
+			sops.DecryptComposeSecrets(composePath, ageKey)
+		}
+	}
 }
 
 // publishEvent sends an event to the bus if one is configured.

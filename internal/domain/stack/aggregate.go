@@ -23,10 +23,11 @@ type Stack struct {
 type GitAuthMethod string
 
 const (
-	GitAuthNone  GitAuthMethod = "none"
-	GitAuthToken GitAuthMethod = "token"
-	GitAuthSSH   GitAuthMethod = "ssh_key"
-	GitAuthBasic GitAuthMethod = "basic"
+	GitAuthNone    GitAuthMethod = "none"
+	GitAuthToken   GitAuthMethod = "token"
+	GitAuthSSH     GitAuthMethod = "ssh_key"
+	GitAuthSSHFile GitAuthMethod = "ssh_file"
+	GitAuthBasic   GitAuthMethod = "basic"
 )
 
 // GitSource holds the configuration for a git-backed stack.
@@ -44,11 +45,13 @@ type GitSource struct {
 
 // GitCredentials holds credential data for git authentication.
 type GitCredentials struct {
-	Token            string
-	SSHKey           string // PEM-encoded private key content
-	SSHKeyPassphrase string // optional passphrase for the SSH key
-	Username         string
-	Password         string
+	Token            string `json:"token,omitempty"`
+	SSHKey           string `json:"ssh_key,omitempty"`            // PEM-encoded private key content (inline)
+	SSHKeyFile       string `json:"ssh_key_file,omitempty"`       // path to SSH key file on disk (per-stack override)
+	SSHKeyPassphrase string `json:"ssh_key_passphrase,omitempty"` // optional passphrase for the SSH key
+	Username         string `json:"username,omitempty"`
+	Password         string `json:"password,omitempty"`
+	AgeKey           string `json:"age_key,omitempty"` // per-stack age private key for SOPS decryption
 }
 
 // NewStack creates a new local stack.

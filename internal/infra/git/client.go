@@ -25,6 +25,17 @@ func buildAuth(creds *domstack.GitCredentials) transport.AuthMethod {
 	if creds == nil {
 		return nil
 	}
+	// Per-stack SSH key file takes priority over inline key
+	if creds.SSHKeyFile != "" {
+		keyContent, err := crypto.DecryptFile(creds.SSHKeyFile)
+		if err == nil && keyContent != "" {
+			keys, err := ssh.NewPublicKeys("git", []byte(keyContent), creds.SSHKeyPassphrase)
+			if err == nil {
+				keys.HostKeyCallback = sshlib.InsecureIgnoreHostKey()
+				return keys
+			}
+		}
+	}
 	if creds.SSHKey != "" {
 		// SSH key auth: the key content is stored in the credentials
 		keys, err := ssh.NewPublicKeys("git", []byte(creds.SSHKey), creds.SSHKeyPassphrase)

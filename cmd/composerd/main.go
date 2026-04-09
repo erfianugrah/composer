@@ -22,6 +22,7 @@ import (
 	"github.com/erfianugrah/composer/internal/infra/eventbus"
 	infraGit "github.com/erfianugrah/composer/internal/infra/git"
 	"github.com/erfianugrah/composer/internal/infra/notify"
+	sopsInfra "github.com/erfianugrah/composer/internal/infra/sops"
 	"github.com/erfianugrah/composer/internal/infra/store"
 )
 
@@ -209,11 +210,20 @@ func main() {
 	// --- Git Client ---
 	gitClient := infraGit.NewClient()
 
+	// --- SOPS/age key detection ---
+	globalAgeKey := sopsInfra.LoadGlobalAgeKey(cfg.DataDir)
+	if globalAgeKey != "" {
+		logger.Info("SOPS age key loaded")
+	}
+	if sopsInfra.IsAvailable() {
+		logger.Info("sops binary available for secret decryption")
+	}
+
 	// --- Application Services ---
 	authSvc := app.NewAuthService(userRepo, sessionRepo, apiKeyRepo)
 	var gitSvc *app.GitService
 	if dockerClient != nil {
-		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, cfg.StacksDir)
+		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, cfg.StacksDir, cfg.DataDir)
 		gitSvc = app.NewGitService(stackRepo, gitConfigRepo, gitClient, compose, bus, cfg.StacksDir)
 	}
 

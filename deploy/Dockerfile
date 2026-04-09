@@ -18,6 +18,15 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /composerd ./cmd/composerd/
 # ── Stage 3: Docker CLI + Compose plugin from official image ────
 FROM docker:28-cli AS docker-bins
 
+# ── Stage 3b: SOPS binary for secret decryption ────────────────
+FROM alpine:3.21 AS sops-bin
+ARG TARGETARCH
+RUN apk add --no-cache curl && \
+    SOPS_VERSION="3.9.4" && \
+    curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.${TARGETARCH}" \
+      -o /usr/local/bin/sops && \
+    chmod +x /usr/local/bin/sops
+
 # ── Stage 4: Runtime (self-contained, security-hardened) ────────
 FROM alpine:3.21
 
@@ -31,6 +40,9 @@ COPY --from=docker-bins /usr/local/libexec/docker/cli-plugins/docker-compose \
      /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=docker-bins /usr/local/libexec/docker/cli-plugins/docker-buildx \
      /usr/local/libexec/docker/cli-plugins/docker-buildx
+
+# SOPS binary for secret decryption
+COPY --from=sops-bin /usr/local/bin/sops /usr/local/bin/sops
 
 # Composer binary
 COPY --from=backend /composerd /usr/local/bin/composerd

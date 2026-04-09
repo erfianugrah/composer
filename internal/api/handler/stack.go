@@ -522,12 +522,14 @@ func (h *StackHandler) ConvertToGit(ctx context.Context, input *dto.ConvertToGit
 	}
 
 	var creds *stack.GitCredentials
-	if input.Body.Token != "" || input.Body.SSHKey != "" || input.Body.Username != "" {
+	if input.Body.Token != "" || input.Body.SSHKey != "" || input.Body.SSHKeyFile != "" || input.Body.Username != "" || input.Body.AgeKey != "" {
 		creds = &stack.GitCredentials{
-			Token:    input.Body.Token,
-			SSHKey:   input.Body.SSHKey,
-			Username: input.Body.Username,
-			Password: input.Body.Password,
+			Token:      input.Body.Token,
+			SSHKey:     input.Body.SSHKey,
+			SSHKeyFile: input.Body.SSHKeyFile,
+			Username:   input.Body.Username,
+			Password:   input.Body.Password,
+			AgeKey:     input.Body.AgeKey,
 		}
 	}
 

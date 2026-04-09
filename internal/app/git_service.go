@@ -12,6 +12,7 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	"github.com/erfianugrah/composer/internal/infra/git"
+	"github.com/erfianugrah/composer/internal/infra/sops"
 )
 
 // GitService orchestrates git-backed stack operations and webhook processing.
@@ -150,6 +151,18 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 	st, _ := s.stacks.GetByName(ctx, name)
 	if st == nil {
 		return "error", ErrNotFound
+	}
+
+	// Decrypt SOPS-encrypted secrets after sync, before deploy
+	if sops.IsAvailable() {
+		var perStackAgeKey string
+		if cfg != nil && cfg.Credentials != nil {
+			perStackAgeKey = cfg.Credentials.AgeKey
+		}
+		ageKey := sops.ResolveAgeKey(perStackAgeKey, s.stacksDir)
+		sops.DecryptEnvFile(st.Path, ageKey)
+		composePath := filepath.Join(st.Path, cfg.ComposePath)
+		sops.DecryptComposeSecrets(composePath, ageKey)
 	}
 
 	_, err = s.compose.Up(ctx, st.Path)

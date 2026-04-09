@@ -17,11 +17,13 @@ type CreateGitStackInput struct {
 		RepoURL     string `json:"repo_url" minLength:"1" doc:"Git repository URL (HTTPS or SSH)"`
 		Branch      string `json:"branch,omitempty" doc:"Branch to track (default: main)"`
 		ComposePath string `json:"compose_path,omitempty" doc:"Path to compose file in repo (default: compose.yaml)"`
-		AuthMethod  string `json:"auth_method,omitempty" doc:"Auth method: none, token, ssh_key, basic"`
+		AuthMethod  string `json:"auth_method,omitempty" doc:"Auth method: none, token, ssh_key, ssh_file, basic"`
 		Token       string `json:"token,omitempty" doc:"Access token for token auth"`
-		SSHKey      string `json:"ssh_key,omitempty" doc:"PEM-encoded SSH private key"`
+		SSHKey      string `json:"ssh_key,omitempty" doc:"PEM-encoded SSH private key (inline)"`
+		SSHKeyFile  string `json:"ssh_key_file,omitempty" doc:"Path to SSH key file on server (per-stack override)"`
 		Username    string `json:"username,omitempty" doc:"Username for basic auth"`
 		Password    string `json:"password,omitempty" doc:"Password for basic auth"`
+		AgeKey      string `json:"age_key,omitempty" doc:"Per-stack age private key for SOPS decryption (overrides global)"`
 	}
 }
 
@@ -154,12 +156,14 @@ type ImportStacksOutput struct {
 type ConvertToGitInput struct {
 	Name string `path:"name" doc:"Stack name"`
 	Body struct {
-		RepoURL  string `json:"repo_url" minLength:"1" doc:"Git repository URL"`
-		Branch   string `json:"branch,omitempty" doc:"Branch (default: main)"`
-		Token    string `json:"token,omitempty" doc:"Access token for auth"`
-		SSHKey   string `json:"ssh_key,omitempty" doc:"PEM-encoded SSH private key"`
-		Username string `json:"username,omitempty" doc:"Username for basic auth"`
-		Password string `json:"password,omitempty" doc:"Password for basic auth"`
+		RepoURL    string `json:"repo_url" minLength:"1" doc:"Git repository URL"`
+		Branch     string `json:"branch,omitempty" doc:"Branch (default: main)"`
+		Token      string `json:"token,omitempty" doc:"Access token for auth"`
+		SSHKey     string `json:"ssh_key,omitempty" doc:"PEM-encoded SSH private key"`
+		SSHKeyFile string `json:"ssh_key_file,omitempty" doc:"Path to SSH key file on server"`
+		Username   string `json:"username,omitempty" doc:"Username for basic auth"`
+		Password   string `json:"password,omitempty" doc:"Password for basic auth"`
+		AgeKey     string `json:"age_key,omitempty" doc:"Per-stack age key for SOPS decryption"`
 	}
 }
 

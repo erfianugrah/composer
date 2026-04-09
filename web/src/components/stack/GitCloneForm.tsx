@@ -16,8 +16,10 @@ export function GitCloneForm({ onCreated }: Props) {
   const [authMethod, setAuthMethod] = useState("none");
   const [token, setToken] = useState("");
   const [sshKey, setSshKey] = useState("");
+  const [sshKeyFile, setSshKeyFile] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [ageKey, setAgeKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -37,7 +39,9 @@ export function GitCloneForm({ onCreated }: Props) {
         auth_method: authMethod,
         ...(authMethod === "token" && { token }),
         ...(authMethod === "ssh_key" && { ssh_key: sshKey }),
+        ...(authMethod === "ssh_file" && { ssh_key_file: sshKeyFile }),
         ...(authMethod === "basic" && { username, password }),
+        ...(ageKey && { age_key: ageKey }),
       }),
     });
 
@@ -84,9 +88,10 @@ export function GitCloneForm({ onCreated }: Props) {
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                 data-testid="git-auth-method"
               >
-                <option value="none">None (public repo)</option>
+                <option value="none">None (public repo / global SSH keys)</option>
                 <option value="token">Access Token</option>
-                <option value="ssh_key">SSH Key</option>
+                <option value="ssh_key">SSH Key (paste PEM)</option>
+                <option value="ssh_file">SSH Key File (path on server)</option>
                 <option value="basic">Username / Password</option>
               </select>
             </div>
@@ -114,6 +119,14 @@ export function GitCloneForm({ onCreated }: Props) {
             </div>
           )}
 
+          {authMethod === "ssh_file" && (
+            <div className="space-y-1">
+              <label className="text-xs uppercase tracking-wider text-muted-foreground">SSH Key File Path</label>
+              <Input value={sshKeyFile} onChange={(e) => setSshKeyFile(e.target.value)} placeholder="/home/composer/.ssh/id_ed25519" required data-testid="git-ssh-key-file" />
+              <p className="text-[11px] text-muted-foreground">Absolute path to an SSH private key on the server. Keys are decrypted transparently if encrypted at rest.</p>
+            </div>
+          )}
+
           {authMethod === "basic" && (
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
@@ -126,6 +139,17 @@ export function GitCloneForm({ onCreated }: Props) {
               </div>
             </div>
           )}
+
+          {/* Per-stack SOPS age key (optional, overrides global) */}
+          <details className="group">
+            <summary className="text-xs uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground">
+              SOPS / Age Key (optional)
+            </summary>
+            <div className="mt-2 space-y-1">
+              <Input type="password" value={ageKey} onChange={(e) => setAgeKey(e.target.value)} placeholder="AGE-SECRET-KEY-... (overrides global key for this stack)" data-testid="git-age-key" />
+              <p className="text-[11px] text-muted-foreground">Per-stack age private key for SOPS decryption. Leave empty to use the global key (COMPOSER_SOPS_AGE_KEY, SOPS_AGE_KEY, or data dir).</p>
+            </div>
+          </details>
 
           {error && <p className="text-sm text-cp-red">{error}</p>}
 

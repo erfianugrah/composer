@@ -41,7 +41,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - run: go test -count=1 -timeout=2m ./internal/domain/... ./internal/app/... ./internal/infra/eventbus/... ./internal/infra/crypto/... ./internal/infra/cache/... ./internal/infra/notify/...
+      - run: go test -count=1 -timeout=2m ./internal/domain/... ./internal/app/... ./internal/infra/eventbus/... ./internal/infra/crypto/... ./internal/infra/sops/... ./internal/infra/cache/... ./internal/infra/notify/...
 
   test-integration:
     name: Integration Tests
