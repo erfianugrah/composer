@@ -5,7 +5,7 @@ Composer ships as a self-contained Docker image. The image bundles all required 
 - `docker` CLI v28
 - `docker compose` plugin v2.40
 - `docker buildx` plugin
-- `sops` v3.9.4 (SOPS encrypted secret decryption)
+- `sops` v3.12.2 (SOPS encrypted secret decryption)
 - `git` + `openssh-client`
 
 The host only needs a container runtime with a socket. Nothing else needs to be installed.

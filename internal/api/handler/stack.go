@@ -16,6 +16,7 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
+	sopsInfra "github.com/erfianugrah/composer/internal/infra/sops"
 )
 
 // StackHandler registers stack management API endpoints.
@@ -275,6 +276,11 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 	envPath := st.Path + "/.env"
 	if envData, err := os.ReadFile(envPath); err == nil {
 		out.Body.EnvContent = string(envData)
+		out.Body.EnvSopsEncrypted = sopsInfra.IsSopsEncrypted(envData)
+		// Decrypt on demand (only when explicitly requested)
+		if input.DecryptEnv && out.Body.EnvSopsEncrypted {
+			out.Body.EnvContent = h.stacks.DecryptEnvContent(ctx, st.Name, envPath)
+		}
 	}
 
 	// Scan for Dockerfiles in the stack directory

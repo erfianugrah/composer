@@ -41,6 +41,7 @@ type Deps struct {
 	DockerClient    *docker.Client         // nil disables container/SSE/terminal endpoints
 	Compose         *docker.Compose        // nil disables docker exec
 	Jobs            *app.JobManager        // background job tracker
+	DataDir         string                 // COMPOSER_DATA_DIR for config lookups
 }
 
 // NewServer creates a new API server with all routes registered.
@@ -86,13 +87,13 @@ func NewServer(deps Deps) *Server {
 	}, func(ctx context.Context, input *struct{}) (*struct {
 		Body struct {
 			Status  string `json:"status" example:"healthy"`
-			Version string `json:"version" example:"0.5.3"`
+			Version string `json:"version" example:"0.5.4"`
 		}
 	}, error) {
 		resp := &struct {
 			Body struct {
 				Status  string `json:"status" example:"healthy"`
-				Version string `json:"version" example:"0.5.3"`
+				Version string `json:"version" example:"0.5.4"`
 			}
 		}{}
 		resp.Body.Status = "healthy"
@@ -101,7 +102,7 @@ func NewServer(deps Deps) *Server {
 	})
 
 	// System info/version
-	handler.NewSystemHandler(deps.DockerClient).Register(api)
+	handler.NewSystemHandler(deps.DockerClient, deps.DataDir).Register(api)
 
 	// /docs -- Stoplight Elements API docs UI (serves inline HTML)
 	router.Get("/docs", func(w http.ResponseWriter, r *http.Request) {

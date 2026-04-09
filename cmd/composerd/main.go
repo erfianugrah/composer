@@ -266,6 +266,7 @@ func main() {
 		DockerClient:    dockerClient,
 		Compose:         compose,
 		Jobs:            jobManager,
+		DataDir:         cfg.DataDir,
 	})
 
 	// --- Embedded frontend (serves web/dist if built) ---

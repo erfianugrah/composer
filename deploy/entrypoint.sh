@@ -40,5 +40,8 @@ fi
 # Fix ownership of data directories
 chown -R composer:composer /opt/stacks /opt/composer /home/composer/.ssh 2>/dev/null || true
 
+# Mark all stack directories as safe for git (PUID/PGID change causes dubious ownership)
+su-exec composer git config --global --add safe.directory '*' 2>/dev/null || true
+
 # Drop privileges and exec (su-exec without explicit group picks up supplementary groups from /etc/group)
 exec su-exec composer "$@"

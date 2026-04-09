@@ -22,7 +22,7 @@ FROM docker:28-cli AS docker-bins
 FROM alpine:3.21 AS sops-bin
 ARG TARGETARCH
 RUN apk add --no-cache curl && \
-    SOPS_VERSION="3.9.4" && \
+    SOPS_VERSION="3.12.2" && \
     curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.${TARGETARCH}" \
       -o /usr/local/bin/sops && \
     chmod +x /usr/local/bin/sops

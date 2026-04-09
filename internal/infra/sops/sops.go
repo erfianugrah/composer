@@ -137,14 +137,29 @@ func DecryptData(data []byte, format, ageKey string) ([]byte, error) {
 	return Decrypt(tmpPath, ageKey)
 }
 
+// DecryptInMemory decrypts a SOPS-encrypted file and returns the plaintext
+// without writing anything to disk. Used for displaying decrypted content in the UI.
+// Returns the original data unchanged if not SOPS-encrypted.
+func DecryptInMemory(filePath, ageKey string) ([]byte, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if !IsSopsEncrypted(data) {
+		return data, nil
+	}
+	return Decrypt(filePath, ageKey)
+}
+
 // DecryptEnvFile decrypts a SOPS-encrypted .env file in a stack directory.
-// If the file is not SOPS-encrypted, returns the content unchanged.
-// The decrypted content is written back to the same path (in-place).
+// Saves the encrypted original as .env.sops before writing decrypted .env.
+// This allows ReEncryptEnvFile to restore the encrypted version after deploy.
+// Returns false if the file is not SOPS-encrypted or doesn't exist.
 func DecryptEnvFile(stackDir, ageKey string) (decrypted bool, err error) {
 	envPath := filepath.Join(stackDir, ".env")
 	data, err := os.ReadFile(envPath)
 	if err != nil {
-		return false, nil // no .env file, nothing to decrypt
+		return false, nil // no .env file
 	}
 
 	if !IsSopsEncrypted(data) {
@@ -156,6 +171,12 @@ func DecryptEnvFile(stackDir, ageKey string) (decrypted bool, err error) {
 		return false, fmt.Errorf("decrypting .env: %w", err)
 	}
 
+	// Save encrypted original so we can restore it later
+	sopsPath := envPath + ".sops"
+	if err := os.WriteFile(sopsPath, data, 0600); err != nil {
+		return false, fmt.Errorf("saving .env.sops backup: %w", err)
+	}
+
 	if err := os.WriteFile(envPath, plaintext, 0600); err != nil {
 		return false, fmt.Errorf("writing decrypted .env: %w", err)
 	}
@@ -163,9 +184,28 @@ func DecryptEnvFile(stackDir, ageKey string) (decrypted bool, err error) {
 	return true, nil
 }
 
-// DecryptComposeSecrets checks if a compose YAML file contains SOPS-encrypted
-// values and decrypts them in-place. This handles the case where secrets are
-// inline in the compose file rather than in a separate .env.
+// ReEncryptEnvFile restores the SOPS-encrypted .env from the .env.sops backup
+// created by DecryptEnvFile. Call this after deploy completes so the .env is
+// never left decrypted at rest.
+func ReEncryptEnvFile(stackDir string) error {
+	envPath := filepath.Join(stackDir, ".env")
+	sopsPath := envPath + ".sops"
+
+	sopsData, err := os.ReadFile(sopsPath)
+	if err != nil {
+		return nil // no .sops backup, nothing to restore (file wasn't SOPS-encrypted)
+	}
+
+	if err := os.WriteFile(envPath, sopsData, 0600); err != nil {
+		return fmt.Errorf("restoring encrypted .env: %w", err)
+	}
+
+	os.Remove(sopsPath)
+	return nil
+}
+
+// DecryptComposeSecrets decrypts a SOPS-encrypted compose file in-place.
+// Saves the encrypted original as {file}.sops for restoration after deploy.
 func DecryptComposeSecrets(composePath, ageKey string) (decrypted bool, err error) {
 	data, err := os.ReadFile(composePath)
 	if err != nil {
@@ -181,9 +221,33 @@ func DecryptComposeSecrets(composePath, ageKey string) (decrypted bool, err erro
 		return false, fmt.Errorf("decrypting compose file: %w", err)
 	}
 
+	// Save encrypted original
+	sopsPath := composePath + ".sops"
+	if err := os.WriteFile(sopsPath, data, 0600); err != nil {
+		return false, fmt.Errorf("saving compose.sops backup: %w", err)
+	}
+
 	if err := os.WriteFile(composePath, plaintext, 0600); err != nil {
 		return false, fmt.Errorf("writing decrypted compose: %w", err)
 	}
 
 	return true, nil
+}
+
+// ReEncryptComposeSecrets restores a SOPS-encrypted compose file from its
+// .sops backup. Call after deploy completes.
+func ReEncryptComposeSecrets(composePath string) error {
+	sopsPath := composePath + ".sops"
+
+	sopsData, err := os.ReadFile(sopsPath)
+	if err != nil {
+		return nil // no backup
+	}
+
+	if err := os.WriteFile(composePath, sopsData, 0600); err != nil {
+		return fmt.Errorf("restoring encrypted compose: %w", err)
+	}
+
+	os.Remove(sopsPath)
+	return nil
 }

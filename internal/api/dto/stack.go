@@ -28,7 +28,8 @@ type CreateGitStackInput struct {
 }
 
 type GetStackInput struct {
-	Name string `path:"name" doc:"Stack name"`
+	Name       string `path:"name" doc:"Stack name"`
+	DecryptEnv bool   `query:"decrypt_env" default:"false" doc:"Decrypt SOPS-encrypted .env content for display"`
 }
 
 type UpdateStackInput struct {
@@ -68,17 +69,18 @@ type StackListOutput struct {
 
 type StackDetailOutput struct {
 	Body struct {
-		Name           string            `json:"name"`
-		Path           string            `json:"path"`
-		Source         string            `json:"source"`
-		Status         string            `json:"status"`
-		ComposeContent string            `json:"compose_content"`
-		EnvContent     string            `json:"env_content,omitempty"`
-		Dockerfiles    []StackFile       `json:"dockerfiles,omitempty" doc:"Dockerfiles found in the stack directory"`
-		GitConfig      *GitSourceOutput  `json:"git_config,omitempty"`
-		Containers     []ContainerOutput `json:"containers"`
-		CreatedAt      time.Time         `json:"created_at"`
-		UpdatedAt      time.Time         `json:"updated_at"`
+		Name             string            `json:"name"`
+		Path             string            `json:"path"`
+		Source           string            `json:"source"`
+		Status           string            `json:"status"`
+		ComposeContent   string            `json:"compose_content"`
+		EnvContent       string            `json:"env_content,omitempty"`
+		EnvSopsEncrypted bool              `json:"env_sops_encrypted,omitempty" doc:"True when .env is SOPS-encrypted"`
+		Dockerfiles      []StackFile       `json:"dockerfiles,omitempty" doc:"Dockerfiles found in the stack directory"`
+		GitConfig        *GitSourceOutput  `json:"git_config,omitempty"`
+		Containers       []ContainerOutput `json:"containers"`
+		CreatedAt        time.Time         `json:"created_at"`
+		UpdatedAt        time.Time         `json:"updated_at"`
 	}
 }
 

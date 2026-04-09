@@ -89,7 +89,7 @@ Go + Astro + Shadcn/ui.
 | **Docker** | `docker/docker` v28+ | Done | Engine SDK + Podman auto-detect |
 | **Compose** | CLI wrapper (`docker compose`) | Done | Shell out to V2. Programmatic library optional later |
 | **Git** | `go-git/go-git/v5` | Done | Clone, pull, log, diff, commit, push. Webhook signature validation |
-| **SOPS/age** | sops v3.9.4 binary + `filippo.io/age` v1.3.1 | Done | Bundled sops binary for SOPS decryption. age Go library for key generation |
+| **SOPS/age** | sops v3.12.2 binary + `filippo.io/age` v1.3.1 | Done | Bundled sops binary for SOPS decryption. age Go library for key generation |
 | **IDs** | crypto/rand hex | Done | 16-byte random hex IDs. ULID possible later |
 | **Frontend** | Astro 6.1 + React 19 | Done | Static output, React islands via `client:load` |
 | **UI Components** | Shadcn/ui + Tailwind CSS 4 | Done | Lovelace theme. button, card, badge, input built |
@@ -1893,7 +1893,7 @@ All secrets are encrypted at rest using AES-256-GCM:
 - SSH key files transparently decrypted in memory when go-git needs them for clone/pull
 - Per-stack SSH key files supported via `SSHKeyFile` field (auth method `ssh_file`)
 - If encryption key is lost, git credentials must be re-entered and SSH keys re-mounted
-- **SOPS-encrypted files** (`.env`, compose YAML) detected via `IsSopsEncrypted()` and decrypted in-place before deployment using the bundled `sops` binary (v3.9.4)
+- **SOPS-encrypted files** (`.env`, compose YAML) detected via `IsSopsEncrypted()` and decrypted in-place before deployment using the bundled `sops` binary (v3.12.2)
 - **Age key resolution** for SOPS: per-stack `AgeKey` field -> `COMPOSER_SOPS_AGE_KEY` -> `SOPS_AGE_KEY` -> `SOPS_AGE_KEYS` -> key file env vars -> `COMPOSER_DATA_DIR/age.key` -> `~/.config/sops/age/keys.txt`
 
 ### 16.9 Database Migrations (goose v3)
@@ -2022,7 +2022,7 @@ FROM docker:28-cli AS docker-bins
 FROM alpine:3.21 AS sops-bin
 ARG TARGETARCH
 RUN apk add --no-cache curl && \
-    SOPS_VERSION="3.9.4" && \
+    SOPS_VERSION="3.12.2" && \
     curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.${TARGETARCH}" \
       -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops
 
@@ -2059,7 +2059,7 @@ ENTRYPOINT ["composerd"]
 - `docker` CLI (~30MB) -- from official `docker:28-cli` image
 - `docker-compose` plugin (~55MB) -- from official `docker:28-cli` image
 - `docker-buildx` plugin (~65MB) -- for future image build support
-- `sops` (~10MB) -- from getsops/sops v3.9.4, for SOPS-encrypted secret decryption
+- `sops` (~10MB) -- from getsops/sops v3.12.2, for SOPS-encrypted secret decryption
 - `git` + `openssh-client` (~15MB) -- for git-backed stacks + SSH key auth
 - `ca-certificates` -- for HTTPS git remotes
 

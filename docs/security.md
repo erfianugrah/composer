@@ -64,7 +64,7 @@ The key file is created with `0600` permissions (owner-read only). Back it up --
 Composer can transparently decrypt SOPS-encrypted `.env` files and compose YAML files before deployment:
 
 - **Detection**: checks for SOPS markers in dotenv (`sops_version=`), YAML (`sops:` key), and JSON (`"sops"` key) formats
-- **Decryption**: shells out to the bundled `sops` binary (v3.9.4) for reliable, format-aware decryption
+- **Decryption**: shells out to the bundled `sops` binary (v3.12.2) for reliable, format-aware decryption
 - **Timing**: `.env` and compose files are decrypted in-place after git pull and before `docker compose up`
 - **Age key resolution** (per-stack overrides global):
   1. Per-stack `age_key` field in git credentials (stored encrypted in DB)

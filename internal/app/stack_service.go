@@ -272,8 +272,9 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 		return nil, ErrNotFound
 	}
 
-	// Decrypt SOPS-encrypted secrets before deploy
+	// Decrypt SOPS secrets before deploy, re-encrypt after (even on failure)
 	s.decryptSopsSecrets(ctx, name, st.Path)
+	defer s.reEncryptSopsSecrets(st.Path)
 
 	result, err := s.compose.Up(ctx, st.Path)
 	if err != nil {
@@ -298,8 +299,9 @@ func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker
 		return nil, ErrNotFound
 	}
 
-	// Decrypt SOPS-encrypted secrets before build+deploy
+	// Decrypt SOPS secrets before build+deploy, re-encrypt after
 	s.decryptSopsSecrets(ctx, name, st.Path)
+	defer s.reEncryptSopsSecrets(st.Path)
 
 	result, err := s.compose.BuildAndUp(ctx, st.Path)
 	if err != nil {
@@ -573,27 +575,31 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// decryptSopsSecrets decrypts SOPS-encrypted .env and compose files in the stack
-// directory before docker compose operations. Uses per-stack age key if available,
-// falls back to global age key. No-op if sops binary is not installed or files
-// are not SOPS-encrypted.
-func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackPath string) {
-	if !sops.IsAvailable() {
-		return
-	}
-
-	// Resolve age key: per-stack > global
+// resolveAgeKey returns the age key for SOPS decryption of a stack.
+// Checks per-stack credential first, then global.
+func (s *StackService) resolveAgeKey(ctx context.Context, stackName string) string {
 	var perStackAgeKey string
 	cfg, err := s.gitCfgs.GetByStackName(ctx, stackName)
 	if err == nil && cfg != nil && cfg.Credentials != nil {
 		perStackAgeKey = cfg.Credentials.AgeKey
 	}
-	ageKey := sops.ResolveAgeKey(perStackAgeKey, s.dataDir)
+	return sops.ResolveAgeKey(perStackAgeKey, s.dataDir)
+}
 
-	// Decrypt .env if SOPS-encrypted
+// decryptSopsSecrets decrypts SOPS-encrypted .env and compose files in the stack
+// directory before docker compose operations. Saves encrypted originals as .sops
+// backups so reEncryptSopsSecrets can restore them after deploy.
+// No-op if sops binary is not installed or files are not SOPS-encrypted.
+func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackPath string) {
+	if !sops.IsAvailable() {
+		return
+	}
+	ageKey := s.resolveAgeKey(ctx, stackName)
+
+	// Decrypt .env if SOPS-encrypted (saves original as .env.sops)
 	sops.DecryptEnvFile(stackPath, ageKey)
 
-	// Decrypt compose file if SOPS-encrypted
+	// Decrypt compose file if SOPS-encrypted (saves original as compose.yaml.sops)
 	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
 		composePath := filepath.Join(stackPath, name)
 		if _, err := os.Stat(composePath); err == nil {
@@ -602,11 +608,40 @@ func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackP
 	}
 }
 
+// reEncryptSopsSecrets restores SOPS-encrypted .env and compose files from
+// their .sops backups. Call after deploy completes so secrets are never
+// left decrypted at rest.
+func (s *StackService) reEncryptSopsSecrets(stackPath string) {
+	sops.ReEncryptEnvFile(stackPath)
+	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
+		sops.ReEncryptComposeSecrets(filepath.Join(stackPath, name))
+	}
+}
+
 // publishEvent sends an event to the bus if one is configured.
 func (s *StackService) publishEvent(evt event.Event) {
 	if s.bus != nil {
 		s.bus.Publish(evt)
 	}
+}
+
+// DecryptEnvContent returns the decrypted .env content for display in the UI.
+// If the file is SOPS-encrypted, decrypts in memory without modifying disk.
+// If not encrypted or sops is unavailable, returns raw content.
+func (s *StackService) DecryptEnvContent(ctx context.Context, stackName, envPath string) string {
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		return ""
+	}
+	if !sops.IsAvailable() || !sops.IsSopsEncrypted(data) {
+		return string(data)
+	}
+	ageKey := s.resolveAgeKey(ctx, stackName)
+	plaintext, err := sops.DecryptInMemory(envPath, ageKey)
+	if err != nil {
+		return string(data) // fallback to raw if decrypt fails
+	}
+	return string(plaintext)
 }
 
 // Containers returns the containers for a stack.

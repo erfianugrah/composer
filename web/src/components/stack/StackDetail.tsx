@@ -26,6 +26,7 @@ interface StackData {
   status: string;
   compose_content: string;
   env_content?: string;
+  env_sops_encrypted?: boolean;
   dockerfiles?: StackFile[];
   containers: {
     id: string;
@@ -329,7 +330,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
             <CardTitle className="text-sm">.env</CardTitle>
           </CardHeader>
           <CardContent>
-            <EnvEditor stackName={stackName} initialContent={stack.env_content || ""} />
+            <EnvEditor stackName={stackName} initialContent={stack.env_content || ""} sopsEncrypted={stack.env_sops_encrypted} />
           </CardContent>
         </Card>
       )}

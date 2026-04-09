@@ -5,11 +5,13 @@ import { ApiKeyManagement } from "@/components/layout/ApiKeyManagement";
 import { WebhookSettings } from "@/components/layout/WebhookSettings";
 import { ImportStacks } from "@/components/stack/ImportStacks";
 import { AuditLog } from "@/components/layout/AuditLog";
+import { SystemConfig } from "@/components/layout/SystemConfig";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 ---
 
 <Layout title="Settings" active="settings">
   <div class="space-y-6">
+    <SystemConfig client:load />
     <UserManagement client:load />
     <ApiKeyManagement client:load />
     <WebhookSettings client:load />
@@ -18,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">System</CardTitle>
+        <CardTitle className="text-sm">Version</CardTitle>
       </CardHeader>
       <CardContent>
         <p class="text-sm text-muted-foreground font-data" id="settings-version">Loading...</p>

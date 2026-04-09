@@ -153,7 +153,8 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 		return "error", ErrNotFound
 	}
 
-	// Decrypt SOPS-encrypted secrets after sync, before deploy
+	// Decrypt SOPS-encrypted secrets after sync, before deploy.
+	// Re-encrypt after deploy so secrets are never left decrypted at rest.
 	if sops.IsAvailable() {
 		var perStackAgeKey string
 		if cfg != nil && cfg.Credentials != nil {
@@ -163,6 +164,10 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 		sops.DecryptEnvFile(st.Path, ageKey)
 		composePath := filepath.Join(st.Path, cfg.ComposePath)
 		sops.DecryptComposeSecrets(composePath, ageKey)
+		defer func() {
+			sops.ReEncryptEnvFile(st.Path)
+			sops.ReEncryptComposeSecrets(filepath.Join(st.Path, cfg.ComposePath))
+		}()
 	}
 
 	_, err = s.compose.Up(ctx, st.Path)
