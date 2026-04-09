@@ -26,7 +26,7 @@ Think Dockge's simplicity meets Portainer's power -- built from scratch with Go,
 - **Audit log** -- All mutating API operations logged with user, action, IP. Queryable via API
 - **Compose editor** -- CodeMirror 6 with Docker Compose schema autocompletion and syntax highlighting
 - **Compose diff** -- Compare disk content vs running Docker config
-- **Security** -- Credentials and SSH keys encrypted at rest (AES-256-GCM), session tokens hashed, CSRF protection, CSP headers
+- **Security** -- Credentials and SSH keys encrypted at rest (AES-256-GCM), SOPS/age decryption for encrypted .env and compose secrets, session tokens hashed, CSRF protection, CSP headers
 - **Dual database** -- SQLite (default, zero config) or PostgreSQL for multi-instance
 - **Command palette** -- Cmd+K fuzzy search for quick navigation
 - **Lovelace UI** -- Dark theme with pastel-neon accents, Astro 6 + React 19 + Shadcn/ui
@@ -71,14 +71,15 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 | Huma v2 (OpenAPI 3.1) | React 19 |
 | SQLite + PostgreSQL (database/sql) | Shadcn/ui + Tailwind CSS 4 |
 | AES-256-GCM encryption | xterm.js (terminal) |
-| go-git (GitOps) | CodeMirror 6 (editor + autocomplete) |
-| Valkey (cache) | Playwright (45 tests) |
-| zap (logging) | Lovelace theme |
-| Docker SDK v28 | SSE + WebSocket streaming |
+| SOPS + age (encrypted secrets) | CodeMirror 6 (editor + autocomplete) |
+| go-git (GitOps) | Playwright (45 tests) |
+| Valkey (cache) | Lovelace theme |
+| zap (logging) | SSE + WebSocket streaming |
+| Docker SDK v28 | |
 
 ## Status
 
-87 API endpoints, 9 pages, 34 components, 45 Playwright tests, 16k+ lines of Go.
+87 API endpoints, 9 pages, 34 components, 45 Playwright tests, 181 Go test functions, 16.7k lines of Go.
 
 ## License
 

@@ -69,7 +69,7 @@ Compose operations (`up`, `build`, `down`, `restart`, `pull`) accept `?async=tru
 | `POST` | `/api/v1/stacks` | Operator+ | Create local stack from YAML |
 | `POST` | `/api/v1/stacks/git` | Operator+ | Clone a git repo and create git-backed stack |
 | `POST` | `/api/v1/stacks/import` | Admin | Import stacks from external directory (Dockge migration) |
-| `GET` | `/api/v1/stacks/{name}` | Viewer+ | Get stack detail + containers |
+| `GET` | `/api/v1/stacks/{name}` | Viewer+ | Get stack detail + containers + Dockerfiles |
 | `PUT` | `/api/v1/stacks/{name}` | Operator+ | Update compose content. Marks git stacks as `dirty` |
 | `PUT` | `/api/v1/stacks/{name}/env` | Operator+ | Update `.env` file for stack |
 | `DELETE` | `/api/v1/stacks/{name}` | Operator+ | Delete stack. `?remove_volumes=true` |

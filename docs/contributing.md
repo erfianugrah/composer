@@ -67,6 +67,7 @@ composer/
 │   │   ├── eventbus/              # In-memory event bus
 │   │   ├── git/                   # go-git + webhook signature validation
 │   │   ├── crypto/                # AES-256-GCM encryption (strings + files + SSH keys)
+│   │   ├── sops/                  # SOPS detection + decryption + age key management
 │   │   ├── cache/                 # Valkey session/key caching
 │   │   ├── notify/                # Webhook + Slack notifications
 │   │   └── fs/                    # Compose file I/O

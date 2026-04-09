@@ -1,10 +1,11 @@
 # Deployment
 
 Composer ships as a self-contained Docker image. The image bundles all required binaries:
-- `composerd` (8MB Go binary)
+- `composerd` (Go binary)
 - `docker` CLI v28
 - `docker compose` plugin v2.40
 - `docker buildx` plugin
+- `sops` v3.9.4 (SOPS encrypted secret decryption)
 - `git` + `openssh-client`
 
 The host only needs a container runtime with a socket. Nothing else needs to be installed.

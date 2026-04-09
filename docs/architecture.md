@@ -62,6 +62,7 @@ Implements domain interfaces with real technology:
 - **crypto/** -- AES-256-GCM encryption for credentials, secrets, and SSH key files at rest (auto-encrypts on startup, transparent decrypt for go-git)
 - **eventbus/** -- In-memory pub/sub event bus
 - **git/** -- go-git wrapper (clone, pull, log, diff, commit, push) + webhook signature validation (GitHub, GitLab, Gitea)
+- **sops/** -- SOPS-encrypted file detection and decryption via bundled `sops` binary + age key management (per-stack and global)
 - **cache/** -- Valkey client for session and API key caching
 - **notify/** -- Notification dispatcher (webhook, Slack) [Phase 5]
 

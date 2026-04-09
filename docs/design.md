@@ -89,6 +89,7 @@ Go + Astro + Shadcn/ui.
 | **Docker** | `docker/docker` v28+ | Done | Engine SDK + Podman auto-detect |
 | **Compose** | CLI wrapper (`docker compose`) | Done | Shell out to V2. Programmatic library optional later |
 | **Git** | `go-git/go-git/v5` | Done | Clone, pull, log, diff, commit, push. Webhook signature validation |
+| **SOPS/age** | sops v3.9.4 binary + `filippo.io/age` v1.3.1 | Done | Bundled sops binary for SOPS decryption. age Go library for key generation |
 | **IDs** | crypto/rand hex | Done | 16-byte random hex IDs. ULID possible later |
 | **Frontend** | Astro 6.1 + React 19 | Done | Static output, React islands via `client:load` |
 | **UI Components** | Shadcn/ui + Tailwind CSS 4 | Done | Lovelace theme. button, card, badge, input built |
@@ -219,11 +220,14 @@ Stack (Aggregate Root)
 
       GitCredentials (Value Object -- stored encrypted in DB)
         |-- token: string (GitHub PAT, GitLab token, etc.)
-        |-- sshKeyID: string (reference to stored SSH key)
+        |-- sshKey: string (PEM-encoded SSH private key, inline)
+        |-- sshKeyFile: string (path to SSH key file on disk, per-stack override)
+        |-- sshKeyPassphrase: string (optional passphrase for the SSH key)
         |-- username: string (for basic auth)
         |-- password: string (for basic auth)
+        |-- ageKey: string (per-stack age private key for SOPS decryption)
 
-      GitAuthMethod enum { None, Token, SSHKey, BasicAuth }
+      GitAuthMethod enum { None, Token, SSHKey, SSHFile, BasicAuth }
       GitSyncStatus enum { Synced, Behind, Diverged, Dirty, Error, Syncing }
 
       GitCommit (Value Object -- from git log)
@@ -887,7 +891,7 @@ CREATE TABLE stack_git_configs (
     compose_path  TEXT NOT NULL DEFAULT 'compose.yaml',
     auto_sync     BOOLEAN NOT NULL DEFAULT true,
     auth_method   TEXT NOT NULL DEFAULT 'none'
-                  CHECK (auth_method IN ('none', 'token', 'ssh_key', 'basic')),
+                  CHECK (auth_method IN ('none', 'token', 'ssh_key', 'ssh_file', 'basic')),
     credentials   TEXT,                          -- encrypted JSON blob (AES-256-GCM)
     last_sync_at  TIMESTAMPTZ,
     last_commit   TEXT,                          -- SHA
@@ -1196,6 +1200,12 @@ composer/
 │   │   │   ├── encrypt_test.go
 │   │   │   ├── keystore.go           # EncryptSSHKeys: bulk encrypt SSH key files on startup
 │   │   │   └── keystore_test.go
+│   │   │
+│   │   ├── sops/
+│   │   │   ├── sops.go               # SOPS detection + decryption (IsSopsEncrypted, Decrypt, DecryptEnvFile, DecryptComposeSecrets)
+│   │   │   ├── sops_test.go
+│   │   │   ├── agekey.go             # Age key management (GenerateAgeKey, LoadGlobalAgeKey, ResolveAgeKey, SaveAgeKey)
+│   │   │   └── agekey_test.go
 │   │   │
 │   │   ├── fs/
 │   │   │   ├── compose_store.go      # Read/write compose files on disk
@@ -1718,7 +1728,7 @@ clean        # Remove build artifacts
 - [ ] Multi-host agent support (like Dockge's agents)
 - [ ] Valkey pub/sub for multi-instance event bus
 - [ ] File watcher trigger for pipelines
-- [ ] SOPS/age integration for encrypted compose secrets
+- [x] SOPS/age integration for encrypted compose secrets
 - [ ] OpenAPI TypeScript client generation in CI
 - [ ] Documentation site
 
@@ -1881,7 +1891,10 @@ All secrets are encrypted at rest using AES-256-GCM:
 - Key derived from `COMPOSER_ENCRYPTION_KEY` env var (or auto-generated on first run, stored in `COMPOSER_DATA_DIR/encryption.key`)
 - Encrypted values prefixed with `enc:` for identification (works for both DB strings and files)
 - SSH key files transparently decrypted in memory when go-git needs them for clone/pull
+- Per-stack SSH key files supported via `SSHKeyFile` field (auth method `ssh_file`)
 - If encryption key is lost, git credentials must be re-entered and SSH keys re-mounted
+- **SOPS-encrypted files** (`.env`, compose YAML) detected via `IsSopsEncrypted()` and decrypted in-place before deployment using the bundled `sops` binary (v3.9.4)
+- **Age key resolution** for SOPS: per-stack `AgeKey` field -> `COMPOSER_SOPS_AGE_KEY` -> `SOPS_AGE_KEY` -> `SOPS_AGE_KEYS` -> key file env vars -> `COMPOSER_DATA_DIR/age.key` -> `~/.config/sops/age/keys.txt`
 
 ### 16.9 Database Migrations (goose v3)
 
@@ -2004,9 +2017,14 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /composerd ./cmd/composerd/
 
 # Stage 3: Extract docker CLI + compose plugin from official Docker image
 FROM docker:28-cli AS docker-bins
-# docker CLI:    /usr/local/bin/docker
-# compose plugin: /usr/local/libexec/docker/cli-plugins/docker-compose
-# buildx plugin:  /usr/local/libexec/docker/cli-plugins/docker-buildx
+
+# Stage 3b: SOPS binary for secret decryption
+FROM alpine:3.21 AS sops-bin
+ARG TARGETARCH
+RUN apk add --no-cache curl && \
+    SOPS_VERSION="3.9.4" && \
+    curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.${TARGETARCH}" \
+      -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops
 
 # Stage 4: Runtime (fully self-contained)
 FROM alpine:3.21
@@ -2020,6 +2038,9 @@ COPY --from=docker-bins /usr/local/libexec/docker/cli-plugins/docker-compose \
      /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=docker-bins /usr/local/libexec/docker/cli-plugins/docker-buildx \
      /usr/local/libexec/docker/cli-plugins/docker-buildx
+
+# SOPS binary
+COPY --from=sops-bin /usr/local/bin/sops /usr/local/bin/sops
 
 # Composer binary
 COPY --from=backend /composerd /usr/local/bin/composerd
@@ -2038,6 +2059,7 @@ ENTRYPOINT ["composerd"]
 - `docker` CLI (~30MB) -- from official `docker:28-cli` image
 - `docker-compose` plugin (~55MB) -- from official `docker:28-cli` image
 - `docker-buildx` plugin (~65MB) -- for future image build support
+- `sops` (~10MB) -- from getsops/sops v3.9.4, for SOPS-encrypted secret decryption
 - `git` + `openssh-client` (~15MB) -- for git-backed stacks + SSH key auth
 - `ca-certificates` -- for HTTPS git remotes
 
@@ -2083,6 +2105,7 @@ All dependencies verified as of April 2026.
 | go-git             | v5.17.2   | `github.com/go-git/go-git/v5`                 | Pure Go, SSH+HTTPS auth                                             |
 | ULID               | v2.1+     | `github.com/oklog/ulid/v2`                    | Sortable unique IDs                                                 |
 | bcrypt             | --        | `golang.org/x/crypto/bcrypt`                  | Password hashing, cost 12                                           |
+| age                | v1.3.1    | `filippo.io/age`                              | X25519 key generation for SOPS age encryption                       |
 | CORS               | --        | `github.com/go-chi/cors`                      | Dev-mode cross-origin                                               |
 | testcontainers-go  | v0.41.0   | `github.com/testcontainers/testcontainers-go` | E2E: postgres, valkey, dind, compose modules                        |
 | testify            | --        | `github.com/stretchr/testify`                 | Assertions + require                                                |

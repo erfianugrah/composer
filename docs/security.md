@@ -38,6 +38,8 @@ Encryption is **automatic** -- no configuration needed:
 - **Git credentials** (tokens, SSH keys, passwords) are encrypted with AES-256-GCM before storage in the database
 - **Webhook secrets** are encrypted with AES-256-GCM before storage in the database
 - **SSH key files** on disk (`~/.ssh/`, `/home/composer/.ssh/`) are encrypted at rest on startup
+- **Per-stack SSH key files** can be specified via the `ssh_key_file` field (auth method `ssh_file`), allowing individual stacks to use dedicated keys
+- **`.env` files** are written with `0600` permissions (owner read/write only)
 - A unique 12-byte nonce is generated per encryption operation
 - Encrypted values are prefixed with `enc:` for identification (both DB strings and key files)
 - **Backwards compatible**: unencrypted data from before encryption is read normally
@@ -56,6 +58,24 @@ Key resolution (in priority order):
 3. If neither exists, a 32-byte random key is generated, saved to the key file, and used
 
 The key file is created with `0600` permissions (owner-read only). Back it up -- losing it means encrypted credentials and SSH keys can't be decrypted.
+
+### SOPS/age Encrypted Secrets
+
+Composer can transparently decrypt SOPS-encrypted `.env` files and compose YAML files before deployment:
+
+- **Detection**: checks for SOPS markers in dotenv (`sops_version=`), YAML (`sops:` key), and JSON (`"sops"` key) formats
+- **Decryption**: shells out to the bundled `sops` binary (v3.9.4) for reliable, format-aware decryption
+- **Timing**: `.env` and compose files are decrypted in-place after git pull and before `docker compose up`
+- **Age key resolution** (per-stack overrides global):
+  1. Per-stack `age_key` field in git credentials (stored encrypted in DB)
+  2. `COMPOSER_SOPS_AGE_KEY` env var
+  3. `SOPS_AGE_KEY` env var (standard SOPS convention)
+  4. `SOPS_AGE_KEYS` env var (multi-line format with comments)
+  5. `COMPOSER_SOPS_AGE_KEY_FILE` / `SOPS_AGE_KEY_FILE` env var
+  6. `COMPOSER_DATA_DIR/age.key` file
+  7. `~/.config/sops/age/keys.txt` (standard SOPS location)
+- No auto-generation of age keys -- the user must bring their own or explicitly generate one
+- Decrypted files are written with mode `0600`
 
 ## Authentication
 
