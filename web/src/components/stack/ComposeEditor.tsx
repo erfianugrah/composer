@@ -263,7 +263,7 @@ export function ComposeEditor({ content, stackName, readOnly = false, onSave }: 
       <div
         ref={editorRef}
         className="rounded-lg border border-border overflow-hidden"
-        style={{ minHeight: "300px", maxHeight: "600px" }}
+        style={{ minHeight: "300px", maxHeight: "80vh", overflow: "auto" }}
         data-testid="compose-editor"
       />
     </div>

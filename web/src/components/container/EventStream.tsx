@@ -105,15 +105,15 @@ export function EventStream() {
         ) : (
           <div className="p-3 space-y-1">
             {events.map((evt, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="text-muted-foreground font-data select-none w-16 shrink-0">
+              <div key={i} className="flex items-start gap-2 py-0.5">
+                <span className="text-muted-foreground font-data select-none w-16 shrink-0 tabular-nums">
                   {new Date(evt.ts).toLocaleTimeString()}
                 </span>
-                <Badge className={typeColor[evt.type] || "bg-cp-600/20 text-muted-foreground border-cp-600/30"}>
+                <Badge className={`shrink-0 ${typeColor[evt.type] || "bg-cp-600/20 text-muted-foreground border-cp-600/30"}`}>
                   {evt.type}
                 </Badge>
-                <span className="text-muted-foreground font-data truncate">
-                  {JSON.stringify(evt.data).slice(0, 80)}
+                <span className="text-muted-foreground font-data break-all text-[10px] min-w-0">
+                  {JSON.stringify(evt.data)}
                 </span>
               </div>
             ))}
