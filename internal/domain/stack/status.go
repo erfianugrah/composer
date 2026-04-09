@@ -39,6 +39,7 @@ const (
 	GitSynced   GitSyncStatus = "synced"
 	GitBehind   GitSyncStatus = "behind"
 	GitDiverged GitSyncStatus = "diverged"
+	GitDirty    GitSyncStatus = "dirty" // local edits diverge from git HEAD
 	GitSyncErr  GitSyncStatus = "error"
 	GitSyncing  GitSyncStatus = "syncing"
 )

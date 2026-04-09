@@ -204,4 +204,4 @@ nginx requires explicit configuration for both WebSocket (`Upgrade` headers) and
 
 Composer's session cookie is set with `Secure: false` by default (so it works over plain HTTP during development). When behind a TLS-terminating reverse proxy, the cookie still works because the browser sees HTTPS.
 
-For strict environments, a future release will support `COMPOSER_COOKIE_SECURE=true` to force the `Secure` flag.
+For strict environments, set `COMPOSER_COOKIE_SECURE=true` to force the `Secure` flag on the session cookie.

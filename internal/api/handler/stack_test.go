@@ -64,10 +64,13 @@ func setupStackServer(t *testing.T) *api.Server {
 		stacksDir,
 	)
 
+	jobManager := app.NewJobManager()
+
 	return api.NewServer(api.Deps{
 		AuthService:  authSvc,
 		StackService: stackSvc,
 		DockerClient: dockerClient,
+		Jobs:         jobManager,
 	})
 }
 

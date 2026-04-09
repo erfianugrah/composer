@@ -48,17 +48,18 @@ The domain layer imports only the Go standard library (+ `golang.org/x/crypto/bc
 
 Orchestrates domain objects and infrastructure:
 - **AuthService** -- Bootstrap, login/logout, session validation, API key management
-- **StackService** -- CRUD, deploy/stop/restart/pull, event publishing
+- **StackService** -- CRUD, deploy/stop/restart/pull, event publishing, git-stack dirty detection
 - **GitService** -- Git-backed stack creation, sync, sync+redeploy (GitOps flow)
 - **PipelineService** -- Pipeline CRUD, async run execution
 - **PipelineExecutor** -- DAG step executor with concurrency, timeouts, cancellation
+- **JobManager** -- In-memory background job tracking (create/start/complete/fail lifecycle, periodic cleanup)
 
 ### Infrastructure (internal/infra/)
 
 Implements domain interfaces with real technology:
 - **docker/** -- Docker Engine SDK client (container ops) + compose CLI wrapper + event listener
 - **store/** -- database/sql repository implementations supporting both PostgreSQL and SQLite (users, sessions, keys, stacks, git configs, webhooks, pipelines, runs, audit)
-- **crypto/** -- AES-256-GCM encryption for credentials and secrets at rest
+- **crypto/** -- AES-256-GCM encryption for credentials, secrets, and SSH key files at rest (auto-encrypts on startup, transparent decrypt for go-git)
 - **eventbus/** -- In-memory pub/sub event bus
 - **git/** -- go-git wrapper (clone, pull, log, diff, commit, push) + webhook signature validation (GitHub, GitLab, Gitea)
 - **cache/** -- Valkey client for session and API key caching
@@ -67,8 +68,8 @@ Implements domain interfaces with real technology:
 ### API (internal/api/)
 
 HTTP layer translating between the web and application services:
-- **server.go** -- Huma API setup, route registration, dependency wiring (12 handler groups)
-- **handler/** -- Auth, User, Key, Stack, Container, Git, Pipeline, Webhook CRUD, Webhook receiver, SSE handlers
+- **server.go** -- Huma API setup, route registration, dependency wiring (14 handler groups)
+- **handler/** -- Auth, User, Key, Stack, Container, Git, Pipeline, Webhook CRUD, Webhook receiver, SSE, Jobs, Docker Resources, Docker Console, Audit handlers
 - **middleware/** -- Auth (session+key), RBAC, security headers, rate limiting, audit logging
 - **middleware/** -- Session/API key auth, RBAC enforcement
 - **ws/** -- WebSocket terminal handler (raw chi, not huma-managed)
@@ -82,7 +83,7 @@ HTTP layer translating between the web and application services:
 | Log streaming, events | SSE | Server-push, auto-reconnect, simple |
 | Interactive terminal | WebSocket | Bidirectional stdin/stdout required |
 
-No polling. No Socket.IO.
+No polling for real-time data (SSE handles that). Background job status uses short-interval polling (2s) in the Jobs UI when jobs are active.
 
 ## Domain Events
 

@@ -28,7 +28,7 @@ jobs:
 
       # Run tests before releasing
       - name: Unit tests
-        run: go test -count=1 -timeout=2m ./internal/domain/... ./internal/infra/eventbus/... ./internal/infra/crypto/...
+        run: go test -count=1 -timeout=2m ./internal/domain/... ./internal/app/... ./internal/infra/eventbus/... ./internal/infra/crypto/... ./internal/infra/cache/... ./internal/infra/notify/...
 
       # Build Go binaries for release artifacts (standalone, without embedded frontend)
       - name: Build linux/amd64

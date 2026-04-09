@@ -42,7 +42,8 @@ type DeleteStackInput struct {
 }
 
 type StackNameInput struct {
-	Name string `path:"name" doc:"Stack name"`
+	Name  string `path:"name" doc:"Stack name"`
+	Async bool   `query:"async" default:"false" doc:"Run asynchronously and return a job ID instead of blocking"`
 }
 
 // --- Response types ---
@@ -86,14 +87,15 @@ type UpdateEnvInput struct {
 }
 
 type GitSourceOutput struct {
-	RepoURL       string     `json:"repo_url"`
-	Branch        string     `json:"branch"`
-	ComposePath   string     `json:"compose_path"`
-	AutoSync      bool       `json:"auto_sync"`
-	AuthMethod    string     `json:"auth_method"`
-	LastSyncAt    *time.Time `json:"last_sync_at,omitempty"`
-	LastCommitSHA string     `json:"last_commit_sha,omitempty"`
-	SyncStatus    string     `json:"sync_status"`
+	RepoURL          string     `json:"repo_url"`
+	Branch           string     `json:"branch"`
+	ComposePath      string     `json:"compose_path"`
+	AutoSync         bool       `json:"auto_sync"`
+	AuthMethod       string     `json:"auth_method"`
+	LastSyncAt       *time.Time `json:"last_sync_at,omitempty"`
+	LastCommitSHA    string     `json:"last_commit_sha,omitempty"`
+	SyncStatus       string     `json:"sync_status"`
+	WorkingTreeDirty bool       `json:"working_tree_dirty" doc:"True when local edits diverge from git HEAD"`
 }
 
 type ContainerOutput struct {
@@ -162,5 +164,6 @@ type ComposeOpOutput struct {
 	Body struct {
 		Stdout string `json:"stdout"`
 		Stderr string `json:"stderr"`
+		JobID  string `json:"job_id,omitempty" doc:"Background job ID (present when async=true)"`
 	}
 }

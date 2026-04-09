@@ -108,6 +108,49 @@ func Encrypt(plaintext string) (string, error) {
 	return "enc:" + base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
+// EncryptFile reads a plaintext file, encrypts its contents, and writes
+// the encrypted data back with an "enc:" prefix. If the file is already
+// encrypted (starts with "enc:"), it is left unchanged.
+func EncryptFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading file: %w", err)
+	}
+	content := string(data)
+
+	// Already encrypted
+	if len(content) >= 4 && content[:4] == "enc:" {
+		return nil
+	}
+
+	encrypted, err := Encrypt(content)
+	if err != nil {
+		return fmt.Errorf("encrypting: %w", err)
+	}
+
+	return os.WriteFile(path, []byte(encrypted), 0600)
+}
+
+// DecryptFile reads an encrypted file and returns the plaintext contents.
+// If the file is not encrypted (no "enc:" prefix), returns contents as-is.
+func DecryptFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading file: %w", err)
+	}
+	return Decrypt(string(data))
+}
+
+// WriteEncrypted writes content to a file, encrypting it first.
+// The file is written with mode 0600 (owner read/write only).
+func WriteEncrypted(path, content string) error {
+	encrypted, err := Encrypt(content)
+	if err != nil {
+		return fmt.Errorf("encrypting: %w", err)
+	}
+	return os.WriteFile(path, []byte(encrypted), 0600)
+}
+
 // Decrypt decrypts a value produced by Encrypt.
 // If the value doesn't have the "enc:" prefix, returns it unchanged (unencrypted data).
 func Decrypt(encoded string) (string, error) {

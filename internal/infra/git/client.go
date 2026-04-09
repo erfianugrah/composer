@@ -15,6 +15,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	sshlib "golang.org/x/crypto/ssh"
 
+	"github.com/erfianugrah/composer/internal/infra/crypto"
+
 	domstack "github.com/erfianugrah/composer/internal/domain/stack"
 )
 
@@ -50,6 +52,7 @@ func buildAuth(creds *domstack.GitCredentials) transport.AuthMethod {
 
 // buildSSHAuthFromAgent tries to use the SSH agent or default key files
 // for SSH URLs when no explicit credentials are provided.
+// Key files are transparently decrypted if they were encrypted at rest.
 func buildSSHAuthFromAgent() transport.AuthMethod {
 	// Try common SSH key paths
 	for _, keyPath := range []string{
@@ -59,7 +62,12 @@ func buildSSHAuthFromAgent() transport.AuthMethod {
 		"/home/composer/.ssh/id_rsa",
 	} {
 		if _, err := os.Stat(keyPath); err == nil {
-			keys, err := ssh.NewPublicKeysFromFile("git", keyPath, "")
+			// Try decrypting first (handles both encrypted and plaintext files)
+			keyContent, err := crypto.DecryptFile(keyPath)
+			if err != nil {
+				continue
+			}
+			keys, err := ssh.NewPublicKeys("git", []byte(keyContent), "")
 			if err == nil {
 				keys.HostKeyCallback = sshlib.InsecureIgnoreHostKey()
 				return keys
@@ -400,6 +408,15 @@ func (c *Client) WorkingDiff(stackDir, composePath string) ([]DiffLine, bool, er
 	}
 
 	return diff, true, nil
+}
+
+// IsDirty returns true if the working tree has uncommitted changes to the compose file.
+func (c *Client) IsDirty(stackDir, composePath string) bool {
+	_, hasDiff, err := c.WorkingDiff(stackDir, composePath)
+	if err != nil {
+		return false // can't determine, assume clean
+	}
+	return hasDiff
 }
 
 // containsLine checks if a line exists in the remaining slice (simple lookahead).

@@ -4,7 +4,7 @@ Composer exposes a REST API with auto-generated OpenAPI 3.1 spec.
 
 **Live spec:** `GET /openapi.json` or `GET /openapi.yaml`
 
-**Total endpoints:** 68
+**Total endpoints:** 87
 
 ## Authentication
 
@@ -59,7 +59,9 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `POST` | `/api/v1/keys` | Create key (plaintext shown once!) |
 | `DELETE` | `/api/v1/keys/{id}` | Revoke key |
 
-### Stacks (16 endpoints)
+### Stacks (18 endpoints)
+
+Compose operations (`up`, `build`, `down`, `restart`, `pull`) accept `?async=true` to run as a background job. When async, the response includes a `job_id` instead of stdout/stderr. Poll `GET /api/v1/jobs/{id}` for status.
 
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
@@ -68,13 +70,14 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `POST` | `/api/v1/stacks/git` | Operator+ | Clone a git repo and create git-backed stack |
 | `POST` | `/api/v1/stacks/import` | Admin | Import stacks from external directory (Dockge migration) |
 | `GET` | `/api/v1/stacks/{name}` | Viewer+ | Get stack detail + containers |
-| `PUT` | `/api/v1/stacks/{name}` | Operator+ | Update compose content |
+| `PUT` | `/api/v1/stacks/{name}` | Operator+ | Update compose content. Marks git stacks as `dirty` |
+| `PUT` | `/api/v1/stacks/{name}/env` | Operator+ | Update `.env` file for stack |
 | `DELETE` | `/api/v1/stacks/{name}` | Operator+ | Delete stack. `?remove_volumes=true` |
-| `POST` | `/api/v1/stacks/{name}/up` | Operator+ | Deploy (docker compose up) |
-| `POST` | `/api/v1/stacks/{name}/build` | Operator+ | Build & deploy (docker compose up --build) |
-| `POST` | `/api/v1/stacks/{name}/down` | Operator+ | Stop (docker compose down) |
-| `POST` | `/api/v1/stacks/{name}/restart` | Operator+ | Restart all services |
-| `POST` | `/api/v1/stacks/{name}/pull` | Operator+ | Pull latest images |
+| `POST` | `/api/v1/stacks/{name}/up` | Operator+ | Deploy (docker compose up). `?async=true` |
+| `POST` | `/api/v1/stacks/{name}/build` | Operator+ | Build & deploy (docker compose up --build). `?async=true` |
+| `POST` | `/api/v1/stacks/{name}/down` | Operator+ | Stop (docker compose down). `?async=true` |
+| `POST` | `/api/v1/stacks/{name}/restart` | Operator+ | Restart all services. `?async=true` |
+| `POST` | `/api/v1/stacks/{name}/pull` | Operator+ | Pull latest images. `?async=true` |
 | `POST` | `/api/v1/stacks/{name}/validate` | Operator+ | Validate compose syntax |
 | `POST` | `/api/v1/stacks/{name}/exec` | Operator+ | Run docker compose command (console) |
 | `POST` | `/api/v1/stacks/{name}/convert/git` | Operator+ | Convert local stack to git-backed |
@@ -100,15 +103,17 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 
 ### Git Operations (5 endpoints, requires git-backed stack)
 
+Git status returns `sync_status` which can be: `synced`, `behind`, `diverged`, `dirty`, `error`, `syncing`. The `dirty` status means the compose file was edited locally and diverges from git HEAD. The `working_tree_dirty` boolean flag is also returned for convenience.
+
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
-| `POST` | `/api/v1/stacks/{name}/sync` | Operator+ | Git pull + detect compose changes |
+| `POST` | `/api/v1/stacks/{name}/sync` | Operator+ | Git pull + detect compose changes. Clears `dirty` status on success |
 | `GET` | `/api/v1/stacks/{name}/git/log` | Viewer+ | Commit history (filtered to compose file). `?limit=20` |
-| `GET` | `/api/v1/stacks/{name}/git/status` | Viewer+ | Sync status, branch, last commit |
+| `GET` | `/api/v1/stacks/{name}/git/status` | Viewer+ | Sync status, branch, last commit, `working_tree_dirty` flag |
 | `POST` | `/api/v1/stacks/{name}/rollback` | Operator+ | Checkout specific git commit |
 | `GET` | `/api/v1/stacks/{name}/git/diff` | Viewer+ | Working tree diff vs last commit |
 
-### Pipelines (7 endpoints, operator+)
+### Pipelines (9 endpoints, operator+)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -122,7 +127,7 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `PUT` | `/api/v1/pipelines/{id}` | Update pipeline |
 | `POST` | `/api/v1/pipelines/{id}/cancel` | Cancel running pipeline |
 
-### Webhooks (4 endpoints, operator+)
+### Webhooks (6 endpoints, operator+)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -137,7 +142,7 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/hooks/{id}` | Receive webhook delivery. Validates HMAC signature. Triggers GitOps sync. |
+| `POST` | `/api/v1/hooks/{id}` | Receive webhook delivery. Validates HMAC signature. Triggers async GitOps sync (returns immediately, runs in background job). |
 
 Supported providers: GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), Gitea (`X-Gitea-Signature`), Generic (`X-Webhook-Signature`).
 
@@ -147,6 +152,31 @@ Supported providers: GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), 
 |--------|------|-------------|
 | `GET` | `/api/v1/audit` | List recent audit log entries. `?limit=50` |
 
+### Background Jobs (2 endpoints, viewer+)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/jobs` | List all background jobs (newest first, max 100) |
+| `GET` | `/api/v1/jobs/{id}` | Get job detail: status, output, error, duration |
+
+Jobs are created when compose operations run with `?async=true` or when webhooks trigger GitOps sync. Completed/failed jobs are automatically cleaned up after 1 hour.
+
+### Docker Resources (11 endpoints)
+
+| Method | Path | Role | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/networks` | Viewer+ | List Docker networks |
+| `POST` | `/api/v1/networks` | Operator+ | Create network (bridge/overlay/macvlan) |
+| `DELETE` | `/api/v1/networks/{id}` | Operator+ | Remove network |
+| `GET` | `/api/v1/volumes` | Viewer+ | List Docker volumes |
+| `POST` | `/api/v1/volumes` | Operator+ | Create volume |
+| `DELETE` | `/api/v1/volumes/{name}` | Operator+ | Remove volume |
+| `POST` | `/api/v1/volumes/prune` | Admin | Prune unused volumes |
+| `GET` | `/api/v1/images` | Viewer+ | List Docker images |
+| `POST` | `/api/v1/images/pull` | Operator+ | Pull image by reference |
+| `DELETE` | `/api/v1/images/{id}` | Operator+ | Remove image |
+| `POST` | `/api/v1/images/prune` | Admin | Prune unused images |
+
 ### System (3 endpoints)
 
 | Method | Path | Auth | Description |
@@ -155,7 +185,7 @@ Supported providers: GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), 
 | `GET` | `/api/v1/system/info` | Viewer+ | Docker engine info (version, containers, images) |
 | `GET` | `/api/v1/system/version` | Viewer+ | Composer version, Go version, uptime |
 
-### SSE Streams (3 endpoints, viewer+)
+### SSE Streams (5 endpoints, viewer+)
 
 | Method | Path | Description |
 |--------|------|-------------|

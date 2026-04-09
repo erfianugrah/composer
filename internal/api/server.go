@@ -86,13 +86,13 @@ func NewServer(deps Deps) *Server {
 	}, func(ctx context.Context, input *struct{}) (*struct {
 		Body struct {
 			Status  string `json:"status" example:"healthy"`
-			Version string `json:"version" example:"0.4.3"`
+			Version string `json:"version" example:"0.5.0"`
 		}
 	}, error) {
 		resp := &struct {
 			Body struct {
 				Status  string `json:"status" example:"healthy"`
-				Version string `json:"version" example:"0.4.3"`
+				Version string `json:"version" example:"0.5.0"`
 			}
 		}{}
 		resp.Body.Status = "healthy"
@@ -132,7 +132,7 @@ func NewServer(deps Deps) *Server {
 
 	// Stack handlers (requires Docker)
 	if deps.StackService != nil {
-		handler.NewStackHandler(deps.StackService).Register(api)
+		handler.NewStackHandler(deps.StackService, deps.Jobs).Register(api)
 	}
 
 	// Container handlers (requires Docker)
@@ -197,7 +197,7 @@ func NewServer(deps Deps) *Server {
 
 	// Webhook receiver (raw chi handler -- validates signature, not session)
 	if deps.GitService != nil && deps.WebhookRepo != nil {
-		webhookHandler := handler.NewWebhookHandler(deps.GitService, deps.WebhookRepo)
+		webhookHandler := handler.NewWebhookHandler(deps.GitService, deps.WebhookRepo, deps.Jobs)
 		webhookHandler.RegisterRaw(router)
 	}
 

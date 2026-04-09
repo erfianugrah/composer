@@ -35,18 +35,27 @@ This is equivalent to root access on the host. There is no way to meaningfully r
 
 Encryption is **automatic** -- no configuration needed:
 
-- **Git credentials** (tokens, SSH keys, passwords) are encrypted with AES-256-GCM before storage
-- **Webhook secrets** are encrypted with AES-256-GCM before storage
+- **Git credentials** (tokens, SSH keys, passwords) are encrypted with AES-256-GCM before storage in the database
+- **Webhook secrets** are encrypted with AES-256-GCM before storage in the database
+- **SSH key files** on disk (`~/.ssh/`, `/home/composer/.ssh/`) are encrypted at rest on startup
 - A unique 12-byte nonce is generated per encryption operation
-- Encrypted values are prefixed with `enc:` for identification
+- Encrypted values are prefixed with `enc:` for identification (both DB strings and key files)
 - **Backwards compatible**: unencrypted data from before encryption is read normally
+
+### SSH Key Files
+
+On every startup, Composer scans SSH directories for plaintext private key files and encrypts them in place. Public keys (`.pub`), `known_hosts`, and `config` files are left untouched. When go-git needs an SSH key for clone/pull operations, the key file is transparently decrypted in memory.
+
+This means SSH key files mounted into the container (e.g., via `-v ~/.ssh:/home/composer/.ssh:ro`) will be encrypted after the first boot. If you need the original plaintext keys, keep a copy outside the container.
+
+### Key Resolution
 
 Key resolution (in priority order):
 1. `COMPOSER_ENCRYPTION_KEY` env var (explicit override, SHA-256 derived)
 2. `COMPOSER_DATA_DIR/encryption.key` file (auto-generated on first run)
 3. If neither exists, a 32-byte random key is generated, saved to the key file, and used
 
-The key file is created with `0600` permissions (owner-read only). Back it up -- losing it means encrypted credentials can't be decrypted.
+The key file is created with `0600` permissions (owner-read only). Back it up -- losing it means encrypted credentials and SSH keys can't be decrypted.
 
 ## Authentication
 

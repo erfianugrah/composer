@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -20,10 +21,11 @@ import (
 type WebhookHandler struct {
 	gitSvc      *app.GitService
 	webhookRepo *store.WebhookRepo
+	jobs        *app.JobManager
 }
 
-func NewWebhookHandler(gitSvc *app.GitService, webhookRepo *store.WebhookRepo) *WebhookHandler {
-	return &WebhookHandler{gitSvc: gitSvc, webhookRepo: webhookRepo}
+func NewWebhookHandler(gitSvc *app.GitService, webhookRepo *store.WebhookRepo, jobs *app.JobManager) *WebhookHandler {
+	return &WebhookHandler{gitSvc: gitSvc, webhookRepo: webhookRepo, jobs: jobs}
 }
 
 func (h *WebhookHandler) RegisterRaw(router chi.Router) {
@@ -93,19 +95,40 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GitOps: sync + redeploy
+	// GitOps: sync + redeploy (runs async so we don't timeout waiting for deploy)
 	h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "processing", "", "")
-	action, err := h.gitSvc.SyncAndRedeploy(r.Context(), webhook.StackName)
-	if err != nil {
-		h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "failed", "", err.Error())
-		jsonError(w, http.StatusInternalServerError, "sync failed")
-		return
+
+	var jobID string
+	if h.jobs != nil {
+		job := h.jobs.Create("sync_redeploy", webhook.StackName)
+		jobID = job.ID
+		h.jobs.Start(job.ID)
 	}
 
-	h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "success", action, "")
-	jsonResponse(w, http.StatusOK, map[string]string{
-		"status": action, "stack": webhook.StackName,
-	})
+	stackName := webhook.StackName
+	go func() {
+		ctx := context.Background()
+		action, err := h.gitSvc.SyncAndRedeploy(ctx, stackName)
+		if err != nil {
+			h.webhookRepo.UpdateDeliveryStatus(ctx, dlvID, "failed", "", err.Error())
+			if h.jobs != nil && jobID != "" {
+				h.jobs.Fail(jobID, err.Error())
+			}
+			return
+		}
+		h.webhookRepo.UpdateDeliveryStatus(ctx, dlvID, "success", action, "")
+		if h.jobs != nil && jobID != "" {
+			h.jobs.Complete(jobID, action, "")
+		}
+	}()
+
+	resp := map[string]string{
+		"status": "accepted", "stack": stackName, "delivery_id": dlvID,
+	}
+	if jobID != "" {
+		resp["job_id"] = jobID
+	}
+	jsonResponse(w, http.StatusOK, resp)
 }
 
 func jsonError(w http.ResponseWriter, status int, detail string) {

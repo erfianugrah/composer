@@ -75,12 +75,17 @@ export function StackDetail({ stackName }: { stackName: string }) {
     setActionLoading(action);
     setActionError("");
     setActionOutput("");
-    const { data, error } = await apiFetch<{ stdout: string; stderr: string }>(`/api/v1/stacks/${stackName}/${action}`, { method: "POST" });
+    const { data, error } = await apiFetch<{ stdout: string; stderr: string; job_id?: string }>(`/api/v1/stacks/${stackName}/${action}`, { method: "POST" });
     if (error) {
       setActionError(`${action} failed: ${error}`);
     } else if (data) {
-      const output = [data.stdout, data.stderr].filter(Boolean).join("\n");
-      if (output) setActionOutput(output);
+      if (data.job_id) {
+        // Async operation -- output will be in the Jobs drawer
+        setActionOutput(`Job started: ${data.job_id}`);
+      } else {
+        const output = [data.stdout, data.stderr].filter(Boolean).join("\n");
+        if (output) setActionOutput(output);
+      }
     }
     setTimeout(fetchStack, 1000);
     setActionLoading("");

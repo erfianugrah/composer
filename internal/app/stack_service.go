@@ -177,6 +177,9 @@ func (s *StackService) List(ctx context.Context) ([]*stack.Stack, error) {
 }
 
 // Update updates compose content. Writes to disk + DB.
+// For git-backed stacks, this creates local changes that diverge from HEAD.
+// The sync status is marked "dirty" to warn the user that the next git sync
+// will overwrite these local edits unless they are committed and pushed.
 func (s *StackService) Update(ctx context.Context, name, composeContent string) (*stack.Stack, error) {
 	s.locks.lock(name)
 	defer s.locks.unlock(name)
@@ -205,6 +208,14 @@ func (s *StackService) Update(ctx context.Context, name, composeContent string) 
 			os.WriteFile(composePath, oldContent, 0644)
 		}
 		return nil, err
+	}
+
+	// If git-backed, mark as dirty so the UI can warn the user
+	if st.Source == stack.SourceGit {
+		cfg, err := s.gitCfgs.GetByStackName(ctx, name)
+		if err == nil && cfg != nil {
+			s.gitCfgs.UpdateSyncStatus(ctx, name, stack.GitDirty, cfg.LastCommitSHA)
+		}
 	}
 
 	s.publishEvent(event.StackUpdated{Name: name, Timestamp: time.Now()})

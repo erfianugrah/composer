@@ -224,7 +224,7 @@ Stack (Aggregate Root)
         |-- password: string (for basic auth)
 
       GitAuthMethod enum { None, Token, SSHKey, BasicAuth }
-      GitSyncStatus enum { Synced, Behind, Diverged, Error, Syncing }
+      GitSyncStatus enum { Synced, Behind, Diverged, Dirty, Error, Syncing }
 
       GitCommit (Value Object -- from git log)
         |-- sha: string
@@ -382,7 +382,7 @@ GitSyncService (Application Service -- orchestrates git + stack)
 WebhookReceiver (Application Service -- processes inbound webhooks)
   |-- RegisterWebhook(stackName) -> WebhookEndpoint
   |-- ValidateSignature(provider, secret, headers, body) -> bool
-  |-- Process(webhookID, payload) -> triggers git sync + optional redeploy
+  |-- Process(webhookID, payload) -> creates background job, triggers async git sync + optional redeploy
 
   WebhookEndpoint (Value Object)
     |-- id: string (ULID, used in URL path)
@@ -1150,17 +1150,15 @@ composer/
 │   │       └── events.go             # All domain event types
 │   │
 │   ├── app/                           # Application services
-│   │   ├── stack_service.go
-│   │   ├── stack_service_test.go
-│   │   ├── container_service.go
-│   │   ├── container_service_test.go
-│   │   ├── pipeline_service.go
-│   │   ├── pipeline_service_test.go
-│   │   ├── pipeline_executor.go       # DAG executor for pipeline runs
-│   │   ├── pipeline_executor_test.go
 │   │   ├── auth_service.go
-│   │   ├── auth_service_test.go
-│   │   └── terminal_service.go
+│   │   ├── stack_service.go           # CRUD, deploy, import, convert, dirty detection
+│   │   ├── git_service.go             # GitOps: sync, redeploy, log, diff, rollback
+│   │   ├── pipeline_service.go
+│   │   ├── pipeline_executor.go       # DAG executor for pipeline runs
+│   │   ├── cron_scheduler.go          # Cron triggers for pipelines
+│   │   ├── jobs.go                    # In-memory background job manager
+│   │   ├── templates.go               # Built-in stack templates (10 presets)
+│   │   └── diff.go                    # Compose diff algorithm
 │   │
 │   ├── infra/                         # Infrastructure implementations
 │   │   ├── docker/
@@ -1193,6 +1191,12 @@ composer/
 │   │   │   ├── client_test.go
 │   │   │   └── webhook.go            # Webhook signature validation (GitHub/GitLab/Gitea/etc.)
 │   │   │
+│   │   ├── crypto/
+│   │   │   ├── encrypt.go            # AES-256-GCM: Encrypt/Decrypt strings + EncryptFile/DecryptFile
+│   │   │   ├── encrypt_test.go
+│   │   │   ├── keystore.go           # EncryptSSHKeys: bulk encrypt SSH key files on startup
+│   │   │   └── keystore_test.go
+│   │   │
 │   │   ├── fs/
 │   │   │   ├── compose_store.go      # Read/write compose files on disk
 │   │   │   └── compose_store_test.go
@@ -1215,11 +1219,14 @@ composer/
 │       │   ├── auth.go               # Login, logout, bootstrap, session
 │       │   ├── auth_test.go
 │       │   ├── user.go               # User CRUD
-│       │   ├── stack.go              # Stack CRUD + operations
+│       │   ├── stack.go              # Stack CRUD + operations (async support)
 │       │   ├── stack_test.go
 │       │   ├── container.go          # Container endpoints
 │       │   ├── pipeline.go           # Pipeline CRUD + runs
 │       │   ├── pipeline_test.go
+│       │   ├── jobs.go               # Background job list/detail
+│       │   ├── resources.go          # Networks, volumes, images
+│       │   ├── webhook.go            # Webhook CRUD + async receiver
 │       │   ├── system.go             # Health, info, version
 │       │   └── sse.go                # SSE streaming endpoints
 │       │
@@ -1298,7 +1305,8 @@ composer/
 │   │   │   └── layout/
 │   │   │       ├── Sidebar.tsx        # React island: app sidebar
 │   │   │       ├── Header.tsx         # Top navigation
-│   │   │       └── CommandPalette.tsx # Cmd+K search/actions
+│   │   │       ├── CommandPalette.tsx # Cmd+K search/actions
+│   │   │       └── JobsDrawer.tsx    # Background jobs drawer (polling, live status)
 │   │   │
 │   │   ├── lib/
 │   │   │   ├── api/
@@ -1596,7 +1604,7 @@ make build
 ### 14.1 Setup
 
 ```bash
-# Prerequisites: Go 1.25+, bun 1.2+, Docker
+# Prerequisites: Go 1.26+, bun 1.2+, Docker
 
 git clone https://github.com/erfianugrah/composer
 cd composer
@@ -1681,33 +1689,38 @@ clean        # Remove build artifacts
 
 - [x] Domain models: Pipeline, Step, Run (with TDD tests)
 - [x] Pipeline DAG executor (concurrent steps, cancellation, continue-on-error)
-- [x] Pipeline REST API (7 endpoints)
+- [x] Pipeline REST API (9 endpoints)
 - [x] Pipeline repository (JSONB config storage)
 - [x] Pipeline service (async execution)
 - [x] Pipeline frontend UI (list, run, history)
-- [ ] Webhook triggers for pipelines
-- [ ] Schedule triggers (cron)
+- [x] Schedule triggers (cron scheduler)
 
 ### Phase 4: Polish -- COMPLETE
 
-- [ ] Valkey integration (session cache, event pub/sub)
+- [x] Valkey integration (session cache)
 - [x] Container stats streaming (CPU/mem/net/disk SSE)
 - [x] Command palette (Cmd+K)
 - [x] Audit log (middleware + repository)
-- [ ] OpenAPI TypeScript client generation in CI
-- [ ] E2E smoke tests (testcontainers-go)
-- [ ] Documentation site
+- [x] OAuth/OIDC via goth (Google, GitHub)
+- [x] Stack templates (10 presets)
+- [x] Compose file diff viewer
+- [x] Podman auto-detection
+- [x] Notifications (webhook, Slack)
+- [x] Docker resource management (networks, volumes, images)
+- [x] Stack import from external directories (Dockge migration)
+- [x] Stack conversion (local <-> git)
+- [x] Background jobs (async compose operations, webhook handler)
+- [x] SSH key encryption at rest
+- [x] Git stack dirty-state detection
 
-### Phase 5: Advanced
+### Phase 5: Future
 
 - [ ] Multi-host agent support (like Dockge's agents)
-- [ ] Podman auto-detection + documentation
-- [ ] Image build support (Dockerfile in stack)
-- [ ] Notifications (email, webhook, Slack)
-- [ ] Stack templates / marketplace
-- [ ] Compose file diff viewer
+- [ ] Valkey pub/sub for multi-instance event bus
 - [ ] File watcher trigger for pipelines
-- [ ] OAuth/OIDC via goth (Google, GitHub, etc.)
+- [ ] SOPS/age integration for encrypted compose secrets
+- [ ] OpenAPI TypeScript client generation in CI
+- [ ] Documentation site
 
 ---
 
@@ -1858,14 +1871,17 @@ X-Request-ID: 01JRZXYZ... (ULID)
 - Returned in response headers
 - Passed to Docker operations for correlation
 
-### 16.8 Credential Encryption
+### 16.8 Credential and Key Encryption
 
-Git credentials stored in `stack_git_configs.credentials` are encrypted at rest:
+All secrets are encrypted at rest using AES-256-GCM:
 
-- AES-256-GCM with a server-side encryption key
-- Key derived from `COMPOSER_ENCRYPTION_KEY` env var (or auto-generated on first run, stored in data dir)
-- Credentials decrypted in-memory only when performing git operations
-- If encryption key is lost, git credentials must be re-entered
+- **Git credentials** (tokens, SSH keys, passwords) in `stack_git_configs.credentials` -- encrypted before DB storage
+- **Webhook secrets** in `webhooks.secret` -- encrypted before DB storage
+- **SSH key files** on disk (`~/.ssh/`, `/home/composer/.ssh/`) -- encrypted in place on startup via `EncryptSSHKeys()`
+- Key derived from `COMPOSER_ENCRYPTION_KEY` env var (or auto-generated on first run, stored in `COMPOSER_DATA_DIR/encryption.key`)
+- Encrypted values prefixed with `enc:` for identification (works for both DB strings and files)
+- SSH key files transparently decrypted in memory when go-git needs them for clone/pull
+- If encryption key is lost, git credentials must be re-entered and SSH keys re-mounted
 
 ### 16.9 Database Migrations (goose v3)
 
@@ -1978,7 +1994,7 @@ COPY web/ ./
 RUN bun run build  # -> dist/
 
 # Stage 2: Build Go binary
-FROM golang:1.25-alpine AS backend
+FROM golang:1.26-alpine AS backend
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -2054,7 +2070,7 @@ All dependencies verified as of April 2026.
 
 | Package            | Version   | Import Path                                   | Notes                                                               |
 | ------------------ | --------- | --------------------------------------------- | ------------------------------------------------------------------- |
-| **Go (minimum)**   | **1.25+** | --                                            | Required by huma, pgx, goose, testcontainers                        |
+| **Go (minimum)**   | **1.26+** | --                                            | Required by huma, pgx, goose, testcontainers                        |
 | Huma v2            | v2.37.3   | `github.com/danielgtaylor/huma/v2`            | Auto OpenAPI 3.1, SSE, chi adapter                                  |
 | Chi                | v5.2.5    | `github.com/go-chi/chi/v5`                    | Via huma adapter                                                    |
 | pgx                | v5.9.1    | `github.com/jackc/pgx/v5`                     | Postgres driver (via database/sql stdlib adapter)                   |

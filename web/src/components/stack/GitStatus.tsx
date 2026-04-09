@@ -26,6 +26,7 @@ const syncStatusColor: Record<string, string> = {
   synced: "bg-cp-green/20 text-cp-green border-cp-green/30",
   behind: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
   diverged: "bg-cp-red/20 text-cp-red border-cp-red/30",
+  dirty: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
   error: "bg-cp-red/20 text-cp-red border-cp-red/30",
   syncing: "bg-cp-blue/20 text-cp-blue border-cp-blue/30",
 };
@@ -119,6 +120,13 @@ export function GitStatus({ stackName }: { stackName: string }) {
               </p>
             </div>
           </div>
+          {status.sync_status === "dirty" && (
+            <div className="mt-3 rounded-lg border border-cp-peach/30 bg-cp-peach/10 px-3 py-2 text-xs text-cp-peach">
+              Local changes detected. The compose file has been edited and diverges from the git HEAD.
+              The next git sync will overwrite these changes. Use the Sync button to pull from remote,
+              or commit and push your changes through your git workflow.
+            </div>
+          )}
           {error && <p className="mt-2 text-xs text-cp-red">{error}</p>}
         </CardContent>
       </Card>

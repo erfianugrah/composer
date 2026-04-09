@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/erfianugrah/composer/internal/api"
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/infra/cache"
+	"github.com/erfianugrah/composer/internal/infra/crypto"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	"github.com/erfianugrah/composer/internal/infra/eventbus"
 	infraGit "github.com/erfianugrah/composer/internal/infra/git"
@@ -176,6 +178,26 @@ func main() {
 		logger.Fatal("failed to create stacks directory", zap.Error(err))
 	}
 
+	// --- Encrypt SSH keys at rest ---
+	// On first boot (or after mounting new keys), encrypt any plaintext SSH private
+	// keys in the composer home SSH directory. Keys are transparently decrypted
+	// when go-git needs them.
+	sshDir := filepath.Join(os.Getenv("HOME"), ".ssh")
+	if n, err := crypto.EncryptSSHKeys(sshDir); err != nil {
+		logger.Warn("failed to encrypt SSH keys", zap.Error(err))
+	} else if n > 0 {
+		logger.Info("encrypted SSH keys at rest", zap.Int("count", n), zap.String("dir", sshDir))
+	}
+	// Also try /home/composer/.ssh (container path)
+	composerSSH := "/home/composer/.ssh"
+	if composerSSH != sshDir {
+		if n, err := crypto.EncryptSSHKeys(composerSSH); err != nil {
+			logger.Warn("failed to encrypt SSH keys", zap.Error(err))
+		} else if n > 0 {
+			logger.Info("encrypted SSH keys at rest", zap.Int("count", n), zap.String("dir", composerSSH))
+		}
+	}
+
 	// --- Docker Event Listener (bridges Docker events to domain events) ---
 	if dockerClient != nil {
 		eventListener := docker.NewEventListener(dockerClient, bus)
@@ -253,6 +275,10 @@ func main() {
 
 	// Cancellable context for background goroutines
 	appCtx, appCancel := context.WithCancel(ctx)
+
+	// --- Background: job cleanup (remove finished jobs older than 1h) ---
+	jobManager.StartCleanup(appCtx, 5*time.Minute, 1*time.Hour)
+	logger.Info("job cleanup goroutine started")
 
 	// --- Background: session cleanup ---
 	go func() {

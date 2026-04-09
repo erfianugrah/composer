@@ -58,6 +58,7 @@ composer/
 │   │   ├── pipeline_service.go    # Pipeline CRUD, async run
 │   │   ├── pipeline_executor.go   # DAG step executor
 │   │   ├── cron_scheduler.go      # Cron triggers for pipelines
+│   │   ├── jobs.go                # Background job manager (in-memory)
 │   │   ├── templates.go           # Built-in stack templates
 │   │   └── diff.go                # Compose diff algorithm
 │   ├── infra/                     # Infrastructure implementations
@@ -65,13 +66,15 @@ composer/
 │   │   ├── store/                 # database/sql repos (Postgres+SQLite) + goose migrations
 │   │   ├── eventbus/              # In-memory event bus
 │   │   ├── git/                   # go-git + webhook signature validation
+│   │   ├── crypto/                # AES-256-GCM encryption (strings + files + SSH keys)
 │   │   ├── cache/                 # Valkey session/key caching
 │   │   ├── notify/                # Webhook + Slack notifications
 │   │   └── fs/                    # Compose file I/O
 │   └── api/                       # HTTP layer
-│       ├── server.go              # Huma API, 17 handler groups, middleware
+│       ├── server.go              # Huma API, 14 handler groups, middleware
 │       ├── handler/               # Auth, User, Key, Stack, Container, Git,
-│       │                          # Pipeline, Webhook, Template, System, SSE
+│       │                          # Pipeline, Webhook, Template, System, SSE,
+│       │                          # Jobs, Docker Resources, Docker Console, Audit
 │       ├── middleware/             # Auth, RBAC, CSRF, security headers,
 │       │                          # rate limiting, audit
 │       ├── ws/                    # WebSocket terminal

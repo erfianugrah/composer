@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"sync"
@@ -123,13 +124,46 @@ func (m *JobManager) List() []*Job {
 }
 
 // Cleanup removes completed/failed jobs older than the given duration.
-func (m *JobManager) Cleanup(maxAge time.Duration) {
+func (m *JobManager) Cleanup(maxAge time.Duration) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cutoff := time.Now().UTC().Add(-maxAge)
+	removed := 0
 	for id, j := range m.jobs {
 		if (j.Status == JobCompleted || j.Status == JobFailed) && j.CreatedAt.Before(cutoff) {
 			delete(m.jobs, id)
+			removed++
 		}
 	}
+	return removed
+}
+
+// RunningCount returns the number of currently running jobs.
+func (m *JobManager) RunningCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	n := 0
+	for _, j := range m.jobs {
+		if j.Status == JobRunning {
+			n++
+		}
+	}
+	return n
+}
+
+// StartCleanup runs a periodic cleanup goroutine. It removes completed/failed
+// jobs older than maxAge every interval. Stops when ctx is cancelled.
+func (m *JobManager) StartCleanup(ctx context.Context, interval, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				m.Cleanup(maxAge)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }

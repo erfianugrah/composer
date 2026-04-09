@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	domevent "github.com/erfianugrah/composer/internal/domain/event"
@@ -110,6 +111,14 @@ func (s *GitService) Sync(ctx context.Context, name string) (changed bool, newSH
 
 	changed, newSHA, err = s.gitClient.Pull(st.Path, cfg.ComposePath, cfg.Credentials)
 	if err != nil {
+		errMsg := err.Error()
+		// If dirty working tree causes pull failure, give a clear message
+		if strings.Contains(errMsg, "worktree contains unstaged changes") ||
+			strings.Contains(errMsg, "uncommitted changes") ||
+			strings.Contains(errMsg, "conflict") {
+			s.gitCfgs.UpdateSyncStatus(ctx, name, stack.GitDirty, cfg.LastCommitSHA)
+			return false, "", fmt.Errorf("sync failed: local changes conflict with remote -- discard local edits or commit them first: %w", err)
+		}
 		s.gitCfgs.UpdateSyncStatus(ctx, name, stack.GitSyncErr, cfg.LastCommitSHA)
 		return false, "", fmt.Errorf("pulling: %w", err)
 	}

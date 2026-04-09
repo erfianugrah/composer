@@ -14,15 +14,47 @@ import (
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/domain/stack"
+	"github.com/erfianugrah/composer/internal/infra/docker"
 )
 
 // StackHandler registers stack management API endpoints.
 type StackHandler struct {
 	stacks *app.StackService
+	jobs   *app.JobManager
 }
 
-func NewStackHandler(stacks *app.StackService) *StackHandler {
-	return &StackHandler{stacks: stacks}
+func NewStackHandler(stacks *app.StackService, jobs *app.JobManager) *StackHandler {
+	return &StackHandler{stacks: stacks, jobs: jobs}
+}
+
+// composeOp is the signature shared by Deploy, BuildAndDeploy, Stop, Restart, Pull.
+type composeOp func(ctx context.Context, name string) (*docker.ComposeResult, error)
+
+// runAsync creates a background job, spawns a goroutine with context.Background()
+// (so request cancellation can't kill the subprocess), and returns immediately.
+func (h *StackHandler) runAsync(jobType, stackName string, op composeOp) *dto.ComposeOpOutput {
+	job := h.jobs.Create(jobType, stackName)
+	h.jobs.Start(job.ID)
+	go func() {
+		result, err := op(context.Background(), stackName)
+		if err != nil {
+			errMsg := err.Error()
+			if result != nil && result.Stderr != "" {
+				errMsg = result.Stderr
+			}
+			h.jobs.Fail(job.ID, errMsg)
+			return
+		}
+		stdout, stderr := "", ""
+		if result != nil {
+			stdout = result.Stdout
+			stderr = result.Stderr
+		}
+		h.jobs.Complete(job.ID, stdout, stderr)
+	}()
+	out := &dto.ComposeOpOutput{}
+	out.Body.JobID = job.ID
+	return out
 }
 
 func (h *StackHandler) Register(api huma.API) {
@@ -264,14 +296,15 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 
 	if st.GitConfig != nil {
 		out.Body.GitConfig = &dto.GitSourceOutput{
-			RepoURL:       st.GitConfig.RepoURL,
-			Branch:        st.GitConfig.Branch,
-			ComposePath:   st.GitConfig.ComposePath,
-			AutoSync:      st.GitConfig.AutoSync,
-			AuthMethod:    string(st.GitConfig.AuthMethod),
-			LastSyncAt:    st.GitConfig.LastSyncAt,
-			LastCommitSHA: st.GitConfig.LastCommitSHA,
-			SyncStatus:    string(st.GitConfig.SyncStatus),
+			RepoURL:          st.GitConfig.RepoURL,
+			Branch:           st.GitConfig.Branch,
+			ComposePath:      st.GitConfig.ComposePath,
+			AutoSync:         st.GitConfig.AutoSync,
+			AuthMethod:       string(st.GitConfig.AuthMethod),
+			LastSyncAt:       st.GitConfig.LastSyncAt,
+			LastCommitSHA:    st.GitConfig.LastCommitSHA,
+			SyncStatus:       string(st.GitConfig.SyncStatus),
+			WorkingTreeDirty: st.GitConfig.SyncStatus == stack.GitDirty,
 		}
 	}
 
@@ -320,7 +353,11 @@ func (h *StackHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	result, err := h.stacks.Deploy(ctx, input.Name)
+	if input.Async && h.jobs != nil {
+		return h.runAsync("deploy", input.Name, h.stacks.Deploy), nil
+	}
+	// Use background context so client disconnect can't kill the subprocess mid-operation
+	result, err := h.stacks.Deploy(context.Background(), input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
@@ -338,7 +375,10 @@ func (h *StackHandler) BuildAndDeploy(ctx context.Context, input *dto.StackNameI
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	result, err := h.stacks.BuildAndDeploy(ctx, input.Name)
+	if input.Async && h.jobs != nil {
+		return h.runAsync("build_deploy", input.Name, h.stacks.BuildAndDeploy), nil
+	}
+	result, err := h.stacks.BuildAndDeploy(context.Background(), input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
@@ -360,7 +400,10 @@ func (h *StackHandler) Stop(ctx context.Context, input *dto.StackNameInput) (*dt
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	result, err := h.stacks.Stop(ctx, input.Name)
+	if input.Async && h.jobs != nil {
+		return h.runAsync("stop", input.Name, h.stacks.Stop), nil
+	}
+	result, err := h.stacks.Stop(context.Background(), input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
@@ -378,7 +421,10 @@ func (h *StackHandler) Restart(ctx context.Context, input *dto.StackNameInput) (
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	result, err := h.stacks.Restart(ctx, input.Name)
+	if input.Async && h.jobs != nil {
+		return h.runAsync("restart", input.Name, h.stacks.Restart), nil
+	}
+	result, err := h.stacks.Restart(context.Background(), input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
@@ -396,7 +442,10 @@ func (h *StackHandler) Pull(ctx context.Context, input *dto.StackNameInput) (*dt
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	result, err := h.stacks.Pull(ctx, input.Name)
+	if input.Async && h.jobs != nil {
+		return h.runAsync("pull", input.Name, h.stacks.Pull), nil
+	}
+	result, err := h.stacks.Pull(context.Background(), input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
