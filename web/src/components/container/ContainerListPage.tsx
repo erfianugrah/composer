@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api/errors";
 const LogViewer = lazy(() => import("./LogViewer").then(m => ({ default: m.LogViewer })));
 const ContainerStats = lazy(() => import("./ContainerStats").then(m => ({ default: m.ContainerStats })));
 const DockerConsole = lazy(() => import("./DockerConsole").then(m => ({ default: m.DockerConsole })));
+import { InlineStats } from "./InlineStats";
 
 interface ContainerInfo {
   id: string;
@@ -76,62 +77,53 @@ export function ContainerListPage() {
           {containers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No containers found.</p>
           ) : (
-            <div className="space-y-2" data-testid="global-container-list">
+            <div className="space-y-1" data-testid="global-container-list">
               {containers.map((c) => (
-                <div key={c.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div className="flex items-center gap-3">
-                    <Badge className={statusColor[c.status] || statusColor.created}>{c.status}</Badge>
-                    {c.health !== "none" && c.health && (
-                      <Badge className={statusColor[c.health] || statusColor.none}>{c.health}</Badge>
-                    )}
-                    <div>
-                      <div className="font-medium text-sm">{c.name}</div>
-                      <div className="text-xs text-muted-foreground font-data">{c.image}</div>
+                <div key={c.id} className="rounded-lg border border-border overflow-hidden">
+                  {/* Container row */}
+                  <div className="flex items-center justify-between p-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Badge className={`shrink-0 ${statusColor[c.status] || statusColor.created}`}>{c.status}</Badge>
+                      {c.health !== "none" && c.health && (
+                        <Badge className={`shrink-0 ${statusColor[c.health] || statusColor.none}`}>{c.health}</Badge>
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm truncate">{c.name}</div>
+                        <div className="text-[10px] text-muted-foreground font-data truncate">{c.image}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Inline stats for running containers */}
+                      {c.status === "running" && <InlineStats containerId={c.id} />}
+                      <code className="text-[10px] text-muted-foreground font-data">{c.id.slice(0, 12)}</code>
+                      {c.status !== "running" && (
+                        <Button size="xs" variant="outline" onClick={async () => {
+                          await apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" });
+                          setTimeout(fetchContainers, 1000);
+                        }}>Start</Button>
+                      )}
+                      {c.status === "running" && (
+                        <>
+                          <Button size="xs" variant="ghost" onClick={() => setViewLogs(viewLogs === c.id ? null : c.id)}>
+                            {viewLogs === c.id ? "Hide" : "Logs"}
+                          </Button>
+                          <Button size="xs" variant="outline" onClick={async () => {
+                            await apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" });
+                            setTimeout(fetchContainers, 1000);
+                          }}>Restart</Button>
+                          <Button size="xs" variant="destructive" onClick={async () => {
+                            await apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" });
+                            setTimeout(fetchContainers, 1000);
+                          }}>Stop</Button>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {c.service_name && (
-                      <span className="text-xs text-cp-blue font-data">{c.service_name}</span>
-                    )}
-                    <code className="text-[10px] text-muted-foreground font-data">{c.id.slice(0, 12)}</code>
-                    {c.status !== "running" && (
-                      <Button size="xs" variant="outline" onClick={async () => {
-                        await apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" });
-                        setTimeout(fetchContainers, 1000);
-                      }}>Start</Button>
-                    )}
-                    {c.status === "running" && (
-                      <>
-                        <Button size="xs" variant="ghost" onClick={() => setViewLogs(viewLogs === c.id ? null : c.id)}>
-                          {viewLogs === c.id ? "Hide Logs" : "Logs"}
-                        </Button>
-                        <Button size="xs" variant="ghost" onClick={() => setViewStats(viewStats === c.id ? null : c.id)}>
-                          {viewStats === c.id ? "Hide Stats" : "Stats"}
-                        </Button>
-                        <Button size="xs" variant="outline" onClick={async () => {
-                          await apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" });
-                          setTimeout(fetchContainers, 1000);
-                        }}>Restart</Button>
-                        <Button size="xs" variant="destructive" onClick={async () => {
-                          await apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" });
-                          setTimeout(fetchContainers, 1000);
-                        }}>Stop</Button>
-                      </>
-                    )}
-                  </div>
-                  {/* Inline logs viewer */}
+                  {/* Expanded panels below the row */}
                   {viewLogs === c.id && (
-                    <div className="mt-2">
+                    <div className="border-t border-border p-3 bg-cp-950/50">
                       <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
                         <LogViewer containerId={c.id} tail="50" maxLines={200} />
-                      </Suspense>
-                    </div>
-                  )}
-                  {/* Inline stats viewer */}
-                  {viewStats === c.id && (
-                    <div className="mt-2">
-                      <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
-                        <ContainerStats containerId={c.id} />
                       </Suspense>
                     </div>
                   )}
