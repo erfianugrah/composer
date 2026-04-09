@@ -118,6 +118,36 @@ type ExecComposeOutput struct {
 	}
 }
 
+type ImportStacksInput struct {
+	Body struct {
+		SourceDir string `json:"source_dir" minLength:"1" doc:"Absolute path to directory containing stack subdirectories (e.g. /import/dockge)"`
+	}
+}
+
+type ImportStacksOutput struct {
+	Body struct {
+		Imported []string `json:"imported"`
+		Skipped  []string `json:"skipped"`
+		Errors   []string `json:"errors"`
+	}
+}
+
+type ConvertToGitInput struct {
+	Name string `path:"name" doc:"Stack name"`
+	Body struct {
+		RepoURL  string `json:"repo_url" minLength:"1" doc:"Git repository URL"`
+		Branch   string `json:"branch,omitempty" doc:"Branch (default: main)"`
+		Token    string `json:"token,omitempty" doc:"Access token for auth"`
+		SSHKey   string `json:"ssh_key,omitempty" doc:"PEM-encoded SSH private key"`
+		Username string `json:"username,omitempty" doc:"Username for basic auth"`
+		Password string `json:"password,omitempty" doc:"Password for basic auth"`
+	}
+}
+
+type ConvertToLocalInput struct {
+	Name string `path:"name" doc:"Stack name"`
+}
+
 type ComposeOpOutput struct {
 	Body struct {
 		Stdout string `json:"stdout"`

@@ -124,13 +124,37 @@ export function StackDetail({ stackName }: { stackName: string }) {
           <Badge className={statusColor[stack.status] || statusColor.unknown} data-testid="stack-status">
             {stack.status}
           </Badge>
-          {stack.source === "git" && (
-            <Badge variant="outline" className="text-cp-blue border-cp-blue/30">git</Badge>
+          {stack.source === "git" ? (
+            <>
+              <Badge variant="outline" className="text-cp-blue border-cp-blue/30">git</Badge>
+              <Button size="xs" variant="ghost" className="text-xs" onClick={async () => {
+                if (!confirm("Detach from git? This removes the .git directory but keeps your compose file.")) return;
+                const { error } = await apiFetch(`/api/v1/stacks/${stackName}/convert/local`, { method: "POST" });
+                if (error) setActionError(error);
+                else fetchStack();
+              }} data-testid="btn-detach-git">Detach Git</Button>
+            </>
+          ) : (
+            <Button size="xs" variant="ghost" className="text-xs" onClick={() => {
+              const repoUrl = prompt("Git repository URL:");
+              if (!repoUrl) return;
+              apiFetch(`/api/v1/stacks/${stackName}/convert/git`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ repo_url: repoUrl }),
+              }).then(({ error }) => {
+                if (error) setActionError(error);
+                else fetchStack();
+              });
+            }} data-testid="btn-attach-git">Attach Git</Button>
           )}
         </div>
         <div className="flex gap-2" data-testid="stack-actions">
           <Button size="sm" onClick={() => doAction("up")} disabled={!!actionLoading} data-testid="btn-deploy">
             {actionLoading === "up" ? "Deploying..." : "Deploy"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => doAction("build")} disabled={!!actionLoading} data-testid="btn-build">
+            {actionLoading === "build" ? "Building..." : "Build & Deploy"}
           </Button>
           <Button size="sm" variant="outline" onClick={() => doAction("restart")} disabled={!!actionLoading} data-testid="btn-restart">
             Restart

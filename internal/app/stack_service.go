@@ -249,6 +249,29 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 	return result, nil
 }
 
+// BuildAndDeploy runs docker compose up --build (builds Dockerfiles then starts).
+func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker.ComposeResult, error) {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if st == nil {
+		return nil, ErrNotFound
+	}
+
+	result, err := s.compose.BuildAndUp(ctx, st.Path)
+	if err != nil {
+		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
+		return result, err
+	}
+
+	s.publishEvent(event.StackDeployed{Name: name, Timestamp: time.Now()})
+	return result, nil
+}
+
 // Stop runs docker compose down.
 func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeResult, error) {
 	s.locks.lock(name)
@@ -333,6 +356,182 @@ func (s *StackService) Validate(ctx context.Context, name string) (*docker.Compo
 		return nil, ErrNotFound
 	}
 	return s.compose.Validate(ctx, st.Path)
+}
+
+// ImportResult holds the outcome of an import operation.
+type ImportResult struct {
+	Imported []string `json:"imported"`
+	Skipped  []string `json:"skipped"`
+	Errors   []string `json:"errors"`
+}
+
+// ImportFromDir scans a source directory for compose stacks and imports them.
+// Each subdirectory containing a compose.yaml or docker-compose.yml is treated as a stack.
+// Files are copied to Composer's stacks directory and registered in the DB.
+// Already-existing stacks (by name) are skipped.
+func (s *StackService) ImportFromDir(ctx context.Context, sourceDir string) (*ImportResult, error) {
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading source directory: %w", err)
+	}
+
+	result := &ImportResult{}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+
+		// Find compose file
+		composeFile := ""
+		for _, candidate := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
+			path := filepath.Join(sourceDir, name, candidate)
+			if _, err := os.Stat(path); err == nil {
+				composeFile = path
+				break
+			}
+		}
+		if composeFile == "" {
+			continue // not a stack directory
+		}
+
+		// Check if already exists
+		existing, _ := s.stacks.GetByName(ctx, name)
+		if existing != nil {
+			result.Skipped = append(result.Skipped, name)
+			continue
+		}
+
+		// Read compose content
+		content, err := os.ReadFile(composeFile)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+
+		// Copy entire stack directory to Composer's stacks dir
+		destDir := filepath.Join(s.stacksDir, name)
+		if err := copyDir(filepath.Join(sourceDir, name), destDir); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: copy failed: %v", name, err))
+			continue
+		}
+
+		// Register in DB
+		st, err := stack.NewStack(name, destDir, stack.SourceLocal)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		st.ComposeContent = string(content)
+		if err := s.stacks.Create(ctx, st); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: db error: %v", name, err))
+			continue
+		}
+
+		result.Imported = append(result.Imported, name)
+	}
+
+	return result, nil
+}
+
+// ConvertToGit converts a local stack to a git-backed stack by initializing
+// a git repo, committing the compose file, and optionally pushing to a remote.
+func (s *StackService) ConvertToGit(ctx context.Context, name string, repoURL, branch string, creds *stack.GitCredentials) error {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil || st == nil {
+		return ErrNotFound
+	}
+	if st.Source == stack.SourceGit {
+		return fmt.Errorf("stack %s is already git-backed", name)
+	}
+
+	// Update source type in DB
+	st.Source = stack.SourceGit
+	st.UpdatedAt = time.Now().UTC()
+	if err := s.stacks.Update(ctx, st); err != nil {
+		return fmt.Errorf("updating stack source: %w", err)
+	}
+
+	// Create git config
+	gitCfg := &stack.GitSource{
+		RepoURL:     repoURL,
+		Branch:      branch,
+		ComposePath: "compose.yaml",
+		AutoSync:    true,
+		AuthMethod:  stack.GitAuthNone,
+		SyncStatus:  stack.GitSynced,
+		Credentials: creds,
+	}
+	if creds != nil && creds.Token != "" {
+		gitCfg.AuthMethod = stack.GitAuthToken
+	} else if creds != nil && creds.SSHKey != "" {
+		gitCfg.AuthMethod = stack.GitAuthSSH
+	} else if creds != nil && creds.Username != "" {
+		gitCfg.AuthMethod = stack.GitAuthBasic
+	}
+
+	now := time.Now()
+	gitCfg.LastSyncAt = &now
+
+	return s.gitCfgs.Upsert(ctx, name, gitCfg)
+}
+
+// ConvertToLocal detaches a git-backed stack from its git repo,
+// keeping the compose file on disk. The git config is deleted.
+func (s *StackService) ConvertToLocal(ctx context.Context, name string) error {
+	s.locks.lock(name)
+	defer s.locks.unlock(name)
+
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil || st == nil {
+		return ErrNotFound
+	}
+	if st.Source == stack.SourceLocal {
+		return fmt.Errorf("stack %s is already local", name)
+	}
+
+	// Delete git config
+	if err := s.gitCfgs.Delete(ctx, name); err != nil {
+		return fmt.Errorf("deleting git config: %w", err)
+	}
+
+	// Update source type
+	st.Source = stack.SourceLocal
+	st.UpdatedAt = time.Now().UTC()
+	if err := s.stacks.Update(ctx, st); err != nil {
+		return fmt.Errorf("updating stack source: %w", err)
+	}
+
+	// Remove .git directory but keep compose file
+	gitDir := filepath.Join(st.Path, ".git")
+	os.RemoveAll(gitDir)
+
+	return nil
+}
+
+// copyDir recursively copies a directory tree.
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, _ := filepath.Rel(src, path)
+		destPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(destPath, info.Mode())
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(destPath, data, info.Mode())
+	})
 }
 
 // publishEvent sends an event to the bus if one is configured.

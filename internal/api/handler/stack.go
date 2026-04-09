@@ -12,6 +12,7 @@ import (
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
+	"github.com/erfianugrah/composer/internal/domain/stack"
 )
 
 // StackHandler registers stack management API endpoints.
@@ -81,6 +82,14 @@ func (h *StackHandler) Register(api huma.API) {
 	}, h.Stop)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "buildAndDeployStack",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/stacks/{name}/build",
+		Summary:     "Build images from Dockerfiles and deploy (docker compose up --build)",
+		Tags:        []string{"stacks"},
+	}, h.BuildAndDeploy)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "restartStack",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/restart",
@@ -119,6 +128,30 @@ func (h *StackHandler) Register(api huma.API) {
 		Summary:     "Run a docker compose command against this stack",
 		Tags:        []string{"stacks"},
 	}, h.ExecCompose)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "importStacks",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/stacks/import",
+		Summary:     "Import stacks from an external directory (e.g. Dockge migration)",
+		Tags:        []string{"stacks"},
+	}, h.Import)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "convertToGit",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/stacks/{name}/convert/git",
+		Summary:     "Convert a local stack to git-backed",
+		Tags:        []string{"stacks", "git"},
+	}, h.ConvertToGit)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "convertToLocal",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/stacks/{name}/convert/local",
+		Summary:     "Detach a git-backed stack and convert to local",
+		Tags:        []string{"stacks", "git"},
+	}, h.ConvertToLocal)
 }
 
 func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackListOutput, error) {
@@ -271,6 +304,28 @@ func (h *StackHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*
 	return out, nil
 }
 
+func (h *StackHandler) BuildAndDeploy(ctx context.Context, input *dto.StackNameInput) (*dto.ComposeOpOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+	result, err := h.stacks.BuildAndDeploy(ctx, input.Name)
+	if err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		out := &dto.ComposeOpOutput{}
+		if result != nil {
+			out.Body.Stderr = result.Stderr
+		}
+		return out, nil
+	}
+
+	out := &dto.ComposeOpOutput{}
+	out.Body.Stdout = result.Stdout
+	out.Body.Stderr = result.Stderr
+	return out, nil
+}
+
 func (h *StackHandler) Stop(ctx context.Context, input *dto.StackNameInput) (*dto.ComposeOpOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
@@ -340,10 +395,81 @@ func (h *StackHandler) Validate(ctx context.Context, input *dto.StackNameInput) 
 		}
 		return out, nil
 	}
-
 	out := &dto.ComposeOpOutput{}
 	out.Body.Stdout = "valid"
 	return out, nil
+}
+
+// Import scans an external directory and imports stacks into Composer.
+func (h *StackHandler) Import(ctx context.Context, input *dto.ImportStacksInput) (*dto.ImportStacksOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+
+	result, err := h.stacks.ImportFromDir(ctx, input.Body.SourceDir)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+
+	out := &dto.ImportStacksOutput{}
+	out.Body.Imported = result.Imported
+	out.Body.Skipped = result.Skipped
+	out.Body.Errors = result.Errors
+	if out.Body.Imported == nil {
+		out.Body.Imported = []string{}
+	}
+	if out.Body.Skipped == nil {
+		out.Body.Skipped = []string{}
+	}
+	if out.Body.Errors == nil {
+		out.Body.Errors = []string{}
+	}
+	return out, nil
+}
+
+// ConvertToGit converts a local stack to git-backed.
+func (h *StackHandler) ConvertToGit(ctx context.Context, input *dto.ConvertToGitInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	branch := input.Body.Branch
+	if branch == "" {
+		branch = "main"
+	}
+
+	var creds *stack.GitCredentials
+	if input.Body.Token != "" || input.Body.SSHKey != "" || input.Body.Username != "" {
+		creds = &stack.GitCredentials{
+			Token:    input.Body.Token,
+			SSHKey:   input.Body.SSHKey,
+			Username: input.Body.Username,
+			Password: input.Body.Password,
+		}
+	}
+
+	if err := h.stacks.ConvertToGit(ctx, input.Name, input.Body.RepoURL, branch, creds); err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	return nil, nil
+}
+
+// ConvertToLocal detaches a git-backed stack from its repo.
+func (h *StackHandler) ConvertToLocal(ctx context.Context, input *dto.ConvertToLocalInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	if err := h.stacks.ConvertToLocal(ctx, input.Name); err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	return nil, nil
 }
 
 // ExecCompose runs an arbitrary docker compose subcommand against a stack.
@@ -368,7 +494,7 @@ func (h *StackHandler) ExecCompose(ctx context.Context, input *dto.ExecComposeIn
 	allowed := map[string]bool{
 		"ps": true, "logs": true, "top": true, "config": true,
 		"images": true, "port": true, "version": true, "ls": true,
-		"events": true, "exec": true, "cp": true,
+		"events": true, "exec": true, "cp": true, "build": true,
 	}
 	if !allowed[args[0]] {
 		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed; permitted: ps, logs, top, config, images, port, version, ls, events, exec, cp")

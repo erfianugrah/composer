@@ -32,6 +32,17 @@ func (c *Compose) Up(ctx context.Context, stackDir string, services ...string) (
 	return c.run(ctx, stackDir, args...)
 }
 
+// BuildAndUp runs `docker compose up -d --build` -- builds images from Dockerfiles
+// before starting containers. For projects with custom Dockerfiles.
+func (c *Compose) BuildAndUp(ctx context.Context, stackDir string) (*ComposeResult, error) {
+	return c.run(ctx, stackDir, "up", "-d", "--build", "--remove-orphans")
+}
+
+// Build runs `docker compose build` without starting containers.
+func (c *Compose) Build(ctx context.Context, stackDir string) (*ComposeResult, error) {
+	return c.run(ctx, stackDir, "build")
+}
+
 // Down runs `docker compose down` in the given stack directory.
 func (c *Compose) Down(ctx context.Context, stackDir string, removeVolumes bool) (*ComposeResult, error) {
 	args := []string{"down", "--remove-orphans"}

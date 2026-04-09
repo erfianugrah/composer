@@ -3,6 +3,7 @@ import Layout from "@/layouts/Layout.astro";
 import { UserManagement } from "@/components/layout/UserManagement";
 import { ApiKeyManagement } from "@/components/layout/ApiKeyManagement";
 import { WebhookSettings } from "@/components/layout/WebhookSettings";
+import { ImportStacks } from "@/components/stack/ImportStacks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 ---
 
@@ -11,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
     <UserManagement client:load />
     <ApiKeyManagement client:load />
     <WebhookSettings client:load />
+    <ImportStacks client:load />
 
     <Card>
       <CardHeader>
