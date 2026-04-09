@@ -15,7 +15,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: ghcr.io/erfianugrah/composer:latest
+    image: ghcr.io/erfianugrah/composer:latest-amd64
     ports:
       - "${COMPOSER_PORT:-8080}:8080"
     volumes:
