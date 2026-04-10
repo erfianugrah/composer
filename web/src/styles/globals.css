@@ -6,6 +6,10 @@
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/700.css";
 
+/* P7+P8: Prevent invisible text during font load */
+@font-face { font-family: "Space Grotesk"; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; font-display: swap; }
+
 /* ── Lovelace Theme for Composer ── */
 @theme {
   /* Base (warm charcoal) */

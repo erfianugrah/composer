@@ -44,7 +44,7 @@ export function NetworksPage() {
             if (err) setError(err); else { setName(""); fetch_(); }
           }} className="flex gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Network name" required className="flex-1" />
-            <select value={driver} onChange={(e) => setDriver(e.target.value)} className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm">
+            <select aria-label="Network driver" value={driver} onChange={(e) => setDriver(e.target.value)} className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm">
               <option value="bridge">bridge</option><option value="overlay">overlay</option><option value="macvlan">macvlan</option><option value="host">host</option>
             </select>
             <Button type="submit" size="sm" disabled={!name}>Create</Button>

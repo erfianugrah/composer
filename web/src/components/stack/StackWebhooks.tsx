@@ -65,7 +65,7 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs uppercase tracking-wider text-muted-foreground">Provider</label>
-                <select value={provider} onChange={(e) => setProvider(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
+                <select aria-label="Webhook provider" value={provider} onChange={(e) => setProvider(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
                   <option value="github">GitHub</option><option value="gitlab">GitLab</option><option value="gitea">Gitea</option><option value="generic">Generic</option>
                 </select>
               </div>
