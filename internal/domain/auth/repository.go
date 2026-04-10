@@ -25,6 +25,7 @@ type SessionRepository interface {
 // APIKeyRepository persists and retrieves API keys.
 type APIKeyRepository interface {
 	Create(ctx context.Context, key *APIKey) error
+	GetByID(ctx context.Context, id string) (*APIKey, error)
 	GetByHashedKey(ctx context.Context, hashedKey string) (*APIKey, error)
 	List(ctx context.Context) ([]*APIKey, error)
 	Delete(ctx context.Context, id string) error

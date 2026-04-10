@@ -31,6 +31,23 @@ func (r *APIKeyRepo) Create(ctx context.Context, k *auth.APIKey) error {
 	return nil
 }
 
+func (r *APIKeyRepo) GetByID(ctx context.Context, id string) (*auth.APIKey, error) {
+	k := &auth.APIKey{}
+	var role string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, name, hashed_key, role, created_by, last_used_at, expires_at, created_at
+		 FROM api_keys WHERE id = $1`, id,
+	).Scan(&k.ID, &k.Name, &k.HashedKey, &role, &k.CreatedBy, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting api key by id: %w", err)
+	}
+	k.Role = auth.Role(role)
+	return k, nil
+}
+
 func (r *APIKeyRepo) GetByHashedKey(ctx context.Context, hashedKey string) (*auth.APIKey, error) {
 	k := &auth.APIKey{}
 	var role string

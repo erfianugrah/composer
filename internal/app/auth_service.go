@@ -17,6 +17,8 @@ var (
 
 // SessionCache is an optional interface for invalidating cached sessions/keys.
 type SessionCache interface {
+	GetSession(ctx context.Context, sessionID string) (*auth.Session, error)
+	SetSession(ctx context.Context, session *auth.Session) error
 	DeleteSession(ctx context.Context, sessionID string) error
 	DeleteAPIKey(ctx context.Context, hashedKey string) error
 }
@@ -117,6 +119,18 @@ func (s *AuthService) Login(ctx context.Context, email, password string, ttl tim
 
 // ValidateSession checks if a session token is valid and not expired.
 func (s *AuthService) ValidateSession(ctx context.Context, sessionID string) (*auth.Session, error) {
+	// P2: Check cache first (avoids DB query on every authenticated request)
+	if s.cache != nil {
+		if cached, err := s.cache.GetSession(ctx, sessionID); err == nil && cached != nil {
+			if cached.IsExpired() {
+				_ = s.cache.DeleteSession(ctx, sessionID)
+				_ = s.sessions.DeleteByID(ctx, sessionID)
+				return nil, nil
+			}
+			return cached, nil
+		}
+	}
+
 	session, err := s.sessions.GetByID(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("looking up session: %w", err)
@@ -128,6 +142,12 @@ func (s *AuthService) ValidateSession(ctx context.Context, sessionID string) (*a
 		_ = s.sessions.DeleteByID(ctx, sessionID)
 		return nil, nil
 	}
+
+	// Populate cache for subsequent requests
+	if s.cache != nil {
+		_ = s.cache.SetSession(ctx, session) // best-effort
+	}
+
 	return session, nil
 }
 
@@ -174,9 +194,15 @@ func (s *AuthService) CreateAPIKey(ctx context.Context, name string, role auth.R
 }
 
 // DeleteAPIKey revokes an API key and invalidates the cache.
+// S24: Fetches the key first to get the hash for cache eviction.
 func (s *AuthService) DeleteAPIKey(ctx context.Context, id string) error {
-	// Note: we don't have the hashed key here, but the cache entry will expire via TTL.
-	// For immediate invalidation, the caller should provide the hashed key.
+	if s.cache != nil {
+		// Fetch key to get the hash for cache invalidation
+		key, err := s.keys.GetByID(ctx, id)
+		if err == nil && key != nil {
+			_ = s.cache.DeleteAPIKey(ctx, key.HashedKey)
+		}
+	}
 	return s.keys.Delete(ctx, id)
 }
 

@@ -154,7 +154,7 @@ func main() {
 			logger.Info("valkey connected")
 		}
 	}
-	_ = valkeyCache // used by auth middleware for session caching
+	// Valkey cache wiring happens after authSvc is created (see below)
 
 	// --- Event Bus ---
 	bus := eventbus.NewMemoryBus(256)
@@ -221,6 +221,11 @@ func main() {
 
 	// --- Application Services ---
 	authSvc := app.NewAuthService(userRepo, sessionRepo, apiKeyRepo)
+	// P2: Wire Valkey cache for session lookups (avoids DB query per authenticated request)
+	if valkeyCache != nil {
+		authSvc.SetCache(valkeyCache)
+		logger.Info("auth session cache enabled via Valkey")
+	}
 	var gitSvc *app.GitService
 	if dockerClient != nil {
 		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, logger, cfg.StacksDir, cfg.DataDir)
