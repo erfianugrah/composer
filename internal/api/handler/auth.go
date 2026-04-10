@@ -18,14 +18,16 @@ const defaultSessionTTL = 7 * 24 * time.Hour
 
 // AuthHandler registers auth-related API endpoints.
 type AuthHandler struct {
-	auth         *app.AuthService
-	loginLimiter *authmw.RateLimiter
+	auth           *app.AuthService
+	loginLimiter   *authmw.RateLimiter // per-email
+	loginIPLimiter *authmw.RateLimiter // per-IP (S20)
 }
 
 func NewAuthHandler(auth *app.AuthService) *AuthHandler {
 	return &AuthHandler{
-		auth:         auth,
-		loginLimiter: authmw.LoginRateLimit(),
+		auth:           auth,
+		loginLimiter:   authmw.LoginRateLimit(),
+		loginIPLimiter: authmw.LoginRateLimit(), // same config, keyed differently
 	}
 }
 

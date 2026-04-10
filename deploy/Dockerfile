@@ -52,6 +52,10 @@ RUN addgroup -S composer && adduser -S composer -G composer \
     && mkdir -p /opt/stacks /opt/composer /home/composer/.ssh \
     && chown -R composer:composer /opt/stacks /opt/composer /home/composer/.ssh
 
+# S2: Ship known_hosts for GitHub, GitLab, Gitea SSH host key verification
+COPY deploy/known_hosts /home/composer/.ssh/known_hosts
+RUN chown composer:composer /home/composer/.ssh/known_hosts && chmod 644 /home/composer/.ssh/known_hosts
+
 # Entrypoint handles PUID/PGID + Docker socket GID + privilege drop
 COPY deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

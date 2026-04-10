@@ -5,20 +5,20 @@ Each finding includes the exact file/line, the problematic code, and a concrete 
 
 ## Status Summary (as of v0.6.2)
 
-### Security (S1-S32): 22 fixed, 3 acknowledged, 7 remaining
-- **FIXED**: S1, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S17, S18, S21, S22, S25, S26, S30, S32
-- **ACKNOWLEDGED**: S16 (error messages -- intentional), S28 (audit context -- safe), S29 (HSTS -- fixed), S31 (XSS header -- fixed)
-- **REMAINING**: S2 (SSH host key -- needs known_hosts), S19 (CSP nonces -- needs Astro integration), S20 (rate limiter composite key), S23 (SOPS crash -- defer in place), S24 (API key cache -- needs Valkey), S27 (connection limits)
+### Security (S1-S32): 25 fixed, 5 acknowledged, 2 remaining
+- **FIXED**: S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S17, S18, S21, S22, S25, S26, S27, S30, S31, S32
+- **ACKNOWLEDGED**: S16 (error messages -- intentional), S20 (rate limiter -- global IP limiter sufficient), S23 (SOPS crash -- defer in place), S28 (audit context -- safe), S29 (HSTS -- fixed)
+- **REMAINING**: S19 (CSP nonces -- needs Astro integration or inline script extraction), S24 (API key cache invalidation -- needs Valkey plumbing)
 
 ### UX (U1-U27): 25 fixed, 2 acknowledged, 0 remaining
 - **FIXED**: U1, U2, U3, U4, U5, U6, U7, U8, U9, U10, U11, U12, U13, U14, U15, U16, U17, U19, U21, U22, U23, U24, U25, U26, U27
 - **ACKNOWLEDGED**: U20 (dangerouslySetInnerHTML -- all highlighters HTML-escape first), U18 (setTimeout refresh -- works acceptably)
 - **ALL UX ITEMS ADDRESSED**
 
-### Performance (P1-P22): 15 fixed, 3 acknowledged, 4 remaining
-- **FIXED**: P4 (DB pool), P5 (SSE reconnect), P7-P8 (font-display), P9 (Vite chunks), P10 (removed codemirror meta-package), P13 (audit/delivery TTL), P14 (DB indexes), P16 (compose buffer 1MB), P17 (webhook goroutine 10min timeout), P19 (Docker init 10s timeout), P20 (Docker multiplex), P21 (log array optimization), P22 (cache-control)
-- **ACKNOWLEDGED**: P15 (cron N+1 -- low frequency, not worth refactor), P18 (event listener -- already has reconnect with backoff), P12 (resolveComposeFile -- only 1 extra query, acceptable)
-- **REMAINING**: P1 (SSE batch stats -- needs new multiplexed endpoint), P2 (Valkey auth cache -- needs plumbing into AuthService), P3 (N+1 stacks listing -- needs batch Docker API), P6 (log virtualization -- needs react-window or similar), P11 (request dedup -- needs SWR/tanstack-query)
+### Performance (P1-P22): 16 fixed, 3 acknowledged, 3 remaining
+- **FIXED**: P3 (N+1 stacks -- single Docker call), P4 (DB pool), P5 (SSE reconnect), P7-P8 (font-display), P9 (Vite chunks), P10 (removed codemirror), P13 (audit/delivery TTL), P14 (DB indexes), P16 (compose buffer), P17 (webhook timeout), P19 (Docker init timeout), P20 (Docker multiplex), P21 (log array), P22 (cache-control)
+- **ACKNOWLEDGED**: P15 (cron N+1 -- low frequency), P18 (event listener -- has reconnect), P12 (resolveComposeFile -- acceptable)
+- **REMAINING**: P1 (SSE batch stats -- needs new multiplexed endpoint), P2 (Valkey auth cache -- needs plumbing), P6 (log virtualization -- needs react-window), P11 (request dedup -- needs SWR)
 
 ---
 

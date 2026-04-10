@@ -185,16 +185,25 @@ func (s *StackService) Get(ctx context.Context, name string) (*stack.Stack, erro
 }
 
 // List returns all stacks with runtime status.
+// P3: Uses a single Docker API call to list ALL containers, then groups by stack.
 func (s *StackService) List(ctx context.Context) ([]*stack.Stack, error) {
 	stacks, err := s.stacks.List(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, st := range stacks {
-		containers, err := s.docker.ListContainers(ctx, st.Name)
-		if err == nil {
-			st.Status = deriveStackStatus(containers)
+	// One Docker call for all containers instead of N calls per stack
+	allContainers, err := s.docker.ListContainers(ctx, "")
+	if err == nil {
+		// Group by compose project name
+		byStack := make(map[string][]domcontainer.Container)
+		for _, c := range allContainers {
+			if c.StackName != "" {
+				byStack[c.StackName] = append(byStack[c.StackName], c)
+			}
+		}
+		for _, st := range stacks {
+			st.Status = deriveStackStatus(byStack[st.Name])
 		}
 	}
 

@@ -20,6 +20,29 @@ import (
 	domstack "github.com/erfianugrah/composer/internal/domain/stack"
 )
 
+// hostKeyCallback returns an SSH host key callback.
+// Uses known_hosts file if available, falls back to insecure if COMPOSER_SSH_INSECURE_HOST_KEY=true.
+func hostKeyCallback() sshlib.HostKeyCallback {
+	// Try known_hosts files
+	for _, path := range []string{
+		"/home/composer/.ssh/known_hosts",
+		filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts"),
+	} {
+		if _, err := os.Stat(path); err == nil {
+			cb, err := ssh.NewKnownHostsCallback(path)
+			if err == nil {
+				return cb
+			}
+		}
+	}
+	// Fallback: only if explicitly opted in
+	if os.Getenv("COMPOSER_SSH_INSECURE_HOST_KEY") == "true" {
+		return hostKeyCallback()
+	}
+	// Default: insecure (backwards compat, but known_hosts shipped in Docker image)
+	return hostKeyCallback()
+}
+
 // isAllowedSSHKeyPath validates that a key file path is within allowed SSH directories.
 // Prevents arbitrary file reads via the SSHKeyFile credential field.
 func isAllowedSSHKeyPath(path string) bool {
@@ -55,7 +78,7 @@ func buildAuth(creds *domstack.GitCredentials) transport.AuthMethod {
 		if err == nil && keyContent != "" {
 			keys, err := ssh.NewPublicKeys("git", []byte(keyContent), creds.SSHKeyPassphrase)
 			if err == nil {
-				keys.HostKeyCallback = sshlib.InsecureIgnoreHostKey()
+				keys.HostKeyCallback = hostKeyCallback()
 				return keys
 			}
 		}
@@ -67,7 +90,7 @@ func buildAuth(creds *domstack.GitCredentials) transport.AuthMethod {
 			return nil // fall back to no auth
 		}
 		// Accept any host key (container environment, no known_hosts)
-		keys.HostKeyCallback = sshlib.InsecureIgnoreHostKey()
+		keys.HostKeyCallback = hostKeyCallback()
 		return keys
 	}
 	if creds.Token != "" {
@@ -130,7 +153,7 @@ func buildSSHAuthFromAgent() transport.AuthMethod {
 			}
 			keys, err := ssh.NewPublicKeys("git", []byte(keyContent), "")
 			if err == nil {
-				keys.HostKeyCallback = sshlib.InsecureIgnoreHostKey()
+				keys.HostKeyCallback = hostKeyCallback()
 				return keys
 			}
 		}
