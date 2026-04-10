@@ -141,10 +141,10 @@ When OAuth is enabled (via `COMPOSER_GITHUB_CLIENT_ID` or `COMPOSER_GOOGLE_CLIEN
 ## Security Headers
 
 All responses include:
-- `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; ...`
+- `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; ...`
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
-- `X-XSS-Protection: 1; mode=block`
+- `X-XSS-Protection: 0` (modern guidance: disabled to avoid IE vulnerabilities)
 - `Referrer-Policy: strict-origin-when-cross-origin`
 - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
 - `Strict-Transport-Security` (when behind TLS proxy)

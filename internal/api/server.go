@@ -104,14 +104,8 @@ func NewServer(deps Deps) *Server {
 	// System info/version
 	handler.NewSystemHandler(deps.DockerClient, deps.DataDir).Register(api)
 
-	// /docs -- Stoplight Elements API docs UI (serves inline HTML)
-	router.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Composer API</title>
-<script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/@stoplight/elements/styles.min.css">
-</head><body><elements-api apiDescriptionUrl="/openapi.json" router="hash" layout="sidebar"/></body></html>`))
-	})
+	// /docs is served by the embedded frontend (web/dist/docs/index.html)
+	// Stoplight Elements bundled locally -- no CDN dependency
 
 	// Templates (public, helps onboarding)
 	handler.NewTemplateHandler().Register(api)
