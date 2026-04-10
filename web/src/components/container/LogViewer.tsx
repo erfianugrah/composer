@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/button";
 import { highlightLog } from "@/lib/log-highlight";
 
@@ -117,23 +118,56 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
           )}
         </div>
       </div>
-      <div
-        ref={containerRef}
+      <VirtualizedLogView
+        lines={lines}
+        connected={connected}
+        containerRef={containerRef}
+        bottomRef={bottomRef}
         onScroll={handleScroll}
-        className="rounded-lg border border-border bg-cp-950 overflow-y-auto font-data text-xs leading-5"
-        style={{ height: "400px" }}
-        data-testid="log-viewer"
-      >
-        {lines.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            {connected ? "Waiting for logs..." : "No log data"}
-          </div>
-        ) : (
-          <pre className="p-3 whitespace-pre-wrap break-all">
-            {lines.map((line, i) => (
-              <div key={i} className={line.stream === "stderr" ? "text-cp-red/90" : ""}>
+      />
+    </div>
+  );
+}
+
+// P6: Virtualized log renderer -- only renders visible rows
+function VirtualizedLogView({ lines, connected, containerRef, bottomRef, onScroll }: {
+  lines: LogLine[];
+  connected: boolean;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  bottomRef: React.RefObject<HTMLDivElement | null>;
+  onScroll: () => void;
+}) {
+  const virtualizer = useVirtualizer({
+    count: lines.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => 20, // ~20px per log line
+    overscan: 50,
+  });
+
+  return (
+    <div
+      ref={containerRef}
+      onScroll={onScroll}
+      className="rounded-lg border border-border bg-cp-950 overflow-y-auto font-data text-xs leading-5"
+      style={{ height: "400px" }}
+      data-testid="log-viewer"
+    >
+      {lines.length === 0 ? (
+        <div className="flex items-center justify-center h-full text-muted-foreground">
+          {connected ? "Waiting for logs..." : "No log data"}
+        </div>
+      ) : (
+        <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
+          {virtualizer.getVirtualItems().map((virtualItem) => {
+            const line = lines[virtualItem.index];
+            return (
+              <div
+                key={virtualItem.index}
+                className={`absolute left-0 w-full px-3 whitespace-pre-wrap break-all ${line.stream === "stderr" ? "text-cp-red/90" : ""}`}
+                style={{ top: `${virtualItem.start}px`, height: `${virtualItem.size}px` }}
+              >
                 <span className="text-muted-foreground select-none">
-                  {new Date(line.ts).toLocaleTimeString()}{" "}
+                  {new Date(line.ts).toISOString().slice(11, 19)}{" "}
                 </span>
                 {line.stream === "stderr" ? (
                   line.message
@@ -141,11 +175,11 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
                   <span dangerouslySetInnerHTML={{ __html: highlightLog(line.message) }} />
                 )}
               </div>
-            ))}
-            <div ref={bottomRef} />
-          </pre>
-        )}
-      </div>
+            );
+          })}
+          <div ref={bottomRef} />
+        </div>
+      )}
     </div>
   );
 }

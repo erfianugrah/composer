@@ -71,10 +71,21 @@ export function networkError(err: unknown): string {
  * Wraps fetch with credentials, CSRF header, and structured error handling.
  * Returns { data, error } -- never throws.
  */
+// P11: In-flight request dedup for GET requests
+const inflight = new Map<string, Promise<{ data: unknown; error: null } | { data: null; error: string }>>();
+
 export async function apiFetch<T = unknown>(
   url: string,
   init?: RequestInit,
 ): Promise<{ data: T; error: null } | { data: null; error: string }> {
+  // Dedup identical GET requests that are still in flight
+  const method = init?.method?.toUpperCase() || "GET";
+  const dedup = method === "GET";
+  if (dedup && inflight.has(url)) {
+    return inflight.get(url)! as Promise<{ data: T; error: null } | { data: null; error: string }>;
+  }
+
+  const promise = (async () => {
   try {
     const res = await fetch(url, {
       credentials: "include",
@@ -95,4 +106,12 @@ export async function apiFetch<T = unknown>(
   } catch (err) {
     return { data: null, error: networkError(err) };
   }
+  })();
+
+  if (dedup) {
+    inflight.set(url, promise);
+    promise.finally(() => inflight.delete(url));
+  }
+
+  return promise as Promise<{ data: T; error: null } | { data: null; error: string }>;
 }
