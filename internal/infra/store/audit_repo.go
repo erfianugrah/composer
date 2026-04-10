@@ -75,3 +75,14 @@ func (r *AuditRepo) Recent(ctx context.Context, limit int) ([]AuditEntry, error)
 	}
 	return entries, rows.Err()
 }
+
+// CleanupOlderThan removes audit entries older than the given duration.
+func (r *AuditRepo) CleanupOlderThan(ctx context.Context, maxAge time.Duration) (int, error) {
+	cutoff := time.Now().UTC().Add(-maxAge)
+	result, err := r.db.ExecContext(ctx, `DELETE FROM audit_log WHERE created_at < $1`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}

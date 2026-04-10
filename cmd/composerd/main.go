@@ -291,7 +291,7 @@ func main() {
 	jobManager.StartCleanup(appCtx, 5*time.Minute, 1*time.Hour)
 	logger.Info("job cleanup goroutine started")
 
-	// --- Background: session cleanup ---
+	// --- Background: session + data cleanup ---
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -302,6 +302,21 @@ func main() {
 					logger.Warn("session cleanup error", zap.Error(err))
 				} else if n > 0 {
 					logger.Info("cleaned expired sessions", zap.Int("count", n))
+				}
+				// P13: Clean old audit log and webhook deliveries (keep 30 days)
+				if auditRepo != nil {
+					if n, err := auditRepo.CleanupOlderThan(appCtx, 30*24*time.Hour); err != nil {
+						logger.Warn("audit cleanup error", zap.Error(err))
+					} else if n > 0 {
+						logger.Info("cleaned old audit entries", zap.Int("count", n))
+					}
+				}
+				if webhookRepo != nil {
+					if n, err := webhookRepo.CleanupDeliveriesOlderThan(appCtx, 30*24*time.Hour); err != nil {
+						logger.Warn("delivery cleanup error", zap.Error(err))
+					} else if n > 0 {
+						logger.Info("cleaned old webhook deliveries", zap.Int("count", n))
+					}
 				}
 			case <-appCtx.Done():
 				return

@@ -173,9 +173,11 @@ func (c *Compose) run(ctx context.Context, workDir string, composeFile string, a
 		cmd.Env = append(cmd.Environ(), "DOCKER_HOST="+c.dockerHost)
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// P16: limit to 1MB to prevent unbounded memory from verbose compose output
+	stdout := &limitedBuffer{max: 1 << 20}
+	stderr := &limitedBuffer{max: 1 << 20}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	start := time.Now()
 	err := cmd.Run()
@@ -215,6 +217,25 @@ func (c *Compose) run(ctx context.Context, workDir string, composeFile string, a
 	)
 	return result, nil
 }
+
+// limitedBuffer is a bytes.Buffer that stops accepting writes after max bytes.
+type limitedBuffer struct {
+	buf bytes.Buffer
+	max int
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	remaining := b.max - b.buf.Len()
+	if remaining <= 0 {
+		return len(p), nil // discard silently
+	}
+	if len(p) > remaining {
+		p = p[:remaining]
+	}
+	return b.buf.Write(p)
+}
+
+func (b *limitedBuffer) String() string { return b.buf.String() }
 
 func truncate(s string, max int) string {
 	if len(s) <= max {

@@ -15,9 +15,9 @@ Each finding includes the exact file/line, the problematic code, and a concrete 
 - **ACKNOWLEDGED**: U20 (dangerouslySetInnerHTML -- all highlighters HTML-escape first), U18 (setTimeout refresh -- works acceptably)
 - **REMAINING**: U8 (ComposeEditor recreate -- medium refactor), U13-U14 (form label associations -- systematic), U17 (window.prompt replacement -- needs modal)
 
-### Performance (P1-P22): 4 fixed, 18 remaining
-- **FIXED**: P5 (SSE reconnect hook created), P14 (database indexes migration), P20 (Docker multiplex parsing), P22 (cache-control headers)
-- **REMAINING**: P1 (SSE batch stats), P2 (Valkey auth cache), P3 (N+1 stacks), P4 (DB pool config), P6 (log virtualization), P7-P8 (font loading), P9 (Vite chunks), P10 (codemirror meta-package), P11 (request dedup), P12 (resolveComposeFile redundant query), P13 (audit/delivery TTL), P15 (cron N+1), P16 (compose stdout buffer), P17 (webhook goroutine timeout), P18 (event listener reconnect), P19 (Docker client init timeout), P21 (log array spread)
+### Performance (P1-P22): 8 fixed, 14 remaining
+- **FIXED**: P4 (DB connection pool config), P5 (SSE reconnect hook), P13 (audit/delivery TTL cleanup), P14 (database indexes), P16 (compose stdout 1MB limit), P19 (Docker client init 10s timeout), P20 (Docker multiplex parsing), P22 (cache-control headers)
+- **REMAINING**: P1 (SSE batch stats -- needs new endpoint), P2 (Valkey auth cache -- needs plumbing), P3 (N+1 stacks -- needs batch Docker query), P6 (log virtualization), P7-P8 (font loading), P9 (Vite chunks), P10 (codemirror meta-package), P11 (request dedup), P12 (resolveComposeFile query), P15 (cron N+1), P17 (webhook goroutine timeout), P18 (event listener reconnect), P21 (log array spread)
 
 ---
 

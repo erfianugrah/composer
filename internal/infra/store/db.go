@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers "pgx" driver
 	_ "modernc.org/sqlite"             // registers "sqlite" driver
@@ -62,6 +63,11 @@ func New(ctx context.Context, dbURL, dataDir string) (*DB, error) {
 		sqlDB.Close()
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
+
+	// P4: Connection pool configuration
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
 	// Run migrations
 	dialect := goose.DialectPostgres

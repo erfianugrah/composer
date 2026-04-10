@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
@@ -47,8 +48,10 @@ func NewClient(explicitHost string) (*Client, error) {
 
 	c := &Client{cli: cli}
 
-	// Detect runtime
-	info, err := cli.Info(context.Background())
+	// Detect runtime (P19: timeout so startup doesn't block indefinitely)
+	initCtx, initCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer initCancel()
+	info, err := cli.Info(initCtx)
 	if err == nil {
 		if strings.Contains(strings.ToLower(info.OperatingSystem), "podman") ||
 			strings.Contains(strings.ToLower(info.Name), "podman") {

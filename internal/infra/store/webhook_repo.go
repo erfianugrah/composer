@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/erfianugrah/composer/internal/infra/crypto"
 )
@@ -173,4 +174,15 @@ func (r *WebhookRepo) ListDeliveries(ctx context.Context, webhookID string, limi
 		deliveries = append(deliveries, d)
 	}
 	return deliveries, rows.Err()
+}
+
+// CleanupDeliveriesOlderThan removes webhook deliveries older than the given duration.
+func (r *WebhookRepo) CleanupDeliveriesOlderThan(ctx context.Context, maxAge time.Duration) (int, error) {
+	cutoff := time.Now().UTC().Add(-maxAge)
+	result, err := r.db.ExecContext(ctx, `DELETE FROM webhook_deliveries WHERE created_at < $1`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
 }
