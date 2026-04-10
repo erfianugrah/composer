@@ -52,8 +52,14 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
           containerId: data.container_id,
         };
         setLines((prev) => {
-          const next = [...prev, line];
-          return next.length > maxLines ? next.slice(-maxLines) : next;
+          // P21: avoid full array copy when under the limit
+          if (prev.length < maxLines) {
+            return [...prev, line];
+          }
+          // Over limit: drop oldest, append new
+          const next = prev.slice(-(maxLines - 1));
+          next.push(line);
+          return next;
         });
       } catch {
         // Skip malformed events

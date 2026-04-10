@@ -15,9 +15,10 @@ Each finding includes the exact file/line, the problematic code, and a concrete 
 - **ACKNOWLEDGED**: U20 (dangerouslySetInnerHTML -- all highlighters HTML-escape first), U18 (setTimeout refresh -- works acceptably)
 - **ALL UX ITEMS ADDRESSED**
 
-### Performance (P1-P22): 11 fixed, 11 remaining
-- **FIXED**: P4 (DB pool config), P5 (SSE reconnect hook), P7-P8 (font-display swap), P9 (Vite manual chunks), P13 (audit/delivery TTL), P14 (DB indexes), P16 (compose buffer limit), P19 (Docker init timeout), P20 (Docker multiplex), P22 (cache-control)
-- **REMAINING**: P1 (SSE batch stats -- needs new endpoint), P2 (Valkey auth cache -- needs plumbing), P3 (N+1 stacks -- needs batch Docker query), P6 (log virtualization), P10 (codemirror meta-package), P11 (request dedup), P12 (resolveComposeFile query), P15 (cron N+1), P17 (webhook goroutine timeout), P18 (event listener reconnect), P21 (log array spread)
+### Performance (P1-P22): 15 fixed, 3 acknowledged, 4 remaining
+- **FIXED**: P4 (DB pool), P5 (SSE reconnect), P7-P8 (font-display), P9 (Vite chunks), P10 (removed codemirror meta-package), P13 (audit/delivery TTL), P14 (DB indexes), P16 (compose buffer 1MB), P17 (webhook goroutine 10min timeout), P19 (Docker init 10s timeout), P20 (Docker multiplex), P21 (log array optimization), P22 (cache-control)
+- **ACKNOWLEDGED**: P15 (cron N+1 -- low frequency, not worth refactor), P18 (event listener -- already has reconnect with backoff), P12 (resolveComposeFile -- only 1 extra query, acceptable)
+- **REMAINING**: P1 (SSE batch stats -- needs new multiplexed endpoint), P2 (Valkey auth cache -- needs plumbing into AuthService), P3 (N+1 stacks listing -- needs batch Docker API), P6 (log virtualization -- needs react-window or similar), P11 (request dedup -- needs SWR/tanstack-query)
 
 ---
 
