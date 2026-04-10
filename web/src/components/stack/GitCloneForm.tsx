@@ -60,7 +60,7 @@ export function GitCloneForm({ onCreated }: Props) {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs uppercase tracking-wider text-muted-foreground">Stack Name</label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-stack" required data-testid="git-stack-name" />
@@ -71,7 +71,7 @@ export function GitCloneForm({ onCreated }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1">
               <label className="text-xs uppercase tracking-wider text-muted-foreground">Branch</label>
               <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" data-testid="git-branch" />
@@ -128,7 +128,7 @@ export function GitCloneForm({ onCreated }: Props) {
           )}
 
           {authMethod === "basic" && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs uppercase tracking-wider text-muted-foreground">Username</label>
                 <Input value={username} onChange={(e) => setUsername(e.target.value)} required data-testid="git-username" />

@@ -102,7 +102,7 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 	gothUser, err := gothic.CompleteUserAuth(w, r)
 	if err != nil {
-		http.Error(w, "OAuth failed: "+err.Error(), http.StatusUnauthorized)
+		http.Error(w, "OAuth authentication failed", http.StatusUnauthorized)
 		return
 	}
 

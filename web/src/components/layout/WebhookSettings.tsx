@@ -103,7 +103,7 @@ export function WebhookSettings() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs uppercase tracking-wider text-muted-foreground">Stack Name</label>
                 <Input
@@ -156,7 +156,7 @@ export function WebhookSettings() {
           {newWebhook && (
             <div className="mt-4 rounded-lg border border-cp-green/30 bg-cp-green/5 p-4 space-y-2" data-testid="webhook-created">
               <p className="text-sm font-medium text-cp-green">Webhook created! Save the secret -- it won't be shown again.</p>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                 <div>
                   <span className="text-muted-foreground">Webhook URL</span>
                   <p className="font-data break-all">{window.location.origin}{newWebhook.url}</p>

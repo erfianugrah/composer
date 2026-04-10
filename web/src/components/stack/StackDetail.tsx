@@ -169,7 +169,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
             }} data-testid="btn-attach-git">Attach Git</Button>
           )}
         </div>
-        <div className="flex gap-2" data-testid="stack-actions">
+        <div className="flex flex-wrap gap-2" data-testid="stack-actions">
           <Button size="sm" onClick={() => doAction("up")} disabled={!!actionLoading} data-testid="btn-deploy">
             {actionLoading === "up" ? "Deploying..." : "Deploy"}
           </Button>
@@ -300,8 +300,12 @@ export function StackDetail({ stackName }: { stackName: string }) {
               <CardTitle className="text-sm">compose.yaml</CardTitle>
               <Button size="xs" variant="outline" onClick={async () => {
                 const { data, error } = await apiFetch<{ stdout: string; stderr: string }>(`/api/v1/stacks/${stackName}/validate`, { method: "POST" });
-                if (error) setActionError(`Validation failed: ${error}`);
-                else setActionError(""); alert(data?.stderr || data?.stdout || "Valid");
+                if (error) {
+                  setActionError(`Validation failed: ${error}`);
+                } else {
+                  setActionError("");
+                  setActionOutput(data?.stderr || data?.stdout || "Valid");
+                }
               }} data-testid="btn-validate">
                 Validate
               </Button>

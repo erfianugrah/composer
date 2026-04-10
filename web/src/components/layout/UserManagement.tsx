@@ -78,7 +78,7 @@ export function UserManagement() {
       <CardContent className="space-y-4">
         {/* Create user form */}
         <form onSubmit={handleCreate} className="space-y-3">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <Input
               value={email} onChange={(e) => setEmail(e.target.value)}
               placeholder="email@example.com" type="email" required

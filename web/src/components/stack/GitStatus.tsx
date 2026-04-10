@@ -90,7 +90,7 @@ export function GitStatus({ stackName }: { stackName: string }) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
               <span className="text-muted-foreground">Repository</span>
               <p className="font-data truncate" title={status.repo_url}>{status.repo_url}</p>

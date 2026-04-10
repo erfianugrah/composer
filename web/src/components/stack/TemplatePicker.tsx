@@ -55,7 +55,7 @@ export function TemplatePicker({ onSelect }: Props) {
           {categories.map((cat) => (
             <div key={cat}>
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-1">{cat}</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {templates.filter((t) => t.category === cat).map((t) => (
                   <button
                     key={t.id}

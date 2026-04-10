@@ -98,8 +98,9 @@ export function ContainerListPage() {
                       <code className="text-[10px] text-muted-foreground font-data">{c.id.slice(0, 12)}</code>
                       {c.status !== "running" && (
                         <Button size="xs" variant="outline" onClick={async () => {
-                          await apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" });
-                          setTimeout(fetchContainers, 1000);
+                          const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" });
+                          if (e) setError(`Start failed: ${e}`);
+                          else setTimeout(fetchContainers, 1000);
                         }}>Start</Button>
                       )}
                       {c.status === "running" && (
@@ -108,12 +109,14 @@ export function ContainerListPage() {
                             {viewLogs === c.id ? "Hide" : "Logs"}
                           </Button>
                           <Button size="xs" variant="outline" onClick={async () => {
-                            await apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" });
-                            setTimeout(fetchContainers, 1000);
+                            const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" });
+                            if (e) setError(`Restart failed: ${e}`);
+                            else setTimeout(fetchContainers, 1000);
                           }}>Restart</Button>
                           <Button size="xs" variant="destructive" onClick={async () => {
-                            await apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" });
-                            setTimeout(fetchContainers, 1000);
+                            const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" });
+                            if (e) setError(`Stop failed: ${e}`);
+                            else setTimeout(fetchContainers, 1000);
                           }}>Stop</Button>
                         </>
                       )}

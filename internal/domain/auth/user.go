@@ -127,8 +127,7 @@ func generateID() string {
 	var buf [16]byte
 	binary.BigEndian.PutUint64(buf[:8], uint64(time.Now().UnixNano()))
 	if _, err := rand.Read(buf[8:]); err != nil {
-		// Fallback: use more timestamp bits rather than zero bytes
-		binary.BigEndian.PutUint64(buf[8:], uint64(time.Now().UnixNano()^0x5DEECE66D))
+		panic("crypto/rand.Read failed: " + err.Error())
 	}
 	return fmt.Sprintf("%x", buf)
 }

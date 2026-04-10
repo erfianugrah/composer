@@ -81,7 +81,7 @@ export function StackCredentials({ stackName }: { stackName: string }) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-4 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
             <div>
               <span className="text-muted-foreground">SSH</span>
               <p className={`font-data ${srcColor(creds.resolved.ssh_source)}`}>{creds.resolved.ssh_source}</p>
@@ -116,7 +116,7 @@ export function StackCredentials({ stackName }: { stackName: string }) {
         </CardHeader>
         <CardContent>
           {!editing ? (
-            <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
               <div><span className="text-muted-foreground">Token</span><p className="font-data">{creds.per_stack.token_set ? creds.per_stack.token_preview || "set" : "not set"}</p></div>
               <div><span className="text-muted-foreground">SSH Key (inline)</span><p className="font-data">{creds.per_stack.ssh_key_set ? "set" : "not set"}</p></div>
               <div><span className="text-muted-foreground">SSH Key File</span><p className="font-data">{creds.per_stack.ssh_key_file || "not set"}</p></div>

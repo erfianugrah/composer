@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,14 +64,19 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Accept WebSocket -- validate origin against the request host
+	// Accept WebSocket (S25: use configured origins or fall back to request host)
+	origins := []string{r.Host}
+	if allowed := os.Getenv("COMPOSER_ALLOWED_ORIGINS"); allowed != "" {
+		origins = strings.Split(allowed, ",")
+	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{r.Host},
+		OriginPatterns: origins,
 	})
 	if err != nil {
 		return // Accept already wrote the error response
 	}
 	defer conn.CloseNow()
+	conn.SetReadLimit(64 * 1024) // S26: 64KB max message size
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()

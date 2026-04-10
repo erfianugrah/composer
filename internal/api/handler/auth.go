@@ -84,9 +84,9 @@ func (h *AuthHandler) Bootstrap(ctx context.Context, input *dto.BootstrapInput) 
 }
 
 func (h *AuthHandler) Login(ctx context.Context, input *dto.LoginInput) (*dto.LoginOutput, error) {
-	// Rate limit login by email (prevents brute-force per account)
+	// Rate limit login by email (S20: prevents brute-force per account without enabling lockout DoS)
 	if !h.loginLimiter.Allow(input.Body.Email) {
-		return nil, huma.Error429TooManyRequests("too many login attempts, try again later")
+		return nil, huma.Error429TooManyRequests("too many login attempts for this account, try again later")
 	}
 
 	session, err := h.auth.Login(ctx, input.Body.Email, input.Body.Password, defaultSessionTTL)

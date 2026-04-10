@@ -54,7 +54,7 @@ export function CommandPalette() {
         className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-lg hover:bg-accent transition-colors"
         data-testid="cmd-k-trigger"
       >
-        <kbd className="rounded border border-border bg-cp-950 px-1.5 py-0.5 font-data text-[10px]">⌘K</kbd>
+        <kbd className="rounded border border-border bg-cp-950 px-1.5 py-0.5 font-data text-[10px]">{typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"}</kbd>
         <span>Command palette</span>
       </button>
     );

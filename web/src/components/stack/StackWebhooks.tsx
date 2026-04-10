@@ -62,7 +62,7 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
         <CardHeader><CardTitle className="text-sm">Create Webhook</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="space-y-3">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs uppercase tracking-wider text-muted-foreground">Provider</label>
                 <select value={provider} onChange={(e) => setProvider(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">

@@ -256,7 +256,7 @@ export function SystemConfig() {
         </CardHeader>
         <CardContent className="space-y-3">
           {config.age_key_loaded && (
-            <div className="grid grid-cols-2 gap-4 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
               <div>
                 <span className="text-muted-foreground">Source</span>
                 <p className="font-data">{config.age_key_source}</p>

@@ -65,10 +65,9 @@ export function PipelinePage() {
 
   async function handleRun(pipelineId: string) {
     setRunning(pipelineId);
-    await apiFetch(`/api/v1/pipelines/${pipelineId}/run`, { method: "POST" });
-    setTimeout(() => {
-      if (selectedPipeline === pipelineId) fetchRuns(pipelineId);
-    }, 1000);
+    const { error: err } = await apiFetch(`/api/v1/pipelines/${pipelineId}/run`, { method: "POST" });
+    if (err) setError(`Run failed: ${err}`);
+    else setTimeout(() => { if (selectedPipeline === pipelineId) fetchRuns(pipelineId); }, 1000);
     setRunning("");
   }
 
@@ -105,7 +104,8 @@ export function PipelinePage() {
 
   async function handleDelete(pipelineId: string) {
     if (!confirm("Delete this pipeline?")) return;
-    await apiFetch(`/api/v1/pipelines/${pipelineId}`, { method: "DELETE" });
+    const { error: err } = await apiFetch(`/api/v1/pipelines/${pipelineId}`, { method: "DELETE" });
+    if (err) { setError(`Delete failed: ${err}`); return; }
     if (selectedPipeline === pipelineId) setSelectedPipeline(null);
     fetchPipelines();
   }
@@ -134,7 +134,7 @@ export function PipelinePage() {
           <CardHeader><CardTitle className="text-sm">Create Pipeline</CardTitle></CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Pipeline name" required data-testid="pipeline-name" />
                 <Input value={createDesc} onChange={(e) => setCreateDesc(e.target.value)} placeholder="Description (optional)" data-testid="pipeline-desc" />
               </div>
