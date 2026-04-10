@@ -87,13 +87,13 @@ func NewServer(deps Deps) *Server {
 	}, func(ctx context.Context, input *struct{}) (*struct {
 		Body struct {
 			Status  string `json:"status" example:"healthy"`
-			Version string `json:"version" example:"0.6.3"`
+			Version string `json:"version" example:"0.6.4"`
 		}
 	}, error) {
 		resp := &struct {
 			Body struct {
 				Status  string `json:"status" example:"healthy"`
-				Version string `json:"version" example:"0.6.3"`
+				Version string `json:"version" example:"0.6.4"`
 			}
 		}{}
 		resp.Body.Status = "healthy"
