@@ -28,7 +28,7 @@ func TestNewStack_NameEdgeCases(t *testing.T) {
 		{"quotes", "web\"app", true},
 		{"angle brackets", "web<app>", true},
 		{"pipe", "web|app", true},
-		{"very long (512 chars)", strings.Repeat("a", 512), false}, // long but valid
+		{"very long (512 chars)", strings.Repeat("a", 512), true}, // rejected: max 128 chars
 		{"single char", "x", false},
 	}
 	for _, tt := range tests {
