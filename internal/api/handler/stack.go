@@ -173,6 +173,22 @@ func (h *StackHandler) Register(api huma.API) {
 	}, h.UpdateEnv)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "getStackCredentials",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/stacks/{name}/credentials",
+		Summary:     "Get resolved credential chain for a stack",
+		Tags:        []string{"stacks"},
+	}, h.GetCredentials)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "updateStackCredentials",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/stacks/{name}/credentials",
+		Summary:     "Update per-stack credential overrides",
+		Tags:        []string{"stacks"},
+	}, h.UpdateCredentials)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "importStacks",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/import",
@@ -691,6 +707,60 @@ func (h *StackHandler) UpdateEnv(ctx context.Context, input *dto.UpdateEnvInput)
 		if err := os.WriteFile(envPath, []byte(input.Body.Env), 0600); err != nil {
 			return nil, serverError(err)
 		}
+	}
+	return nil, nil
+}
+
+func (h *StackHandler) GetCredentials(ctx context.Context, input *dto.GetStackInput) (*dto.StackCredentialsOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	creds, authMethod, resolved, err := h.stacks.ResolveCredentials(ctx, input.Name)
+	if err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		return nil, serverError(err)
+	}
+
+	out := &dto.StackCredentialsOutput{}
+	out.Body.AuthMethod = authMethod
+	out.Body.Resolved.SSHSource = resolved.SSHSource
+	out.Body.Resolved.TokenSource = resolved.TokenSource
+	out.Body.Resolved.AgeSource = resolved.AgeSource
+
+	if creds != nil {
+		out.Body.PerStack.TokenSet = creds.Token != ""
+		if creds.Token != "" && len(creds.Token) > 8 {
+			out.Body.PerStack.TokenPreview = creds.Token[:8] + "..."
+		}
+		out.Body.PerStack.SSHKeySet = creds.SSHKey != ""
+		out.Body.PerStack.SSHKeyFile = creds.SSHKeyFile
+		out.Body.PerStack.AgeKeySet = creds.AgeKey != ""
+		out.Body.PerStack.UsernameSet = creds.Username != ""
+	}
+
+	return out, nil
+}
+
+func (h *StackHandler) UpdateCredentials(ctx context.Context, input *dto.UpdateStackCredentialsInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	if err := h.stacks.UpdateCredentials(ctx, input.Name, &stack.GitCredentials{
+		Token:      input.Body.Token,
+		SSHKey:     input.Body.SSHKey,
+		SSHKeyFile: input.Body.SSHKeyFile,
+		AgeKey:     input.Body.AgeKey,
+		Username:   input.Body.Username,
+		Password:   input.Body.Password,
+	}); err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		return nil, serverError(err)
 	}
 	return nil, nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -612,6 +613,111 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(destPath, data, info.Mode())
 	})
+}
+
+// ResolvedCreds describes where each credential type comes from.
+type ResolvedCreds struct {
+	SSHSource   string // "per-stack: inline PEM", "per-stack: /path/to/key", "global: /home/composer/.ssh/id_x", "none"
+	TokenSource string // "per-stack", "global", "none"
+	AgeSource   string // "per-stack", "global: SOPS_AGE_KEYS env", "global: data dir", "none"
+}
+
+// ResolveCredentials returns the per-stack credentials and the resolved fallback chain.
+func (s *StackService) ResolveCredentials(ctx context.Context, name string) (*stack.GitCredentials, string, ResolvedCreds, error) {
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil || st == nil {
+		return nil, "", ResolvedCreds{}, ErrNotFound
+	}
+
+	var creds *stack.GitCredentials
+	authMethod := "none"
+	cfg, err := s.gitCfgs.GetByStackName(ctx, name)
+	if err == nil && cfg != nil {
+		creds = cfg.Credentials
+		authMethod = string(cfg.AuthMethod)
+	}
+
+	resolved := ResolvedCreds{SSHSource: "none", TokenSource: "none", AgeSource: "none"}
+
+	// SSH resolution
+	if creds != nil && creds.SSHKeyFile != "" {
+		resolved.SSHSource = "per-stack: " + creds.SSHKeyFile
+	} else if creds != nil && creds.SSHKey != "" {
+		resolved.SSHSource = "per-stack: inline PEM"
+	} else {
+		// Scan global SSH keys
+		for _, dir := range []string{"/home/composer/.ssh"} {
+			entries, _ := os.ReadDir(dir)
+			for _, e := range entries {
+				n := e.Name()
+				if e.IsDir() || n == "known_hosts" || n == "config" || n == "authorized_keys" || strings.HasSuffix(n, ".pub") {
+					continue
+				}
+				resolved.SSHSource = "global: " + filepath.Join(dir, n)
+				break // first key found
+			}
+			if resolved.SSHSource != "none" {
+				break
+			}
+		}
+	}
+
+	// Token resolution
+	if creds != nil && creds.Token != "" {
+		resolved.TokenSource = "per-stack"
+	} else {
+		tokenPath := filepath.Join(s.dataDir, "git-token")
+		if data, err := os.ReadFile(tokenPath); err == nil && len(data) > 0 {
+			resolved.TokenSource = "global: data dir"
+		}
+	}
+
+	// Age key resolution
+	if creds != nil && creds.AgeKey != "" {
+		resolved.AgeSource = "per-stack"
+	} else {
+		ageKey := sops.LoadGlobalAgeKey(s.dataDir)
+		if ageKey != "" {
+			// Detect source
+			src := "global"
+			if os.Getenv("COMPOSER_SOPS_AGE_KEY") != "" {
+				src = "global: COMPOSER_SOPS_AGE_KEY env"
+			} else if os.Getenv("SOPS_AGE_KEY") != "" {
+				src = "global: SOPS_AGE_KEY env"
+			} else if os.Getenv("SOPS_AGE_KEYS") != "" {
+				src = "global: SOPS_AGE_KEYS env"
+			} else {
+				src = "global: data dir"
+			}
+			resolved.AgeSource = src
+		}
+	}
+
+	return creds, authMethod, resolved, nil
+}
+
+// UpdateCredentials updates the per-stack credential overrides in the git config.
+func (s *StackService) UpdateCredentials(ctx context.Context, name string, creds *stack.GitCredentials) error {
+	cfg, err := s.gitCfgs.GetByStackName(ctx, name)
+	if err != nil || cfg == nil {
+		return ErrNotFound
+	}
+	cfg.Credentials = creds
+
+	// Update auth method based on what's set
+	if creds.Token != "" {
+		cfg.AuthMethod = stack.GitAuthToken
+	} else if creds.SSHKeyFile != "" {
+		cfg.AuthMethod = stack.GitAuthSSHFile
+	} else if creds.SSHKey != "" {
+		cfg.AuthMethod = stack.GitAuthSSH
+	} else if creds.Username != "" {
+		cfg.AuthMethod = stack.GitAuthBasic
+	} else {
+		cfg.AuthMethod = stack.GitAuthNone
+	}
+
+	return s.gitCfgs.Upsert(ctx, name, cfg)
 }
 
 // resolveComposeFile returns the compose file name for a stack.

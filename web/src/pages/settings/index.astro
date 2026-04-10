@@ -1,20 +1,20 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+import { SystemConfig } from "@/components/layout/SystemConfig";
+import { CredentialsOverview } from "@/components/layout/CredentialsOverview";
 import { UserManagement } from "@/components/layout/UserManagement";
 import { ApiKeyManagement } from "@/components/layout/ApiKeyManagement";
-import { WebhookSettings } from "@/components/layout/WebhookSettings";
 import { ImportStacks } from "@/components/stack/ImportStacks";
 import { AuditLog } from "@/components/layout/AuditLog";
-import { SystemConfig } from "@/components/layout/SystemConfig";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 ---
 
 <Layout title="Settings" active="settings">
   <div class="space-y-6">
     <SystemConfig client:load />
+    <CredentialsOverview client:load />
     <UserManagement client:load />
     <ApiKeyManagement client:load />
-    <WebhookSettings client:load />
     <ImportStacks client:load />
     <AuditLog client:load />
 

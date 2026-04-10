@@ -13,6 +13,8 @@ const StackConsole = lazy(() => import("./StackConsole").then(m => ({ default: m
 const DiffViewer = lazy(() => import("./DiffViewer").then(m => ({ default: m.DiffViewer })));
 import { GitStatus } from "./GitStatus";
 import { EnvEditor } from "./EnvEditor";
+import { StackWebhooks } from "./StackWebhooks";
+import { StackCredentials } from "./StackCredentials";
 import { highlightDockerfile } from "@/lib/dockerfile-highlight";
 
 interface StackFile {
@@ -66,7 +68,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [actionError, setActionError] = useState("");
   const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "git">("containers");
+  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "git">("containers");
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
 
   const fetchStack = async () => {
@@ -210,7 +212,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {(["containers", "compose", ...(stack.dockerfiles?.length ? ["dockerfiles" as const] : []), "env", "diff", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["git" as const] : [])] as const).map((tab) => (
+        {(["containers", "compose", ...(stack.dockerfiles?.length ? ["dockerfiles" as const] : []), "env", "diff", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["webhooks" as const, "credentials" as const, "git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -443,6 +445,14 @@ export function StackDetail({ stackName }: { stackName: string }) {
           </Card>
         );
       })()}
+
+      {activeTab === "webhooks" && stack.source === "git" && (
+        <StackWebhooks stackName={stackName} />
+      )}
+
+      {activeTab === "credentials" && stack.source === "git" && (
+        <StackCredentials stackName={stackName} />
+      )}
 
       {activeTab === "git" && stack.source === "git" && (
         <GitStatus stackName={stack.name} />

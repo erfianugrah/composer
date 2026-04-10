@@ -176,6 +176,39 @@ type ConvertToLocalInput struct {
 	Name string `path:"name" doc:"Stack name"`
 }
 
+// --- Credentials ---
+
+type StackCredentialsOutput struct {
+	Body struct {
+		AuthMethod string `json:"auth_method" doc:"none, token, ssh_key, ssh_file, basic"`
+		PerStack   struct {
+			TokenSet     bool   `json:"token_set"`
+			TokenPreview string `json:"token_preview,omitempty"`
+			SSHKeySet    bool   `json:"ssh_key_set" doc:"Inline PEM key in DB"`
+			SSHKeyFile   string `json:"ssh_key_file,omitempty" doc:"Per-stack key file path"`
+			AgeKeySet    bool   `json:"age_key_set"`
+			UsernameSet  bool   `json:"username_set"`
+		} `json:"per_stack"`
+		Resolved struct {
+			SSHSource   string `json:"ssh_source" doc:"Where SSH auth comes from (per-stack, global file, none)"`
+			TokenSource string `json:"token_source" doc:"Where token comes from (per-stack, global, none)"`
+			AgeSource   string `json:"age_source" doc:"Where age key comes from (per-stack, env, file, none)"`
+		} `json:"resolved"`
+	}
+}
+
+type UpdateStackCredentialsInput struct {
+	Name string `path:"name" doc:"Stack name"`
+	Body struct {
+		Token      string `json:"token,omitempty" doc:"Git access token (empty to remove)"`
+		SSHKey     string `json:"ssh_key,omitempty" doc:"PEM SSH key (empty to remove)"`
+		SSHKeyFile string `json:"ssh_key_file,omitempty" doc:"SSH key file path (empty to remove)"`
+		AgeKey     string `json:"age_key,omitempty" doc:"Age private key for SOPS (empty to remove)"`
+		Username   string `json:"username,omitempty" doc:"Basic auth username (empty to remove)"`
+		Password   string `json:"password,omitempty" doc:"Basic auth password (empty to remove)"`
+	}
+}
+
 type ComposeOpOutput struct {
 	Body struct {
 		Stdout string `json:"stdout"`

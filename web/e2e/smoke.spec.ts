@@ -173,39 +173,23 @@ test.describe("Settings Page", () => {
     await expect(page.locator("#settings-version")).toBeVisible();
   });
 
-  test("webhook configuration form is visible", async ({ page }) => {
+  test("global credentials section is visible", async ({ page }) => {
     await page.goto("/settings");
 
-    await expect(page.getByRole("heading", { name: "Create Webhook" })).toBeVisible();
-    await expect(page.getByTestId("webhook-stack-name")).toBeVisible();
-    await expect(page.getByTestId("webhook-provider")).toBeVisible();
-    await expect(page.getByTestId("webhook-branch")).toBeVisible();
-    await expect(page.getByTestId("webhook-create-btn")).toBeVisible();
+    // SystemConfig should show SSH Keys and SOPS sections
+    await expect(page.getByRole("heading", { name: "SSH Keys" })).toBeVisible();
   });
 
-  test("webhook provider dropdown has correct options", async ({ page }) => {
+  test("import stacks section is visible", async ({ page }) => {
     await page.goto("/settings");
 
-    const select = page.getByTestId("webhook-provider");
-    const options = await select.locator("option").allTextContents();
-    expect(options).toEqual(["GitHub", "GitLab", "Gitea", "Generic"]);
+    await expect(page.getByRole("heading", { name: "Import Stacks" })).toBeVisible();
   });
 
-  test("webhook create button disabled without stack name", async ({ page }) => {
+  test("API keys section is visible", async ({ page }) => {
     await page.goto("/settings");
 
-    const btn = page.getByTestId("webhook-create-btn");
-    await expect(btn).toBeDisabled();
-
-    // Fill in stack name -> button enabled
-    await page.getByTestId("webhook-stack-name").fill("test-stack");
-    await expect(btn).toBeEnabled();
-  });
-
-  test("active webhooks section shows", async ({ page }) => {
-    await page.goto("/settings");
-
-    await expect(page.locator("text=Active Webhooks")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "API Keys" })).toBeVisible();
   });
 });
 
