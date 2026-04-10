@@ -28,6 +28,7 @@ func TestTerminal_ExecEcho(t *testing.T) {
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:      "alpine:3.21",
 			Cmd:        []string{"sleep", "60"},
+			Labels:     map[string]string{"com.docker.compose.project": "test-terminal"},
 			WaitingFor: wait.ForLog("").WithStartupTimeout(10 * time.Second),
 		},
 		Started: true,
