@@ -10,7 +10,7 @@ Think Dockge's simplicity meets Portainer's power -- built from scratch with Go,
 - **Three creation modes** -- From template (10 presets), clone from Git repo, or paste raw YAML
 - **Build & Deploy** -- `docker compose up --build` for projects with Dockerfiles. Build images live
 - **Background jobs** -- Long-running compose operations run async (`?async=true`). Jobs drawer in UI with live status polling
-- **REST API first** -- 87 endpoints with auto-generated OpenAPI 3.1 spec. Every operation is scriptable
+- **REST API first** -- 99 endpoints with auto-generated OpenAPI 3.1 spec. Every operation is scriptable
 - **Stack console** -- Run `docker compose` commands per stack without SSH access. Usable by humans, scripts, and LLM agents
 - **Docker resource management** -- Networks, volumes, images: list, create, remove, prune from the web UI
 - **Dockge migration** -- Import stacks from external directories with one click
@@ -55,7 +55,7 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 |----------|-------------|
 | [Getting Started](docs/getting-started.md) | Installation, first run, bootstrap |
 | [Configuration](docs/configuration.md) | All environment variables, encryption, PUID/PGID |
-| [API Reference](docs/api-reference.md) | 87 REST endpoints, SSE streams, WebSocket |
+| [API Reference](docs/api-reference.md) | 99 REST endpoints, SSE streams, WebSocket |
 | [Deployment](docs/deployment.md) | Docker, Unraid, TrueNAS, bare metal, Podman |
 | [Security](docs/security.md) | Docker socket, RBAC, encryption, hardening |
 | [Architecture](docs/architecture.md) | DDD, tech stack, domain model |
@@ -72,14 +72,14 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 | SQLite + PostgreSQL (database/sql) | Shadcn/ui + Tailwind CSS 4 |
 | AES-256-GCM encryption | xterm.js (terminal) |
 | SOPS + age (encrypted secrets) | CodeMirror 6 (editor + autocomplete) |
-| go-git (GitOps) | Playwright (45 tests) |
+| go-git (GitOps) | Playwright (44 tests) |
 | Valkey (cache) | Lovelace theme |
 | zap (logging) | SSE + WebSocket streaming |
 | Docker SDK v28 | |
 
 ## Status
 
-87 API endpoints, 9 pages, 34 components, 45 Playwright tests, 181 Go test functions, 16.7k lines of Go.
+99 API endpoints, 9 pages, 39 components, 44 Playwright tests, 181 Go test functions, 18.2k lines of Go.
 
 ## License
 

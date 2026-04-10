@@ -72,7 +72,7 @@ composer/
 │   │   ├── notify/                # Webhook + Slack notifications
 │   │   └── fs/                    # Compose file I/O
 │   └── api/                       # HTTP layer
-│       ├── server.go              # Huma API, 14 handler groups, middleware
+│       ├── server.go              # Huma API, 17 handler groups, middleware
 │       ├── handler/               # Auth, User, Key, Stack, Container, Git,
 │       │                          # Pipeline, Webhook, Template, System, SSE,
 │       │                          # Jobs, Docker Resources, Docker Console, Audit

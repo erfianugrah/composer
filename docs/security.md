@@ -118,12 +118,14 @@ Admin > Operator > Viewer
 | Deploy/stop/restart/pull | Yes | Yes | No |
 | Terminal exec | Yes | Yes | No |
 | Stack console (compose commands) | Yes | Yes | No |
-| Create/run pipelines | Yes | No | No |
+| Create pipelines (shell steps) | Yes | No | No |
+| Run/update/delete pipelines | Yes | Yes | No |
 | Manage users | Yes | No | No |
 | Manage API keys | Yes | Yes (own) | No |
+| System config (SSH keys, tokens) | Yes | No | No |
 | View audit log | Yes | No | No |
 
-RBAC is enforced at the handler level via `middleware.CheckRole()`. Pipeline creation requires admin role because pipelines can execute shell commands on the host.
+RBAC is enforced at the handler level via `middleware.CheckRole()`. Pipeline creation requires admin role because pipelines can execute shell commands on the host. Pipeline updates with shell/docker steps also require admin.
 
 ## CSRF Protection
 

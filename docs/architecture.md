@@ -69,7 +69,7 @@ Implements domain interfaces with real technology:
 ### API (internal/api/)
 
 HTTP layer translating between the web and application services:
-- **server.go** -- Huma API setup, route registration, dependency wiring (14 handler groups)
+- **server.go** -- Huma API setup, route registration, dependency wiring (17 handler groups)
 - **handler/** -- Auth, User, Key, Stack, Container, Git, Pipeline, Webhook CRUD, Webhook receiver, SSE, Jobs, Docker Resources, Docker Console, Audit handlers
 - **middleware/** -- Auth (session+key), RBAC, security headers, rate limiting, audit logging
 - **middleware/** -- Session/API key auth, RBAC enforcement

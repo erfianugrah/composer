@@ -4,7 +4,7 @@ Composer exposes a REST API with auto-generated OpenAPI 3.1 spec.
 
 **Live spec:** `GET /openapi.json` or `GET /openapi.yaml`
 
-**Total endpoints:** 87
+**Total endpoints:** 99
 
 ## Authentication
 
@@ -59,7 +59,7 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `POST` | `/api/v1/keys` | Create key (plaintext shown once!) |
 | `DELETE` | `/api/v1/keys/{id}` | Revoke key |
 
-### Stacks (18 endpoints)
+### Stacks (20 endpoints)
 
 Compose operations (`up`, `build`, `down`, `restart`, `pull`) accept `?async=true` to run as a background job. When async, the response includes a `job_id` instead of stdout/stderr. Poll `GET /api/v1/jobs/{id}` for status.
 
@@ -83,6 +83,8 @@ Compose operations (`up`, `build`, `down`, `restart`, `pull`) accept `?async=tru
 | `POST` | `/api/v1/stacks/{name}/convert/git` | Operator+ | Convert local stack to git-backed |
 | `POST` | `/api/v1/stacks/{name}/convert/local` | Operator+ | Detach git, convert to local |
 | `GET` | `/api/v1/stacks/{name}/diff` | Viewer+ | Show pending compose changes |
+| `GET` | `/api/v1/stacks/{name}/credentials` | Operator+ | Get resolved credential chain (per-stack vs global) |
+| `PUT` | `/api/v1/stacks/{name}/credentials` | Operator+ | Update per-stack credential overrides |
 
 ### Containers (6 endpoints)
 
@@ -161,7 +163,7 @@ Supported providers: GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), 
 
 Jobs are created when compose operations run with `?async=true` or when webhooks trigger GitOps sync. Completed/failed jobs are automatically cleaned up after 1 hour.
 
-### Docker Resources (11 endpoints)
+### Docker Resources (14 endpoints)
 
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
@@ -176,14 +178,24 @@ Jobs are created when compose operations run with `?async=true` or when webhooks
 | `POST` | `/api/v1/images/pull` | Operator+ | Pull image by reference |
 | `DELETE` | `/api/v1/images/{id}` | Operator+ | Remove image |
 | `POST` | `/api/v1/images/prune` | Admin | Prune unused images |
+| `GET` | `/api/v1/networks/{id}` | Viewer+ | Inspect network (full JSON) |
+| `GET` | `/api/v1/volumes/{name}` | Viewer+ | Inspect volume (full JSON) |
+| `GET` | `/api/v1/docker/events` | Viewer+ | Recent Docker daemon events. `?since=5m` |
 
-### System (3 endpoints)
+### System (10 endpoints)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/api/v1/system/health` | None | Health check |
 | `GET` | `/api/v1/system/info` | Viewer+ | Docker engine info (version, containers, images) |
 | `GET` | `/api/v1/system/version` | Viewer+ | Composer version, Go version, uptime |
+| `GET` | `/api/v1/system/config` | Admin | Global config status (SSH keys, SOPS, encryption) |
+| `PUT` | `/api/v1/system/config/age-key` | Admin | Set or update global age key for SOPS |
+| `POST` | `/api/v1/system/config/age-key/generate` | Admin | Generate new age key pair |
+| `GET` | `/api/v1/system/config/git-token` | Admin | Get global git token status |
+| `PUT` | `/api/v1/system/config/git-token` | Admin | Set or remove global git access token |
+| `POST` | `/api/v1/system/config/ssh-keys` | Admin | Add SSH key by pasting content |
+| `DELETE` | `/api/v1/system/config/ssh-keys/{name}` | Admin | Delete an SSH key file |
 
 ### SSE Streams (5 endpoints, viewer+)
 
