@@ -3,6 +3,21 @@
 Comprehensive code review of the Composer codebase covering security, UX, and performance.
 Each finding includes the exact file/line, the problematic code, and a concrete fix.
 
+## Status Summary (as of v0.6.2)
+
+### Security (S1-S32): 22 fixed, 10 remaining
+- **FIXED**: S1, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S17, S18, S21, S22, S25, S26, S30, S31, S32
+- **ACKNOWLEDGED (won't fix)**: S16 (error messages -- intentional design decision per user), S29 (HSTS -- fixed)
+- **REMAINING**: S2 (SSH host key verification -- needs known_hosts shipping), S19 (CSP nonces -- needs Astro integration), S20 (rate limiter composite key -- medium refactor), S23 (SOPS crash cleanup -- defer in place), S24 (API key cache invalidation -- needs Valkey plumbing), S27 (per-user WS/SSE connection limit -- medium refactor), S28 (audit context -- theoretical, current code is safe)
+
+### UX (U1-U27): 13 fixed, 14 remaining
+- **FIXED**: U1, U2, U3, U4, U5, U6, U7, U15, U16, U19, U22, U23, U25
+- **REMAINING**: U8 (ComposeEditor recreate -- medium refactor), U9 (bootstrap confirm -- ~15 lines), U10-U14 (ARIA roles/labels/focus traps -- systematic refactor), U17 (window.prompt -- needs modal component), U18 (setTimeout refresh -- needs event-driven refetch), U20 (dangerouslySetInnerHTML audit -- highlighters are safe), U21 (dashboard auto-refresh), U24 (git URL validation), U26 (console history persistence), U27 (dark select dropdowns)
+
+### Performance (P1-P22): 2 fixed, 20 remaining
+- **FIXED**: P20 (Docker multiplex parsing), P22 (cache-control headers)
+- **REMAINING**: P1 (SSE batch stats -- needs new endpoint), P2 (Valkey auth cache -- needs plumbing), P3 (N+1 stacks -- needs batch Docker query), P4-P19 (various -- see details below), P21 (log array spread)
+
 ---
 
 ## Table of Contents

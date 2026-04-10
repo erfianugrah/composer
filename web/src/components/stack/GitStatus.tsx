@@ -38,14 +38,16 @@ export function GitStatus({ stackName }: { stackName: string }) {
   const [error, setError] = useState("");
 
   function fetchStatus() {
-    apiFetch<GitStatusData>(`/api/v1/stacks/${stackName}/git/status`).then(({ data }) => {
+    apiFetch<GitStatusData>(`/api/v1/stacks/${stackName}/git/status`).then(({ data, error: err }) => {
       if (data) setStatus(data);
+      if (err) setError(err);
     });
   }
 
   function fetchLog() {
-    apiFetch<{ commits: GitCommit[] }>(`/api/v1/stacks/${stackName}/git/log?limit=10`).then(({ data }) => {
+    apiFetch<{ commits: GitCommit[] }>(`/api/v1/stacks/${stackName}/git/log?limit=10`).then(({ data, error: err }) => {
       if (data) setCommits(data.commits || []);
+      if (err) setError(err);
     });
   }
 

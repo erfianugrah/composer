@@ -127,11 +127,13 @@ export function Terminal({ containerId, shell = "/bin/sh" }: TerminalProps) {
   useEffect(() => {
     connect();
 
-    // Handle window resize
-    const handleResize = () => fitRef.current?.fit();
+    // Handle window resize (debounced to avoid jank)
+    let resizeTimer: ReturnType<typeof setTimeout>;
+    const handleResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => fitRef.current?.fit(), 100); };
     window.addEventListener("resize", handleResize);
 
     return () => {
+      clearTimeout(resizeTimer);
       window.removeEventListener("resize", handleResize);
       wsRef.current?.close();
       xtermRef.current?.dispose();

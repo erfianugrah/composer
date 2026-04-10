@@ -42,7 +42,7 @@ export function RawComposeForm({ onCreated }: Props) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <label className="text-xs uppercase tracking-wider text-muted-foreground">Stack Name</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-stack" required data-testid="raw-stack-name" />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-stack" required pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" title="Letters, numbers, dots, hyphens, underscores. Must start with alphanumeric." data-testid="raw-stack-name" />
           </div>
           <div className="space-y-1">
             <label className="text-xs uppercase tracking-wider text-muted-foreground">compose.yaml</label>

@@ -63,7 +63,7 @@ export function GitCloneForm({ onCreated }: Props) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs uppercase tracking-wider text-muted-foreground">Stack Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-stack" required data-testid="git-stack-name" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-stack" required pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" title="Letters, numbers, dots, hyphens, underscores. Must start with alphanumeric." data-testid="git-stack-name" />
             </div>
             <div className="space-y-1">
               <label className="text-xs uppercase tracking-wider text-muted-foreground">Repository URL</label>

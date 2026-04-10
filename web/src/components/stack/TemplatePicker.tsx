@@ -23,8 +23,9 @@ export function TemplatePicker({ onSelect }: Props) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    apiFetch<{ templates: Template[] }>("/api/v1/templates").then(({ data }) => {
+    apiFetch<{ templates: Template[] }>("/api/v1/templates").then(({ data, error }) => {
       if (data) setTemplates(data.templates || []);
+      if (error) console.error("Failed to load templates:", error);
     });
   }, []);
 
@@ -48,6 +49,7 @@ export function TemplatePicker({ onSelect }: Props) {
         <Input
           value={stackName} onChange={(e) => setStackName(e.target.value)}
           placeholder="Stack name (e.g. my-nginx)" required
+          pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" title="Letters, numbers, dots, hyphens, underscores. Must start with alphanumeric."
           data-testid="template-stack-name"
         />
 

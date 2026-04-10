@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api/errors";
@@ -17,6 +17,13 @@ export function EnvEditor({ stackName, initialContent, sopsEncrypted }: Props) {
   const [saved, setSaved] = useState(false);
   const [decrypted, setDecrypted] = useState(false);
   const [decrypting, setDecrypting] = useState(false);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
 
   async function handleSave() {
     setSaving(true);

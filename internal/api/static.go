@@ -53,9 +53,13 @@ func RegisterStaticFiles(router chi.Router, distFS embed.FS) {
 
 			setContentType(w, candidate)
 
-			// Cache static assets with content hashes aggressively
+			// Cache headers: hashed assets immutable, other static 1h, HTML no-cache
 			if strings.HasPrefix(candidate, "_astro/") {
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else if !strings.HasSuffix(candidate, ".html") {
+				w.Header().Set("Cache-Control", "public, max-age=3600")
+			} else {
+				w.Header().Set("Cache-Control", "no-cache")
 			}
 
 			w.WriteHeader(http.StatusOK)
