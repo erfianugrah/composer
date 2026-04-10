@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api/errors";
 export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"loading" | "login" | "bootstrap">("loading");
@@ -70,6 +71,10 @@ export function LoginPage() {
 
   async function handleBootstrap(e: React.FormEvent) {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
     setError("");
     setLoading(true);
 
@@ -196,10 +201,25 @@ export function LoginPage() {
               data-testid="login-password"
             />
           </div>
+          {isBootstrap && (
+            <div className="space-y-2">
+              <label htmlFor="confirm-password" className="text-xs uppercase tracking-wider text-muted-foreground">
+                Confirm Password
+              </label>
+              <Input
+                id="confirm-password" type="password" value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat password" required minLength={8}
+              />
+              {password && confirmPassword && password !== confirmPassword && (
+                <p className="text-xs text-cp-red">Passwords do not match</p>
+              )}
+            </div>
+          )}
           {error && (
             <div className="text-sm text-cp-red" data-testid="login-error">{error}</div>
           )}
-          <Button type="submit" className="w-full" disabled={loading} data-testid="login-submit">
+          <Button type="submit" className="w-full" disabled={loading || (isBootstrap && password !== confirmPassword)} data-testid="login-submit">
             {loading
               ? (isBootstrap ? "Creating account..." : "Signing in...")
               : (isBootstrap ? "Create admin account" : "Sign in")}

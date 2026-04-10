@@ -61,7 +61,7 @@ export function CommandPalette() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]" data-testid="command-palette">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]" role="dialog" aria-modal="true" aria-label="Command palette" data-testid="command-palette">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/50" onClick={() => setOpen(false)} />
 

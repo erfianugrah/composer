@@ -67,7 +67,7 @@ export function GitCloneForm({ onCreated }: Props) {
             </div>
             <div className="space-y-1">
               <label className="text-xs uppercase tracking-wider text-muted-foreground">Repository URL</label>
-              <Input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/user/repo.git" required data-testid="git-repo-url" />
+              <Input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/user/repo.git" required pattern="(https?://|git@).+" title="Repository URL (https:// or git@)" data-testid="git-repo-url" />
             </div>
           </div>
 

@@ -123,3 +123,9 @@
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-cp-purple);
 }
+
+/* U27: Fix native select dropdowns on dark theme */
+select option {
+  background-color: var(--color-cp-900);
+  color: var(--color-foreground);
+}

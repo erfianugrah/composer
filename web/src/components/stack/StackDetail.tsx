@@ -211,12 +211,14 @@ export function StackDetail({ stackName }: { stackName: string }) {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
+      <div role="tablist" className="flex gap-1 border-b border-border overflow-x-auto">
         {(["containers", "compose", ...(stack.dockerfiles?.length ? ["dockerfiles" as const] : []), "env", "diff", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["webhooks" as const, "credentials" as const, "git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
+            role="tab"
+            aria-selected={activeTab === tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
               activeTab === tab
                 ? "border-cp-purple text-cp-purple"
                 : "border-transparent text-muted-foreground hover:text-foreground"

@@ -170,7 +170,7 @@ export function JobsDrawer() {
 
       {/* Drawer */}
       {open && (
-        <div className="fixed inset-0 z-50" data-testid="jobs-drawer">
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Background jobs" data-testid="jobs-drawer">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/40"

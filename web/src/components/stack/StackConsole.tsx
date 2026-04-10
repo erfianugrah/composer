@@ -18,10 +18,18 @@ export function StackConsole({ stackName }: Props) {
   const [command, setCommand] = useState("");
   const [history, setHistory] = useState<ConsoleEntry[]>([]);
   const [running, setRunning] = useState(false);
-  const [cmdHistory, setCmdHistory] = useState<string[]>([]);
+  const [cmdHistory, setCmdHistory] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(`console-history-${stackName}`) || "[]"); }
+    catch { return []; }
+  });
   const [historyIdx, setHistoryIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(`console-history-${stackName}`, JSON.stringify(cmdHistory.slice(-50))); }
+    catch { /* storage full */ }
+  }, [cmdHistory, stackName]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

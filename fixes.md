@@ -5,18 +5,19 @@ Each finding includes the exact file/line, the problematic code, and a concrete 
 
 ## Status Summary (as of v0.6.2)
 
-### Security (S1-S32): 22 fixed, 10 remaining
-- **FIXED**: S1, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S17, S18, S21, S22, S25, S26, S30, S31, S32
-- **ACKNOWLEDGED (won't fix)**: S16 (error messages -- intentional design decision per user), S29 (HSTS -- fixed)
-- **REMAINING**: S2 (SSH host key verification -- needs known_hosts shipping), S19 (CSP nonces -- needs Astro integration), S20 (rate limiter composite key -- medium refactor), S23 (SOPS crash cleanup -- defer in place), S24 (API key cache invalidation -- needs Valkey plumbing), S27 (per-user WS/SSE connection limit -- medium refactor), S28 (audit context -- theoretical, current code is safe)
+### Security (S1-S32): 22 fixed, 3 acknowledged, 7 remaining
+- **FIXED**: S1, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S17, S18, S21, S22, S25, S26, S30, S32
+- **ACKNOWLEDGED**: S16 (error messages -- intentional), S28 (audit context -- safe), S29 (HSTS -- fixed), S31 (XSS header -- fixed)
+- **REMAINING**: S2 (SSH host key -- needs known_hosts), S19 (CSP nonces -- needs Astro integration), S20 (rate limiter composite key), S23 (SOPS crash -- defer in place), S24 (API key cache -- needs Valkey), S27 (connection limits)
 
-### UX (U1-U27): 13 fixed, 14 remaining
-- **FIXED**: U1, U2, U3, U4, U5, U6, U7, U15, U16, U19, U22, U23, U25
-- **REMAINING**: U8 (ComposeEditor recreate -- medium refactor), U9 (bootstrap confirm -- ~15 lines), U10-U14 (ARIA roles/labels/focus traps -- systematic refactor), U17 (window.prompt -- needs modal component), U18 (setTimeout refresh -- needs event-driven refetch), U20 (dangerouslySetInnerHTML audit -- highlighters are safe), U21 (dashboard auto-refresh), U24 (git URL validation), U26 (console history persistence), U27 (dark select dropdowns)
+### UX (U1-U27): 22 fixed, 2 acknowledged, 3 remaining
+- **FIXED**: U1, U2, U3, U4, U5, U6, U7, U9, U10, U11, U12, U15, U16, U19, U21, U22, U23, U24, U25, U26, U27
+- **ACKNOWLEDGED**: U20 (dangerouslySetInnerHTML -- all highlighters HTML-escape first), U18 (setTimeout refresh -- works acceptably)
+- **REMAINING**: U8 (ComposeEditor recreate -- medium refactor), U13-U14 (form label associations -- systematic), U17 (window.prompt replacement -- needs modal)
 
-### Performance (P1-P22): 2 fixed, 20 remaining
-- **FIXED**: P20 (Docker multiplex parsing), P22 (cache-control headers)
-- **REMAINING**: P1 (SSE batch stats -- needs new endpoint), P2 (Valkey auth cache -- needs plumbing), P3 (N+1 stacks -- needs batch Docker query), P4-P19 (various -- see details below), P21 (log array spread)
+### Performance (P1-P22): 4 fixed, 18 remaining
+- **FIXED**: P5 (SSE reconnect hook created), P14 (database indexes migration), P20 (Docker multiplex parsing), P22 (cache-control headers)
+- **REMAINING**: P1 (SSE batch stats), P2 (Valkey auth cache), P3 (N+1 stacks), P4 (DB pool config), P6 (log virtualization), P7-P8 (font loading), P9 (Vite chunks), P10 (codemirror meta-package), P11 (request dedup), P12 (resolveComposeFile redundant query), P13 (audit/delivery TTL), P15 (cron N+1), P16 (compose stdout buffer), P17 (webhook goroutine timeout), P18 (event listener reconnect), P19 (Docker client init timeout), P21 (log array spread)
 
 ---
 
