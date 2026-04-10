@@ -61,9 +61,19 @@ export function Terminal({ containerId, shell = "/bin/sh" }: TerminalProps) {
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
     term.open(termRef.current);
-    fitAddon.fit();
-    // Re-fit after layout settles (Astro island hydration can shift things)
-    requestAnimationFrame(() => fitAddon.fit());
+
+    // Set padding on the .xterm element before fit() measures dimensions
+    const xtermEl = termRef.current.querySelector('.xterm') as HTMLElement;
+    if (xtermEl) {
+      xtermEl.style.padding = '12px';
+    }
+
+    // Double rAF ensures CSS is applied and layout is done before fit() measures
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        fitAddon.fit();
+      });
+    });
 
     xtermRef.current = term;
     fitRef.current = fitAddon;
@@ -150,7 +160,7 @@ export function Terminal({ containerId, shell = "/bin/sh" }: TerminalProps) {
       )}
       <div
         ref={termRef}
-        className="rounded-lg border border-border overflow-hidden [&_.xterm]:p-2 [&_.xterm-viewport]:!overflow-hidden"
+        className="rounded-lg border border-border overflow-hidden"
         style={{ height: "400px" }}
         data-testid="terminal-container"
       />

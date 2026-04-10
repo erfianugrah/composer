@@ -441,10 +441,22 @@ func (h *SystemHandler) UpdateGitToken(ctx context.Context, input *UpdateGitToke
 
 func listSSHKeys() []SSHKeyInfo {
 	var keys []SSHKeyInfo
+	seen := make(map[string]bool) // resolved path -> already listed
+
 	for _, dir := range []string{
 		filepath.Join(os.Getenv("HOME"), ".ssh"),
 		"/home/composer/.ssh",
 	} {
+		// Resolve symlinks and normalize to deduplicate when $HOME/.ssh == /home/composer/.ssh
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			resolved = dir
+		}
+		if seen[resolved] {
+			continue
+		}
+		seen[resolved] = true
+
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
@@ -454,7 +466,6 @@ func listSSHKeys() []SSHKeyInfo {
 				continue
 			}
 			name := e.Name()
-			// Skip non-key files
 			if name == "known_hosts" || name == "config" || name == "authorized_keys" ||
 				strings.HasSuffix(name, ".pub") {
 				continue

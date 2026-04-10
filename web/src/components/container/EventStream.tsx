@@ -122,8 +122,8 @@ export function EventStream() {
           <div className="p-3 space-y-1">
             {events.map((evt, i) => (
               <div key={i} className="flex items-start gap-2 py-0.5">
-                <span className="text-muted-foreground font-data select-none w-16 shrink-0 tabular-nums">
-                  {new Date(evt.ts).toLocaleTimeString()}
+                <span className="text-muted-foreground font-data select-none shrink-0 tabular-nums whitespace-nowrap">
+                  {new Date(evt.ts).toISOString().slice(11, 19)}
                 </span>
                 <Badge className={`shrink-0 ${getEventColor(evt.type)}`}>
                   {evt.type}

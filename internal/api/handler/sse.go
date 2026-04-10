@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"bufio"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -164,43 +166,52 @@ func (h *SSEHandler) StreamContainerLogs(ctx context.Context, input *ContainerLo
 	}
 	defer reader.Close()
 
-	buf := make([]byte, 8192)
+	// Docker multiplexed stream: 8-byte header per frame
+	// Byte 0: stream type (1=stdout, 2=stderr)
+	// Bytes 4-7: payload length (big-endian uint32)
+	br := bufio.NewReaderSize(reader, 32768)
+	header := make([]byte, 8)
 	for {
-		n, err := reader.Read(buf)
-		if n > 0 {
-			// Docker multiplexed stream: first 8 bytes are header
-			// For simplicity, strip header and send raw text
-			data := buf[:n]
-			stream := "stdout"
-
-			// Docker stream header: byte 0 = stream type (1=stdout, 2=stderr)
-			if len(data) > 8 {
-				if data[0] == 2 {
-					stream = "stderr"
-				}
-				data = data[8:]
-			}
-
-			lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-			for _, line := range lines {
-				if line == "" {
-					continue
-				}
-				if sendErr := send.Data(event.LogEntry{
-					ContainerID: input.ID,
-					Stream:      stream,
-					Message:     line,
-					Timestamp:   time.Now(),
-				}); sendErr != nil {
-					return
-				}
-			}
+		// Read 8-byte frame header
+		_, err := io.ReadFull(br, header)
+		if err != nil {
+			return // EOF, context cancelled, or read error
 		}
-		if err == io.EOF || err == context.Canceled {
-			return
+
+		stream := "stdout"
+		if header[0] == 2 {
+			stream = "stderr"
 		}
+
+		// Payload length from bytes 4-7 (big-endian)
+		payloadLen := binary.BigEndian.Uint32(header[4:8])
+		if payloadLen == 0 || payloadLen > 1<<20 { // sanity: skip empty or >1MB frames
+			continue
+		}
+
+		// Read exact payload
+		payload := make([]byte, payloadLen)
+		_, err = io.ReadFull(br, payload)
 		if err != nil {
 			return
+		}
+
+		// Sanitize non-UTF8 bytes (binary data, locale mismatches)
+		text := strings.ToValidUTF8(string(payload), "")
+		lines := strings.Split(strings.TrimRight(text, "\n\r"), "\n")
+		for _, line := range lines {
+			line = strings.TrimRight(line, "\r")
+			if line == "" {
+				continue
+			}
+			if sendErr := send.Data(event.LogEntry{
+				ContainerID: input.ID,
+				Stream:      stream,
+				Message:     line,
+				Timestamp:   time.Now(),
+			}); sendErr != nil {
+				return
+			}
 		}
 	}
 }
