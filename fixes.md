@@ -10,10 +10,10 @@ Each finding includes the exact file/line, the problematic code, and a concrete 
 - **ACKNOWLEDGED**: S16 (error messages -- intentional), S28 (audit context -- safe), S29 (HSTS -- fixed), S31 (XSS header -- fixed)
 - **REMAINING**: S2 (SSH host key -- needs known_hosts), S19 (CSP nonces -- needs Astro integration), S20 (rate limiter composite key), S23 (SOPS crash -- defer in place), S24 (API key cache -- needs Valkey), S27 (connection limits)
 
-### UX (U1-U27): 22 fixed, 3 acknowledged, 2 remaining
-- **FIXED**: U1, U2, U3, U4, U5, U6, U7, U9, U10, U11, U12, U13, U14, U15, U16, U19, U21, U22, U23, U24, U25, U26, U27
+### UX (U1-U27): 25 fixed, 2 acknowledged, 0 remaining
+- **FIXED**: U1, U2, U3, U4, U5, U6, U7, U8, U9, U10, U11, U12, U13, U14, U15, U16, U17, U19, U21, U22, U23, U24, U25, U26, U27
 - **ACKNOWLEDGED**: U20 (dangerouslySetInnerHTML -- all highlighters HTML-escape first), U18 (setTimeout refresh -- works acceptably)
-- **REMAINING**: U8 (ComposeEditor recreate -- medium refactor), U17 (window.prompt replacement -- needs modal)
+- **ALL UX ITEMS ADDRESSED**
 
 ### Performance (P1-P22): 11 fixed, 11 remaining
 - **FIXED**: P4 (DB pool config), P5 (SSE reconnect hook), P7-P8 (font-display swap), P9 (Vite manual chunks), P13 (audit/delivery TTL), P14 (DB indexes), P16 (compose buffer limit), P19 (Docker init timeout), P20 (Docker multiplex), P22 (cache-control)

@@ -68,6 +68,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [actionError, setActionError] = useState("");
   const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
+  const [attachGitUrl, setAttachGitUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "git">("containers");
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
 
@@ -154,19 +155,31 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 else fetchStack();
               }} data-testid="btn-detach-git">Detach Git</Button>
             </>
+          ) : attachGitUrl === null ? (
+            <Button size="xs" variant="ghost" className="text-xs" onClick={() => setAttachGitUrl("")} data-testid="btn-attach-git">Attach Git</Button>
           ) : (
-            <Button size="xs" variant="ghost" className="text-xs" onClick={() => {
-              const repoUrl = prompt("Git repository URL:");
-              if (!repoUrl) return;
-              apiFetch(`/api/v1/stacks/${stackName}/convert/git`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ repo_url: repoUrl.trim() }),
-              }).then(({ error }) => {
-                if (error) setActionError(error);
-                else fetchStack();
-              });
-            }} data-testid="btn-attach-git">Attach Git</Button>
+            <div className="flex items-center gap-1">
+              <input
+                type="url"
+                value={attachGitUrl}
+                onChange={(e) => setAttachGitUrl(e.target.value)}
+                placeholder="https://github.com/user/repo.git"
+                className="h-7 rounded border border-input bg-transparent px-2 text-xs font-data w-64"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === "Escape") setAttachGitUrl(null); }}
+              />
+              <Button size="xs" disabled={!attachGitUrl?.trim()} onClick={() => {
+                apiFetch(`/api/v1/stacks/${stackName}/convert/git`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ repo_url: attachGitUrl!.trim() }),
+                }).then(({ error }) => {
+                  if (error) setActionError(error);
+                  else { setAttachGitUrl(null); fetchStack(); }
+                });
+              }}>Go</Button>
+              <Button size="xs" variant="ghost" onClick={() => setAttachGitUrl(null)}>Cancel</Button>
+            </div>
           )}
         </div>
         <div className="flex flex-wrap gap-2" data-testid="stack-actions">

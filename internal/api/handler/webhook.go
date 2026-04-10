@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -107,7 +108,9 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 
 	stackName := webhook.StackName
 	go func() {
-		ctx := context.Background()
+		// P17: 10-minute timeout prevents goroutine from running forever
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
 		action, err := h.gitSvc.SyncAndRedeploy(ctx, stackName)
 		if err != nil {
 			h.webhookRepo.UpdateDeliveryStatus(ctx, dlvID, "failed", "", err.Error())

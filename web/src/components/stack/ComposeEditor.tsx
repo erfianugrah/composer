@@ -216,8 +216,22 @@ export function ComposeEditor({ content, stackName, readOnly = false, onSave }: 
 
     return () => {
       view.destroy();
+      viewRef.current = null;
     };
-  }, [content, readOnly]);
+  }, [stackName, readOnly]); // U8: only recreate on stack/readOnly change, not content
+
+  // Sync external content changes without destroying editor (preserves cursor, undo, scroll)
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const currentDoc = view.state.doc.toString();
+    if (content !== currentDoc) {
+      view.dispatch({
+        changes: { from: 0, to: currentDoc.length, insert: content },
+      });
+      setDirty(false);
+    }
+  }, [content]);
 
   async function handleSave() {
     if (!viewRef.current || !onSave) return;
