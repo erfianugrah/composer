@@ -49,6 +49,15 @@ func (s *AuthService) SetCache(c SessionCache) {
 	s.cache = c
 }
 
+// IsBootstrapNeeded returns true if no users exist in the database.
+func (s *AuthService) IsBootstrapNeeded(ctx context.Context) (bool, error) {
+	count, err := s.users.Count(ctx)
+	if err != nil {
+		return false, fmt.Errorf("counting users: %w", err)
+	}
+	return count == 0, nil
+}
+
 // Bootstrap creates the first admin user. Fails if any users already exist.
 // Uses a re-check after creation attempt to handle TOCTOU races:
 // two concurrent bootstrap calls both see count==0 but only one insert succeeds

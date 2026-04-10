@@ -236,7 +236,7 @@ test.describe("Login Page - Bootstrap Detection", () => {
       route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
     );
     await page.route("**/api/v1/auth/bootstrap", (route) =>
-      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"needed":false}' })
     );
 
     await page.goto("/login");
@@ -246,12 +246,12 @@ test.describe("Login Page - Bootstrap Detection", () => {
   });
 
   test("bootstrap mode hides OAuth buttons", async ({ page }) => {
-    // Mock: health OK, bootstrap probe returns 422 (validation error = bootstrap available)
+    // Mock: health OK, bootstrap GET returns needed=true
     await page.route("**/api/v1/system/health", (route) =>
       route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
     );
     await page.route("**/api/v1/auth/bootstrap", (route) =>
-      route.fulfill({ status: 422, contentType: "application/json", body: '{"detail":"email is required"}' })
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"needed":true}' })
     );
 
     await page.goto("/login");
@@ -268,7 +268,7 @@ test.describe("Login Page - Bootstrap Detection", () => {
       route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
     );
     await page.route("**/api/v1/auth/bootstrap", (route) =>
-      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"needed":false}' })
     );
 
     await page.goto("/login");
@@ -284,7 +284,7 @@ test.describe("Login Page - Bootstrap Detection", () => {
       route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
     );
     await page.route("**/api/v1/auth/bootstrap", (route) =>
-      route.fulfill({ status: 422, contentType: "application/json", body: '{"detail":"email is required"}' })
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"needed":true}' })
     );
 
     await page.goto("/login");
@@ -302,7 +302,7 @@ test.describe("Login Page - Error Handling", () => {
       route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
     );
     await page.route("**/api/v1/auth/bootstrap", (route) =>
-      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"needed":false}' })
     );
     // Login returns 403 (WAF block with HTML body)
     await page.route("**/api/v1/auth/login", (route) =>
@@ -326,7 +326,7 @@ test.describe("Login Page - Error Handling", () => {
       route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
     );
     await page.route("**/api/v1/auth/bootstrap", (route) =>
-      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"needed":false}' })
     );
     await page.route("**/api/v1/auth/login", (route) =>
       route.fulfill({ status: 401, contentType: "application/json", body: '{"status":401,"title":"Unauthorized","detail":"invalid email or password"}' })
@@ -349,7 +349,7 @@ test.describe("Login Page - Error Handling", () => {
       route.fulfill({ status: 200, contentType: "application/json", body: '{"status":"healthy"}' })
     );
     await page.route("**/api/v1/auth/bootstrap", (route) =>
-      route.fulfill({ status: 409, contentType: "application/json", body: '{"detail":"bootstrap already completed, users exist"}' })
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"needed":false}' })
     );
     await page.route("**/api/v1/auth/login", (route) =>
       route.fulfill({ status: 429, contentType: "application/json", body: '{"status":429,"title":"Too Many Requests","detail":"Rate limit exceeded"}' })

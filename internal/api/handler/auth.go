@@ -34,6 +34,14 @@ func NewAuthHandler(auth *app.AuthService) *AuthHandler {
 // Register registers all auth routes on the huma API.
 func (h *AuthHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
+		OperationID: "bootstrapStatus",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/auth/bootstrap",
+		Summary:     "Check if bootstrap is needed (no users exist)",
+		Tags:        []string{"auth"},
+	}, h.BootstrapStatus)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "bootstrapUser",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/auth/bootstrap",
@@ -67,6 +75,24 @@ func (h *AuthHandler) Register(api huma.API) {
 		Description: "Returns user info if the session is valid.",
 		Tags:        []string{"auth"},
 	}, h.Session)
+}
+
+func (h *AuthHandler) BootstrapStatus(ctx context.Context, input *struct{}) (*struct {
+	Body struct {
+		Needed bool `json:"needed" doc:"True if no users exist and bootstrap is required"`
+	}
+}, error) {
+	needed, err := h.auth.IsBootstrapNeeded(ctx)
+	if err != nil {
+		return nil, serverError(err)
+	}
+	resp := &struct {
+		Body struct {
+			Needed bool `json:"needed" doc:"True if no users exist and bootstrap is required"`
+		}
+	}{}
+	resp.Body.Needed = needed
+	return resp, nil
 }
 
 func (h *AuthHandler) Bootstrap(ctx context.Context, input *dto.BootstrapInput) (*dto.BootstrapOutput, error) {

@@ -22,27 +22,16 @@ export function LoginPage() {
     async function detectMode() {
       try {
         const res = await fetch("/api/v1/auth/bootstrap", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Requested-With": "XMLHttpRequest",
-          },
           credentials: "include",
-          body: JSON.stringify({ email: "", password: "" }),
+          headers: { "X-Requested-With": "XMLHttpRequest" },
         });
-
-        if (res.status === 409) {
-          // Users exist -> login mode
-          setMode("login");
-        } else if (res.status === 422 || res.status === 200) {
-          // Validation error (bootstrap available) or unexpected success -> bootstrap mode
-          setMode("bootstrap");
+        if (res.ok) {
+          const data = await res.json();
+          setMode(data.needed ? "bootstrap" : "login");
         } else {
-          // Any other status -> default to login
           setMode("login");
         }
       } catch {
-        // Network error -> show login with error
         setError("Cannot reach the server. Check that the container is running.");
         setMode("login");
       }
