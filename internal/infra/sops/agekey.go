@@ -96,7 +96,7 @@ func SaveAgeKey(dataDir, privateKey, publicKey string) error {
 		dataDir = "/opt/composer"
 	}
 	keyFile := filepath.Join(dataDir, "age.key")
-	os.MkdirAll(dataDir, 0755)
+	os.MkdirAll(dataDir, 0700)
 
 	content := fmt.Sprintf("# created by Composer -- age private key for SOPS\n# public key: %s\n%s\n", publicKey, privateKey)
 	return os.WriteFile(keyFile, []byte(content), 0600)

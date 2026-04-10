@@ -74,6 +74,7 @@ func (h *OAuthHandler) Setup() bool {
 	store.MaxAge(300) // 5 min for OAuth flow
 	store.Options.HttpOnly = true
 	store.Options.SameSite = http.SameSiteLaxMode
+	store.Options.Secure = os.Getenv("COMPOSER_COOKIE_SECURE") != "false"
 	gothic.Store = store
 
 	return true
@@ -136,6 +137,9 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// Revoke existing sessions (session fixation prevention, S4)
+	_ = h.sessions.DeleteByUserID(r.Context(), user.ID)
 
 	// Create session and PERSIST IT TO THE DATABASE
 	session, err := auth.NewSession(user.ID, user.Role, 24*time.Hour)

@@ -101,7 +101,7 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string) 
 		return nil, fmt.Errorf("creating stack directory: %w", err)
 	}
 	composePath := filepath.Join(stackPath, "compose.yaml")
-	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
+	if err := os.WriteFile(composePath, []byte(composeContent), 0600); err != nil {
 		return nil, fmt.Errorf("writing compose file: %w", err)
 	}
 
@@ -223,14 +223,14 @@ func (s *StackService) Update(ctx context.Context, name, composeContent string) 
 	// Save old content for rollback in case DB update fails
 	oldContent, _ := os.ReadFile(composePath)
 
-	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
+	if err := os.WriteFile(composePath, []byte(composeContent), 0600); err != nil {
 		return nil, fmt.Errorf("writing compose file: %w", err)
 	}
 
 	if err := s.stacks.Update(ctx, st); err != nil {
 		// Rollback: restore old file content
 		if oldContent != nil {
-			os.WriteFile(composePath, oldContent, 0644)
+			os.WriteFile(composePath, oldContent, 0600)
 		}
 		return nil, err
 	}
@@ -451,6 +451,14 @@ type ImportResult struct {
 // Files are copied to Composer's stacks directory and registered in the DB.
 // Already-existing stacks (by name) are skipped.
 func (s *StackService) ImportFromDir(ctx context.Context, sourceDir string) (*ImportResult, error) {
+	// Validate import path (S12) -- block sensitive system directories
+	absDir, _ := filepath.Abs(sourceDir)
+	for _, blocked := range []string{"/etc", "/var/run", "/proc", "/sys", "/dev", "/root", "/boot"} {
+		if strings.HasPrefix(absDir, blocked) {
+			return nil, fmt.Errorf("import from %s is not permitted", blocked)
+		}
+	}
+
 	entries, err := os.ReadDir(sourceDir)
 	if err != nil {
 		return nil, fmt.Errorf("reading source directory: %w", err)

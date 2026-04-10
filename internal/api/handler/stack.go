@@ -599,15 +599,22 @@ func (h *StackHandler) ExecCompose(ctx context.Context, input *dto.ExecComposeIn
 		return nil, huma.Error422UnprocessableEntity("command is empty")
 	}
 
-	// Allowlist of safe compose subcommands. Anything not listed requires
-	// direct API calls (deploy/stop/etc.) or admin shell access.
+	// Allowlist of safe compose subcommands (S13)
 	allowed := map[string]bool{
 		"ps": true, "logs": true, "top": true, "config": true,
 		"images": true, "port": true, "version": true, "ls": true,
-		"events": true, "exec": true, "cp": true, "build": true,
+		"events": true, "build": true,
+	}
+	// exec and cp require admin (shell-equivalent access)
+	adminOnly := map[string]bool{"exec": true, "cp": true}
+	if adminOnly[args[0]] {
+		if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+			return nil, huma.Error403Forbidden("compose " + args[0] + " requires admin role")
+		}
+		allowed[args[0]] = true
 	}
 	if !allowed[args[0]] {
-		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed; permitted: ps, logs, top, config, images, port, version, ls, events, exec, cp")
+		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed; permitted: ps, logs, top, config, images, port, version, ls, events, build (+ exec, cp for admin)")
 	}
 
 	result, err := h.stacks.ExecCompose(ctx, input.Name, args)

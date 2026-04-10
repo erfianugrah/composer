@@ -109,12 +109,28 @@ func (s *Stack) SetStatus(status Status) {
 }
 
 // validateName checks that a stack name is filesystem-safe.
+// Strict allowlist: alphanumeric start, then [a-zA-Z0-9._-], max 128 chars.
+// Rejects ".." to prevent path traversal.
 func validateName(name string) error {
 	if name == "" {
 		return errors.New("stack name is required")
 	}
-	if strings.ContainsAny(name, "/ \\:*?\"<>|") {
-		return fmt.Errorf("stack name %q contains invalid characters", name)
+	if name == "." || name == ".." || strings.Contains(name, "..") {
+		return errors.New("stack name cannot contain '..'")
+	}
+	if len(name) > 128 {
+		return errors.New("stack name too long (max 128)")
+	}
+	for i, c := range name {
+		if i == 0 {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+				return fmt.Errorf("stack name must start with alphanumeric, got %q", string(c))
+			}
+			continue
+		}
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-') {
+			return fmt.Errorf("stack name %q contains invalid character %q; allowed: [a-zA-Z0-9._-]", name, string(c))
+		}
 	}
 	return nil
 }

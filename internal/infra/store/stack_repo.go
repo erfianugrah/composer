@@ -169,8 +169,7 @@ func marshalCredentials(creds *stack.GitCredentials) *string {
 	}
 	encrypted, err := crypto.Encrypt(string(b))
 	if err != nil {
-		s := string(b) // fallback to unencrypted
-		return &s
+		return nil // fail closed: don't store plaintext credentials (S18)
 	}
 	return &encrypted
 }

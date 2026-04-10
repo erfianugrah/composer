@@ -244,6 +244,16 @@ func (h *PipelineHandler) Update(ctx context.Context, input *UpdatePipelineInput
 		return nil, err
 	}
 
+	// Shell/docker steps require admin (prevents operator privilege escalation via pipeline update)
+	for _, s := range input.Body.Steps {
+		if s.Type == "shell_command" || s.Type == "docker_exec" {
+			if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+				return nil, huma.Error403Forbidden("shell_command and docker_exec steps require admin role")
+			}
+			break
+		}
+	}
+
 	existing, err := h.svc.Get(ctx, input.ID)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {

@@ -43,7 +43,7 @@ func New(ctx context.Context, dbURL, dataDir string) (*DB, error) {
 		// Ensure parent directory exists
 		dir := filepath.Dir(dsn)
 		if dir != "" && dir != "." {
-			if err := os.MkdirAll(dir, 0755); err != nil {
+			if err := os.MkdirAll(dir, 0700); err != nil {
 				return nil, fmt.Errorf("creating data directory %s: %w", dir, err)
 			}
 		}

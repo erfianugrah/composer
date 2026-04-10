@@ -56,7 +56,7 @@ func deriveKey() ([]byte, error) {
 	keyHex := hex.EncodeToString(buf[:])
 
 	// Ensure directory exists
-	os.MkdirAll(dataDir, 0755)
+	os.MkdirAll(dataDir, 0700)
 	if err := os.WriteFile(keyFile, []byte(keyHex), 0600); err != nil {
 		// Can't persist -- use the key in memory only this run
 		// (won't be able to decrypt on restart, but at least this run works)
@@ -85,8 +85,7 @@ func Encrypt(plaintext string) (string, error) {
 
 	key, err := getKey()
 	if err != nil {
-		// Should never happen now (auto-generate), but fallback to plaintext
-		return plaintext, nil
+		return "", fmt.Errorf("encryption key unavailable: %w", err)
 	}
 
 	block, err := aes.NewCipher(key)

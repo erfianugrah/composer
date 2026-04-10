@@ -160,6 +160,10 @@ func (h *UserHandler) Delete(ctx context.Context, input *dto.UserIDInput) (*stru
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
+	// Cascade: revoke all sessions before deleting (S9)
+	if h.sessions != nil {
+		_ = h.sessions.DeleteByUserID(ctx, input.ID)
+	}
 	if err := h.users.Delete(ctx, input.ID); err != nil {
 		return nil, serverError(err)
 	}
@@ -185,6 +189,11 @@ func (h *UserHandler) ChangePassword(ctx context.Context, input *dto.ChangePassw
 
 	if err := h.users.Update(ctx, user); err != nil {
 		return nil, serverError(err)
+	}
+
+	// Invalidate all sessions so compromised tokens are revoked (S8)
+	if h.sessions != nil {
+		_ = h.sessions.DeleteByUserID(ctx, user.ID)
 	}
 
 	return nil, nil

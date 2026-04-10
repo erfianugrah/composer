@@ -30,9 +30,12 @@ func NewWebhookRepo(db *sql.DB) *WebhookRepo {
 }
 
 func (r *WebhookRepo) Create(ctx context.Context, w *Webhook) error {
-	// Encrypt the webhook secret before storage
-	encSecret, _ := crypto.Encrypt(w.Secret)
-	_, err := r.db.ExecContext(ctx,
+	// Encrypt the webhook secret before storage (S17)
+	encSecret, err := crypto.Encrypt(w.Secret)
+	if err != nil {
+		return fmt.Errorf("encrypting webhook secret: %w", err)
+	}
+	_, err = r.db.ExecContext(ctx,
 		`INSERT INTO webhooks (id, stack_name, provider, secret, branch_filter, auto_redeploy, created_by)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		w.ID, w.StackName, w.Provider, encSecret, w.BranchFilter, w.AutoRedeploy, w.CreatedBy,

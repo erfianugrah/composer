@@ -134,7 +134,7 @@ func shouldBypass(r *http.Request) bool {
 	}
 
 	// Templates are public (helps onboarding before login)
-	if strings.HasPrefix(path, "/api/v1/templates") {
+	if path == "/api/v1/templates" || strings.HasPrefix(path, "/api/v1/templates/") {
 		return true
 	}
 

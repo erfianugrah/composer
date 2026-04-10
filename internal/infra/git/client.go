@@ -20,13 +20,37 @@ import (
 	domstack "github.com/erfianugrah/composer/internal/domain/stack"
 )
 
+// isAllowedSSHKeyPath validates that a key file path is within allowed SSH directories.
+// Prevents arbitrary file reads via the SSHKeyFile credential field.
+func isAllowedSSHKeyPath(path string) bool {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	allowedDirs := []string{
+		filepath.Join(os.Getenv("HOME"), ".ssh"),
+		"/home/composer/.ssh",
+	}
+	for _, dir := range allowedDirs {
+		resolved, _ := filepath.EvalSymlinks(dir)
+		if resolved == "" {
+			resolved = dir
+		}
+		if strings.HasPrefix(absPath, resolved+string(filepath.Separator)) || strings.HasPrefix(absPath, dir+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
 // buildAuth creates the transport.AuthMethod from git credentials.
 func buildAuth(creds *domstack.GitCredentials) transport.AuthMethod {
 	if creds == nil {
 		return nil
 	}
 	// Per-stack SSH key file takes priority over inline key
-	if creds.SSHKeyFile != "" {
+	// Path restricted to SSH directories to prevent arbitrary file reads (S11)
+	if creds.SSHKeyFile != "" && isAllowedSSHKeyPath(creds.SSHKeyFile) {
 		keyContent, err := crypto.DecryptFile(creds.SSHKeyFile)
 		if err == nil && keyContent != "" {
 			keys, err := ssh.NewPublicKeys("git", []byte(keyContent), creds.SSHKeyPassphrase)

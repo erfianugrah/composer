@@ -42,6 +42,26 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		shell = "/bin/sh"
 	}
 
+	// Shell allowlist (S6) -- prevent execution of arbitrary binaries
+	allowedShells := map[string]bool{
+		"/bin/sh": true, "/bin/bash": true, "/bin/ash": true, "/bin/zsh": true,
+	}
+	if !allowedShells[shell] {
+		http.Error(w, "shell not allowed; permitted: /bin/sh, /bin/bash, /bin/ash, /bin/zsh", http.StatusBadRequest)
+		return
+	}
+
+	// Container scope validation (S7) -- only Compose-managed containers
+	info, err := h.dockerClient.InspectContainer(r.Context(), containerID)
+	if err != nil {
+		http.Error(w, "container not found", http.StatusNotFound)
+		return
+	}
+	if info.StackName == "" {
+		http.Error(w, "terminal access restricted to Compose stack containers", http.StatusForbidden)
+		return
+	}
+
 	// Accept WebSocket -- validate origin against the request host
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: []string{r.Host},

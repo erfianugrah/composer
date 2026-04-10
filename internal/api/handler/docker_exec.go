@@ -55,16 +55,15 @@ func (h *DockerExecHandler) Exec(ctx context.Context, input *DockerExecInput) (*
 		return nil, huma.Error422UnprocessableEntity("command is empty")
 	}
 
-	// Allowlist of safe docker subcommands
+	// Allowlist of safe docker subcommands (S14 -- compose removed, use dedicated endpoints)
 	allowed := map[string]bool{
 		"ps": true, "images": true, "network": true, "volume": true,
 		"system": true, "info": true, "version": true, "inspect": true,
 		"logs": true, "stats": true, "top": true, "port": true,
 		"diff": true, "history": true, "search": true, "tag": true,
-		"compose": true,
 	}
 	if !allowed[args[0]] {
-		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed; permitted: ps, images, network, volume, system, info, version, inspect, logs, stats, top, port, diff, history, search, tag, compose")
+		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed; permitted: ps, images, network, volume, system, info, version, inspect, logs, stats, top, port, diff, history, search, tag")
 	}
 
 	result, err := h.compose.RunDocker(ctx, args)
