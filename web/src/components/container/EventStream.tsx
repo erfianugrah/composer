@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface DockerEvent {
   type: string;
@@ -32,45 +33,59 @@ export function EventStream() {
   }, []);
 
   useEffect(() => {
-    let es: EventSource;
-    try {
-      es = new EventSource("/api/v1/sse/events", { withCredentials: true });
-    } catch {
-      setConnected(false);
-      return;
-    }
-    setConnected(true);
+    let es: EventSource | null = null;
+    let retryCount = 0;
+    let retryTimer: ReturnType<typeof setTimeout>;
+    let unmounted = false;
 
-    const handler = (e: MessageEvent) => {
+    function connect() {
+      if (unmounted) return;
       try {
-        const data = JSON.parse(e.data);
-        const evt: DockerEvent = {
-          type: e.type || "event",
-          data,
-          ts: new Date().toISOString(),
-        };
-        setEvents((prev) => {
-          const next = [...prev, evt];
-          return next.length > 200 ? next.slice(-200) : next;
-        });
-      } catch {}
-    };
+        es = new EventSource("/api/v1/sse/events", { withCredentials: true });
+      } catch {
+        setConnected(false);
+        return;
+      }
+      setConnected(true);
 
-    // Listen to all event types the SSE endpoint emits
-    for (const type of [
-      "stack.deployed", "stack.stopped", "stack.updated", "stack.deleted", "stack.error",
-      "container.state", "container.health",
-    ]) {
-      es.addEventListener(type, handler);
+      const handler = (e: MessageEvent) => {
+        retryCount = 0; // Reset on successful data
+        try {
+          const data = JSON.parse(e.data);
+          const evt: DockerEvent = {
+            type: e.type || "event",
+            data,
+            ts: new Date().toISOString(),
+          };
+          setEvents((prev) => {
+            const next = [...prev, evt];
+            return next.length > 200 ? next.slice(-200) : next;
+          });
+        } catch {}
+      };
+
+      for (const type of [
+        "stack.deployed", "stack.stopped", "stack.updated", "stack.deleted", "stack.error",
+        "container.state", "container.health",
+      ]) {
+        es.addEventListener(type, handler);
+      }
+
+      es.onerror = () => {
+        setConnected(false);
+        es?.close();
+        if (unmounted) return;
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+        retryCount++;
+        retryTimer = setTimeout(connect, delay);
+      };
     }
 
-    es.onerror = () => {
-      setConnected(false);
-      es.close();
-    };
-
+    connect();
     return () => {
-      es.close();
+      unmounted = true;
+      clearTimeout(retryTimer);
+      es?.close();
       setConnected(false);
     };
   }, []);
@@ -98,6 +113,7 @@ export function EventStream() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs">
         <span className={`h-2 w-2 rounded-full ${connected ? "bg-cp-green" : "bg-cp-red"}`} />
@@ -138,5 +154,6 @@ export function EventStream() {
         )}
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

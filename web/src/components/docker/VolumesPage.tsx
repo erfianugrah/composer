@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { highlightJSON } from "@/lib/json-highlight";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface VolumeInfo { name: string; driver: string; mountpoint: string; created_at: string; }
 
@@ -33,6 +34,7 @@ export function VolumesPage() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="space-y-6">
       <Card>
         <CardHeader><CardTitle className="text-sm">Create Volume</CardTitle></CardHeader>
@@ -82,5 +84,6 @@ export function VolumesPage() {
         </CardContent>
       </Card>
     </div>
+    </ErrorBoundary>
   );
 }

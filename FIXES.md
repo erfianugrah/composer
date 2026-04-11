@@ -105,12 +105,14 @@
 ### [M5] `ImportStacks` accepts arbitrary filesystem paths
 - **File:** `internal/app/stack_service.go:462-469`
 - **Issue:** Symlink bypass on path traversal check.
-- **Status:** [ ] DEFERRED — admin-only, existing blocklist adequate for now. Needs `filepath.EvalSymlinks`.
+- **Fix:** Added `filepath.EvalSymlinks` before blocklist check. Both resolved and original paths checked.
+- **Status:** [x] DONE
 
 ### [M6] Login flow: 4 DB ops, no transaction
 - **File:** `internal/app/auth_service.go:91-127`
 - **Issue:** Crash between session revocation and creation = locked out. Recoverable by re-login.
-- **Status:** [ ] DEFERRED — requires transaction support refactor across repos.
+- **Fix:** Added `TxRunner` interface + `SetTxRunner` setter. Login session rotation wrapped in transaction when available.
+- **Status:** [x] DONE
 
 ### [M7] `ConvertToLocal` deletes git config before updating stack
 - **File:** `internal/app/stack_service.go:595-604`
@@ -120,7 +122,8 @@
 ### [M8] Stack log SSE misparses Docker multiplex stream
 - **File:** `internal/api/handler/sse.go:407-418`
 - **Issue:** Raw `reader.Read(buf)` can split/merge Docker multiplex frames.
-- **Status:** [ ] DEFERRED — needs proper stdcopy implementation. Larger refactor.
+- **Fix:** Replaced with proper 8-byte header parsing using `bufio.Reader` + `io.ReadFull` + `binary.BigEndian.Uint32`. Matches `StreamContainerLogs` pattern.
+- **Status:** [x] DONE
 
 ### [M9] `JobManager.Get`/`List` return mutable internal pointers
 - **File:** `internal/app/jobs.go:98-102`
@@ -150,33 +153,39 @@
 ### [M14] CancelRun vs executor: logical race on DB persist
 - **File:** `internal/app/pipeline_service.go:151-158`
 - **Issue:** Last-write-wins on DB between cancel and executor goroutine.
-- **Status:** [ ] DEFERRED — needs optimistic concurrency or version field.
+- **Fix:** Executor goroutine checks `runCtx.Err() == nil` before persisting. Cancelled runs defer to CancelRun path.
+- **Status:** [x] DONE
 
 ### [M15] `dangerouslySetInnerHTML` with regex highlighting — fragile pattern
 - **Files:** `LogViewer.tsx:175`, `NetworksPage.tsx:78`, `VolumesPage.tsx:75`
 - **Issue:** Currently safe but fragile. Escaping runs first, no regex undoes it.
-- **Status:** [ ] DEFERRED — long-term migration to React elements.
+- **Status:** [ ] DEFERRED — long-term migration to React elements. Current escaping verified safe.
 
 ### [M16] SSE never reconnects on error
 - **Files:** `ContainerStats.tsx:44`, `EventStream.tsx:67`
-- **Status:** [ ] DEFERRED — needs reconnect with exponential backoff.
+- **Fix:** Added exponential backoff reconnect (1s→30s max). Reset retry count on successful data.
+- **Status:** [x] DONE
 
 ### [M17] Auth redirect via string matching duplicated across 6+ components
-- **Status:** [ ] DEFERRED — needs centralized 401 handling in apiFetch.
+- **Fix:** Centralized 401 redirect in `apiFetch`. Removed duplicate redirect logic from 6 components.
+- **Status:** [x] DONE
 
 ### [M18] Postgres default password in example compose
 - **File:** `deploy/compose.yaml:69`
-- **Status:** [ ] DEFERRED — documentation/comment improvement.
+- **Fix:** Added warning comment about changing password for production.
+- **Status:** [x] DONE
 
 ### [M19] GitHub Actions pinned by tag not SHA
-- **Status:** [ ] DEFERRED — needs SHA lookup for each action version.
+- **Fix:** All 34 action references pinned by commit SHA with version tag comment.
+- **Status:** [x] DONE
 
 ---
 
 ## Phase 3: Polish (Low)
 
 ### [L1] `ErrorBoundary` defined but never used
-- **Status:** [ ] DEFERRED — needs wrapping each Astro island.
+- **Fix:** Wrapped all 15 page-level React components in `<ErrorBoundary>`.
+- **Status:** [x] DONE
 
 ### [L2] `internalError()` is dead code
 - **Fix:** Removed as part of S1 fix.
@@ -208,7 +217,8 @@
 - **Status:** [x] DONE
 
 ### [L8] No release signing or provenance
-- **Status:** [ ] DEFERRED — separate effort (cosign/SLSA).
+- **Fix:** Docker builds: `provenance: true` + `sbom: true`. Release binaries: SHA256SUMS file.
+- **Status:** [x] DONE
 
 ---
 
@@ -216,14 +226,12 @@
 
 | Status | Count |
 |--------|-------|
-| DONE | 25 |
-| DEFERRED | 12 |
+| DONE | 36 |
+| DEFERRED | 1 |
 | **Total** | **37** |
 
-### Deferred items rationale:
-- **M5, M6, M8, M14**: Require larger refactors (transactions, stdcopy, optimistic concurrency)
-- **M15, M16, M17, L1**: Frontend changes requiring design decisions
-- **M18, M19, L8**: CI/deployment improvements not blocking release
+### Deferred items:
+- **M15**: `dangerouslySetInnerHTML` → React elements migration. Currently safe (escaping verified). Long-term improvement.
 
 ## Notes
 

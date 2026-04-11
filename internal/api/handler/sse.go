@@ -404,42 +404,49 @@ func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *StackLogInput, 
 			}
 			defer reader.Close()
 
-			buf := make([]byte, 8192)
+			// Docker multiplexed stream: 8-byte header per frame
+			// Byte 0: stream type (1=stdout, 2=stderr)
+			// Bytes 4-7: payload length (big-endian uint32)
+			br := bufio.NewReaderSize(reader, 32768)
+			header := make([]byte, 8)
 			for {
-				n, err := reader.Read(buf)
-				if n > 0 {
-					data := buf[:n]
-					stream := "stdout"
-					if len(data) > 8 {
-						if data[0] == 2 {
-							stream = "stderr"
-						}
-						data = data[8:]
-					}
+				_, err := io.ReadFull(br, header)
+				if err != nil {
+					return // EOF, cancelled, or error
+				}
 
-					lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-					for _, line := range lines {
-						if line == "" {
-							continue
-						}
-						mu.Lock()
-						sendErr := send.Data(event.LogEntry{
-							ContainerID: containerID,
-							Stream:      stream,
-							Message:     "[" + containerName + "] " + line,
-							Timestamp:   time.Now(),
-						})
-						mu.Unlock()
-						if sendErr != nil {
-							return
-						}
-					}
+				stream := "stdout"
+				if header[0] == 2 {
+					stream = "stderr"
 				}
-				if err == io.EOF || err == context.Canceled {
-					return
+
+				payloadLen := binary.BigEndian.Uint32(header[4:8])
+				if payloadLen == 0 {
+					continue
 				}
+
+				payload := make([]byte, payloadLen)
+				_, err = io.ReadFull(br, payload)
 				if err != nil {
 					return
+				}
+
+				lines := strings.Split(strings.TrimSpace(string(payload)), "\n")
+				for _, line := range lines {
+					if line == "" {
+						continue
+					}
+					mu.Lock()
+					sendErr := send.Data(event.LogEntry{
+						ContainerID: containerID,
+						Stream:      stream,
+						Message:     "[" + containerName + "] " + line,
+						Timestamp:   time.Now(),
+					})
+					mu.Unlock()
+					if sendErr != nil {
+						return
+					}
 				}
 			}
 		}(c.ID, c.Name)

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface AuditEntry {
   id: string;
@@ -38,6 +39,7 @@ export function AuditLog() {
   };
 
   return (
+    <ErrorBoundary>
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
@@ -69,5 +71,6 @@ export function AuditLog() {
         )}
       </CardContent>
     </Card>
+    </ErrorBoundary>
   );
 }

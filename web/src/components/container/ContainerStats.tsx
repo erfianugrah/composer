@@ -23,30 +23,47 @@ export function ContainerStats({ containerId }: { containerId: string }) {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    const url = `/api/v1/sse/containers/${containerId}/stats`;
-    const es = new EventSource(url, { withCredentials: true });
-    eventSourceRef.current = es;
+    let es: EventSource | null = null;
+    let retryCount = 0;
+    let retryTimer: ReturnType<typeof setTimeout>;
+    let unmounted = false;
 
-    es.addEventListener("stats", (e) => {
-      const data = JSON.parse(e.data);
-      const point: StatsPoint = {
-        ts: Date.now(),
-        cpu: data.cpu_percent,
-        mem: data.mem_usage,
-        memLimit: data.mem_limit,
-        netRx: data.net_rx,
-        netTx: data.net_tx,
+    function connect() {
+      if (unmounted) return;
+      const url = `/api/v1/sse/containers/${containerId}/stats`;
+      es = new EventSource(url, { withCredentials: true });
+      eventSourceRef.current = es;
+
+      es.addEventListener("stats", (e) => {
+        retryCount = 0; // Reset on successful data
+        const data = JSON.parse(e.data);
+        const point: StatsPoint = {
+          ts: Date.now(),
+          cpu: data.cpu_percent,
+          mem: data.mem_usage,
+          memLimit: data.mem_limit,
+          netRx: data.net_rx,
+          netTx: data.net_tx,
+        };
+        setCurrent(point);
+        setStats((prev) => [...prev.slice(-59), point]);
+      });
+
+      es.onerror = () => {
+        es?.close();
+        if (unmounted) return;
+        // Exponential backoff: 1s, 2s, 4s, 8s, ... max 30s
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+        retryCount++;
+        retryTimer = setTimeout(connect, delay);
       };
-      setCurrent(point);
-      setStats((prev) => [...prev.slice(-59), point]); // keep last 60 points
-    });
+    }
 
-    es.onerror = () => {
-      es.close();
-    };
-
+    connect();
     return () => {
-      es.close();
+      unmounted = true;
+      clearTimeout(retryTimer);
+      es?.close();
     };
   }, [containerId]);
 

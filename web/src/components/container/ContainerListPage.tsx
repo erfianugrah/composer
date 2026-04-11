@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 const LogViewer = lazy(() => import("./LogViewer").then(m => ({ default: m.LogViewer })));
 const ContainerStats = lazy(() => import("./ContainerStats").then(m => ({ default: m.ContainerStats })));
@@ -39,7 +40,6 @@ export function ContainerListPage() {
   function fetchContainers() {
     apiFetch<{ containers: ContainerInfo[] }>("/api/v1/containers").then(({ data, error: err }) => {
       if (err) {
-        if (err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
         setError(err);
       } else {
         setContainers(data?.containers || []);
@@ -57,6 +57,7 @@ export function ContainerListPage() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
         <Card><CardContent className="p-6"><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Total</p><p className="text-2xl font-bold tabular-nums font-data">{containers.length}</p></CardContent></Card>
@@ -156,5 +157,6 @@ export function ContainerListPage() {
         )}
       </Card>
     </div>
+    </ErrorBoundary>
   );
 }

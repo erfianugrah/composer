@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { highlightJSON } from "@/lib/json-highlight";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface NetworkInfo { id: string; name: string; driver: string; scope: string; internal: boolean; containers: number; }
 
@@ -35,6 +36,7 @@ export function NetworksPage() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="space-y-6">
       <Card>
         <CardHeader><CardTitle className="text-sm">Create Network</CardTitle></CardHeader>
@@ -85,5 +87,6 @@ export function NetworksPage() {
         </CardContent>
       </Card>
     </div>
+    </ErrorBoundary>
   );
 }

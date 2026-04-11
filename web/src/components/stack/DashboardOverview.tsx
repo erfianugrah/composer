@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface StackSummary {
   name: string;
@@ -29,7 +30,6 @@ export function DashboardOverview() {
     async function load() {
       const { data, error: err } = await apiFetch<{ stacks: StackSummary[] }>("/api/v1/stacks");
       if (err) {
-        if (err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
         setError(err);
       } else {
         setStacks(data?.stacks || []);
@@ -71,6 +71,7 @@ export function DashboardOverview() {
   const stopped = stacks.filter((s) => s.status === "stopped").length;
 
   return (
+    <ErrorBoundary>
     <div className="space-y-6">
       {/* Stat cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -124,6 +125,7 @@ export function DashboardOverview() {
         </CardContent>
       </Card>
     </div>
+    </ErrorBoundary>
   );
 }
 

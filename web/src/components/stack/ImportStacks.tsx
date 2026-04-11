@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface ImportResult {
   imported: string[];
@@ -34,6 +35,7 @@ export function ImportStacks() {
   }
 
   return (
+    <ErrorBoundary>
     <Card>
       <CardHeader>
         <CardTitle className="text-sm">Import Stacks</CardTitle>
@@ -87,5 +89,6 @@ export function ImportStacks() {
         )}
       </CardContent>
     </Card>
+    </ErrorBoundary>
   );
 }

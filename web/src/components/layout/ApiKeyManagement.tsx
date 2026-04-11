@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface KeySummary {
   id: string;
@@ -69,6 +70,7 @@ export function ApiKeyManagement() {
   }
 
   return (
+    <ErrorBoundary>
     <Card>
       <CardHeader>
         <CardTitle className="text-sm">API Keys</CardTitle>
@@ -148,5 +150,6 @@ export function ApiKeyManagement() {
         )}
       </CardContent>
     </Card>
+    </ErrorBoundary>
   );
 }

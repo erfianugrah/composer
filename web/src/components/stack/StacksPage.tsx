@@ -6,6 +6,7 @@ import { GitCloneForm } from "./GitCloneForm";
 import { RawComposeForm } from "./RawComposeForm";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 type CreateMode = null | "template" | "git" | "yaml";
 
@@ -45,6 +46,7 @@ export function StacksPage() {
 
   if (selectedStack) {
     return (
+      <ErrorBoundary>
       <div>
         <div className="mb-4">
           <Button
@@ -57,10 +59,12 @@ export function StacksPage() {
         </div>
         <StackDetail stackName={selectedStack} />
       </div>
+      </ErrorBoundary>
     );
   }
 
   return (
+    <ErrorBoundary>
     <div className="space-y-6">
       {/* Creation mode selector */}
       <div className="flex gap-2 justify-end">
@@ -90,5 +94,6 @@ export function StacksPage() {
 
       <DashboardOverview />
     </div>
+    </ErrorBoundary>
   );
 }

@@ -69,6 +69,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: composer
+      # WARNING: Change for production! Default "composer" is for local dev only.
+      # Set POSTGRES_PASSWORD env var before deploying.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-composer}
       POSTGRES_DB: composer
     healthcheck:
