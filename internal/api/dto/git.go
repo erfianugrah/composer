@@ -61,8 +61,6 @@ type GitStatusOutput struct {
 	}
 }
 
-// --- Webhook Management ---
-
 type CreateWebhookInput struct {
 	Body struct {
 		StackName    string `json:"stack_name" minLength:"1" doc:"Stack to trigger on push"`
@@ -71,6 +69,17 @@ type CreateWebhookInput struct {
 		AutoRedeploy bool   `json:"auto_redeploy" doc:"Auto-redeploy on compose change"`
 	}
 }
+
+// --- Deploy (CI integration) ---
+
+type GitDeployOutput struct {
+	Body struct {
+		Action string `json:"action" doc:"Deploy action taken (redeployed, synced_pending_manual, accepted)"`
+		JobID  string `json:"job_id,omitempty" doc:"Background job ID (async mode)"`
+	}
+}
+
+// --- Webhook Management ---
 
 type WebhookIDInput struct {
 	ID string `path:"id" doc:"Webhook ID"`

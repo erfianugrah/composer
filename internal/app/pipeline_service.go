@@ -10,6 +10,9 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/pipeline"
 )
 
+// SetLogger sets the logger for async operations (webhook triggers, etc.).
+func (s *PipelineService) SetLogger(l *zap.Logger) { s.logger = l }
+
 // PipelineService orchestrates pipeline CRUD and execution.
 type PipelineService struct {
 	pipelines  pipeline.PipelineRepository
@@ -94,6 +97,8 @@ func (s *PipelineService) Delete(ctx context.Context, id string) error {
 }
 
 // Run triggers a pipeline execution. Runs asynchronously in a goroutine.
+// Returns a snapshot of the run (not the live pointer used by the executor)
+// so callers cannot race with the executor goroutine.
 func (s *PipelineService) Run(ctx context.Context, pipelineID, triggeredBy string) (*pipeline.Run, error) {
 	p, err := s.pipelines.GetByID(ctx, pipelineID)
 	if err != nil {
@@ -107,6 +112,10 @@ func (s *PipelineService) Run(ctx context.Context, pipelineID, triggeredBy strin
 	if err := s.runs.Create(ctx, run); err != nil {
 		return nil, fmt.Errorf("persisting run: %w", err)
 	}
+
+	// Snapshot before handing the live pointer to the executor goroutine.
+	// Callers get a copy — the executor owns the original exclusively.
+	snapshot := *run
 
 	// Execute asynchronously with per-run cancellable context
 	runCtx, runCancel := context.WithCancel(s.runCtx)
@@ -128,7 +137,7 @@ func (s *PipelineService) Run(ctx context.Context, pipelineID, triggeredBy strin
 		}
 	}()
 
-	return run, nil
+	return &snapshot, nil
 }
 
 func (s *PipelineService) GetRun(ctx context.Context, runID string) (*pipeline.Run, error) {
@@ -160,4 +169,43 @@ func (s *PipelineService) CancelRun(ctx context.Context, run *pipeline.Run) erro
 
 	run.Cancel()
 	return s.runs.Update(ctx, run)
+}
+
+// RunByWebhookTrigger finds pipelines with webhook triggers matching the
+// stack name and branch, then runs them asynchronously.
+func (s *PipelineService) RunByWebhookTrigger(ctx context.Context, stackName, branch string) {
+	all, err := s.pipelines.List(ctx)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("listing pipelines for webhook trigger", zap.Error(err))
+		}
+		return
+	}
+	for _, p := range all {
+		for _, t := range p.Triggers {
+			if t.Type != pipeline.TriggerWebhook {
+				continue
+			}
+			triggerStack, _ := t.Config["stack"].(string)
+			triggerBranch, _ := t.Config["branch"].(string)
+			if triggerStack != stackName {
+				continue
+			}
+			if triggerBranch != "" && triggerBranch != branch {
+				continue
+			}
+			if s.logger != nil {
+				s.logger.Info("webhook triggered pipeline",
+					zap.String("pipeline", p.Name),
+					zap.String("stack", stackName))
+			}
+			if _, err := s.Run(ctx, p.ID, "webhook:"+stackName); err != nil {
+				if s.logger != nil {
+					s.logger.Error("failed to run webhook-triggered pipeline",
+						zap.String("pipeline", p.Name),
+						zap.Error(err))
+				}
+			}
+		}
+	}
 }

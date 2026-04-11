@@ -35,7 +35,15 @@ func (r *mockPipelineRepo) GetByID(_ context.Context, id string) (*pipeline.Pipe
 	defer r.mu.Unlock()
 	return r.pipelines[id], nil
 }
-func (r *mockPipelineRepo) List(_ context.Context) ([]*pipeline.Pipeline, error) { return nil, nil }
+func (r *mockPipelineRepo) List(_ context.Context) ([]*pipeline.Pipeline, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]*pipeline.Pipeline, 0, len(r.pipelines))
+	for _, p := range r.pipelines {
+		out = append(out, p)
+	}
+	return out, nil
+}
 func (r *mockPipelineRepo) Update(_ context.Context, p *pipeline.Pipeline) error { return nil }
 func (r *mockPipelineRepo) Delete(_ context.Context, _ string) error             { return nil }
 
@@ -106,7 +114,7 @@ func TestPipelineService_Run_PersistsOnCompletion(t *testing.T) {
 	pipelineRepo := newMockPipelineRepo()
 	runRepo := newMockRunRepo()
 	runRepo.updateCh = make(chan struct{}, 8)
-	executor := NewPipelineExecutor(nil, bus)
+	executor := NewPipelineExecutor(nil, bus, nil, nil, "")
 	svc := NewPipelineService(pipelineRepo, runRepo, executor)
 	defer svc.Stop()
 
@@ -145,7 +153,7 @@ func TestPipelineService_CancelRun_ExecutorSkipsPersist(t *testing.T) {
 	pipelineRepo := newMockPipelineRepo()
 	runRepo := newMockRunRepo()
 	runRepo.updateCh = make(chan struct{}, 8)
-	executor := NewPipelineExecutor(nil, bus)
+	executor := NewPipelineExecutor(nil, bus, nil, nil, "")
 	svc := NewPipelineService(pipelineRepo, runRepo, executor)
 	defer svc.Stop()
 
@@ -189,4 +197,133 @@ func TestPipelineService_CancelRun_ExecutorSkipsPersist(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, persisted)
 	assert.Equal(t, pipeline.RunCancelled, persisted.Status)
+}
+
+func TestRunByWebhookTrigger_MatchesStackAndBranch(t *testing.T) {
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	pipelineRepo := newMockPipelineRepo()
+	runRepo := newMockRunRepo()
+	runRepo.updateCh = make(chan struct{}, 8)
+	executor := NewPipelineExecutor(nil, bus, nil, nil, "")
+	svc := NewPipelineService(pipelineRepo, runRepo, executor)
+	defer svc.Stop()
+
+	// Pipeline with webhook trigger for "mystack" on "main"
+	p, err := pipeline.NewPipeline("deploy-mystack", "Deploy mystack", "user1")
+	require.NoError(t, err)
+	p.Triggers = []pipeline.Trigger{{
+		Type:   pipeline.TriggerWebhook,
+		Config: map[string]any{"stack": "mystack", "branch": "main"},
+	}}
+	err = p.AddStep(pipeline.Step{
+		ID: "fast", Name: "Fast", Type: pipeline.StepWait,
+		Config: map[string]any{"duration": "10ms"},
+	})
+	require.NoError(t, err)
+	err = pipelineRepo.Create(context.Background(), p)
+	require.NoError(t, err)
+
+	// Matching: stack=mystack, branch=main → should trigger
+	svc.RunByWebhookTrigger(context.Background(), "mystack", "main")
+	runRepo.waitForUpdate(t, 5*time.Second)
+
+	// Verify a run was created and completed (mock ListByPipeline returns nil, use update count)
+	assert.GreaterOrEqual(t, runRepo.updates.Load(), int32(1), "matching webhook should trigger run")
+}
+
+func TestRunByWebhookTrigger_SkipsNonMatchingStack(t *testing.T) {
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	pipelineRepo := newMockPipelineRepo()
+	runRepo := newMockRunRepo()
+	executor := NewPipelineExecutor(nil, bus, nil, nil, "")
+	svc := NewPipelineService(pipelineRepo, runRepo, executor)
+	defer svc.Stop()
+
+	p, err := pipeline.NewPipeline("deploy-other", "Deploy other", "user1")
+	require.NoError(t, err)
+	p.Triggers = []pipeline.Trigger{{
+		Type:   pipeline.TriggerWebhook,
+		Config: map[string]any{"stack": "other-stack", "branch": "main"},
+	}}
+	err = p.AddStep(pipeline.Step{
+		ID: "fast", Name: "Fast", Type: pipeline.StepWait,
+		Config: map[string]any{"duration": "10ms"},
+	})
+	require.NoError(t, err)
+	err = pipelineRepo.Create(context.Background(), p)
+	require.NoError(t, err)
+
+	// Non-matching stack → should NOT trigger
+	svc.RunByWebhookTrigger(context.Background(), "mystack", "main")
+	time.Sleep(100 * time.Millisecond)
+
+	assert.Equal(t, int32(0), runRepo.updates.Load(), "non-matching stack should not trigger run")
+}
+
+func TestRunByWebhookTrigger_SkipsNonMatchingBranch(t *testing.T) {
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	pipelineRepo := newMockPipelineRepo()
+	runRepo := newMockRunRepo()
+	executor := NewPipelineExecutor(nil, bus, nil, nil, "")
+	svc := NewPipelineService(pipelineRepo, runRepo, executor)
+	defer svc.Stop()
+
+	p, err := pipeline.NewPipeline("deploy-branch", "Deploy on main only", "user1")
+	require.NoError(t, err)
+	p.Triggers = []pipeline.Trigger{{
+		Type:   pipeline.TriggerWebhook,
+		Config: map[string]any{"stack": "mystack", "branch": "main"},
+	}}
+	err = p.AddStep(pipeline.Step{
+		ID: "fast", Name: "Fast", Type: pipeline.StepWait,
+		Config: map[string]any{"duration": "10ms"},
+	})
+	require.NoError(t, err)
+	err = pipelineRepo.Create(context.Background(), p)
+	require.NoError(t, err)
+
+	// Matching stack but wrong branch → should NOT trigger
+	svc.RunByWebhookTrigger(context.Background(), "mystack", "develop")
+	time.Sleep(100 * time.Millisecond)
+
+	assert.Equal(t, int32(0), runRepo.updates.Load(), "non-matching branch should not trigger run")
+}
+
+func TestRunByWebhookTrigger_EmptyBranchMatchesAny(t *testing.T) {
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	pipelineRepo := newMockPipelineRepo()
+	runRepo := newMockRunRepo()
+	runRepo.updateCh = make(chan struct{}, 8)
+	executor := NewPipelineExecutor(nil, bus, nil, nil, "")
+	svc := NewPipelineService(pipelineRepo, runRepo, executor)
+	defer svc.Stop()
+
+	// Pipeline with no branch filter → matches any branch
+	p, err := pipeline.NewPipeline("deploy-any", "Deploy any branch", "user1")
+	require.NoError(t, err)
+	p.Triggers = []pipeline.Trigger{{
+		Type:   pipeline.TriggerWebhook,
+		Config: map[string]any{"stack": "mystack"},
+	}}
+	err = p.AddStep(pipeline.Step{
+		ID: "fast", Name: "Fast", Type: pipeline.StepWait,
+		Config: map[string]any{"duration": "10ms"},
+	})
+	require.NoError(t, err)
+	err = pipelineRepo.Create(context.Background(), p)
+	require.NoError(t, err)
+
+	// Any branch should trigger when trigger has no branch filter
+	svc.RunByWebhookTrigger(context.Background(), "mystack", "feature/x")
+	runRepo.waitForUpdate(t, 5*time.Second)
+
+	assert.GreaterOrEqual(t, runRepo.updates.Load(), int32(1), "empty branch filter should match any branch")
 }

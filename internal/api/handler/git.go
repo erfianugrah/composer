@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -17,11 +18,12 @@ import (
 
 // GitHandler registers git operation endpoints for stacks.
 type GitHandler struct {
-	git *app.GitService
+	git  *app.GitService
+	jobs *app.JobManager
 }
 
-func NewGitHandler(git *app.GitService) *GitHandler {
-	return &GitHandler{git: git}
+func NewGitHandler(git *app.GitService, jobs *app.JobManager) *GitHandler {
+	return &GitHandler{git: git, jobs: jobs}
 }
 
 func (h *GitHandler) Register(api huma.API) {
@@ -54,6 +56,14 @@ func (h *GitHandler) Register(api huma.API) {
 		OperationID: "gitDiff", Method: http.MethodGet,
 		Path: "/api/v1/stacks/{name}/git/diff", Summary: "Diff current vs last synced", Tags: []string{"git"},
 	}, h.GitDiff)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "deploySyncStack", Method: http.MethodPost,
+		Path:        "/api/v1/stacks/{name}/deploy",
+		Summary:     "Sync git, pull images, and redeploy",
+		Description: "Full deploy pipeline: git pull → SOPS decrypt → docker compose pull → docker compose up -d. Designed for CI to call after image push. Use ?async=true for background execution.",
+		Tags:        []string{"git"},
+	}, h.Deploy)
 }
 
 func (h *GitHandler) Sync(ctx context.Context, input *dto.GitSyncInput) (*dto.GitSyncOutput, error) {
@@ -175,6 +185,45 @@ func (h *GitHandler) GitDiff(ctx context.Context, input *dto.GitDiffInput) (*dto
 		out.Body.Summary = "No uncommitted changes"
 		out.Body.Lines = []dto.DiffLine{}
 	}
+	return out, nil
+}
+
+// Deploy syncs git, pulls images, and redeploys (for CI integration).
+// Supports ?async=true for background execution via JobManager.
+func (h *GitHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*dto.GitDeployOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+	if input.Async && h.jobs != nil {
+		job := h.jobs.Create("deploy", input.Name)
+		h.jobs.Start(job.ID)
+		go func() {
+			opCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			action, err := h.git.SyncAndRedeploy(opCtx, input.Name)
+			if err != nil {
+				h.jobs.Fail(job.ID, err.Error())
+				return
+			}
+			h.jobs.Complete(job.ID, action, "")
+		}()
+		out := &dto.GitDeployOutput{}
+		out.Body.Action = "accepted"
+		out.Body.JobID = job.ID
+		return out, nil
+	}
+	// Synchronous (default)
+	opCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	action, err := h.git.SyncAndRedeploy(opCtx, input.Name)
+	if err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		return nil, serverError(err)
+	}
+	out := &dto.GitDeployOutput{}
+	out.Body.Action = action
 	return out, nil
 }
 

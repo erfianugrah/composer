@@ -1,5 +1,12 @@
 # Deploy Endpoint + Webhook-Triggered Pipelines
 
+## Status
+
+- [x] Section 1: `POST /api/v1/stacks/{name}/deploy` endpoint
+- [x] Section 2: Wire webhook triggers to pipeline runs
+- [x] Section 3: SOPS support in pipeline compose steps
+- [x] Tests
+
 ## Problem
 
 When CI (GitHub Actions) builds and pushes a Docker image, Composer needs to pull the new image and redeploy. The current webhook fires on `git push` — before the image is built — so Composer pulls the old image.
@@ -15,9 +22,9 @@ This works but is fragile (3 calls, no SOPS decrypt on pull, no atomicity).
 
 ## Root Cause
 
-`SyncAndRedeploy` in `git_service.go:163-216` does the full flow (sync → SOPS decrypt → pull → up) but is **only reachable via webhook**. No authenticated API endpoint exposes it.
+`SyncAndRedeploy` in `git_service.go:163-216` does the full flow (sync → SOPS decrypt → pull → up) but is **only reachable via webhook** (`webhook.go:114`). No authenticated API endpoint exposes it.
 
-## Solution — Two Changes
+## Solution — Three Changes
 
 ### 1. `POST /api/v1/stacks/{name}/deploy` endpoint
 
@@ -25,7 +32,20 @@ Expose `SyncAndRedeploy` as an authenticated API endpoint. One call from CI afte
 
 #### Files to change
 
-**`internal/api/handler/git.go`** — add handler:
+**`internal/api/handler/git.go`** — expand struct to include `jobs` dependency:
+
+```go
+type GitHandler struct {
+    git  *app.GitService
+    jobs *app.JobManager  // new — async deploy support
+}
+
+func NewGitHandler(git *app.GitService, jobs *app.JobManager) *GitHandler {
+    return &GitHandler{git: git, jobs: jobs}
+}
+```
+
+**`internal/api/handler/git.go`** — add `Deploy` handler:
 
 ```go
 // Deploy syncs git, pulls images, and redeploys (for CI integration).
@@ -33,28 +53,28 @@ func (h *GitHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*dt
     if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
         return nil, err
     }
-    // Always async — sync+pull+up is long-running
-    if h.jobs != nil {
-        jobID := h.jobs.Create("deploy", input.Name)
+    if input.Async && h.jobs != nil {
+        job := h.jobs.Create("deploy", input.Name)
+        h.jobs.Start(job.ID)
         go func() {
             opCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
             defer cancel()
-            action, err := h.gitSvc.SyncAndRedeploy(opCtx, input.Name)
+            action, err := h.git.SyncAndRedeploy(opCtx, input.Name)
             if err != nil {
-                h.jobs.Fail(jobID, err.Error())
+                h.jobs.Fail(job.ID, err.Error())
                 return
             }
-            h.jobs.Complete(jobID, action)
+            h.jobs.Complete(job.ID, action, "")
         }()
         out := &dto.GitDeployOutput{}
         out.Body.Action = "accepted"
-        out.Body.JobID = jobID
+        out.Body.JobID = job.ID
         return out, nil
     }
-    // Fallback: synchronous
+    // Synchronous (default)
     opCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
     defer cancel()
-    action, err := h.gitSvc.SyncAndRedeploy(opCtx, input.Name)
+    action, err := h.git.SyncAndRedeploy(opCtx, input.Name)
     if err != nil {
         if errors.Is(err, app.ErrNotFound) {
             return nil, huma.Error404NotFound("stack not found")
@@ -67,39 +87,52 @@ func (h *GitHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*dt
 }
 ```
 
+Key differences from original plan:
+- Uses `h.git` not `h.gitSvc` (matches existing field name)
+- Honors `input.Async` flag (consistent with `?async=true` pattern on other stack ops)
+- `jobs.Create()` returns `*Job`, uses `job.ID` for string ID
+- Calls `jobs.Start(job.ID)` before goroutine (matches webhook.go pattern)
+- `jobs.Complete()` takes 3 args: `(id, output, errOutput)`
+
 **`internal/api/dto/git.go`** — add output DTO:
 
 ```go
-type GitDeployOutputBody struct {
-    Action string `json:"action" doc:"Deploy action taken (redeployed, synced_pending_manual, error)"`
-    JobID  string `json:"job_id,omitempty" doc:"Background job ID (async mode)"`
-}
-
 type GitDeployOutput struct {
-    Body GitDeployOutputBody
+    Body struct {
+        Action string `json:"action" doc:"Deploy action taken (redeployed, synced_pending_manual, accepted)"`
+        JobID  string `json:"job_id,omitempty" doc:"Background job ID (async mode)"`
+    }
 }
 ```
+
+Uses inline struct (consistent with existing DTOs like `GitSyncOutput`).
 
 **`internal/api/handler/git.go`** `Register()` — add route:
 
 ```go
 huma.Register(api, huma.Operation{
-    OperationID: "deploySyncStack",
-    Method:      http.MethodPost,
+    OperationID: "deploySyncStack", Method: http.MethodPost,
     Path:        "/api/v1/stacks/{name}/deploy",
     Summary:     "Sync git, pull images, and redeploy",
-    Description: "Full deploy pipeline: git pull → SOPS decrypt → docker compose pull → docker compose up -d. Designed for CI to call after image push.",
+    Description: "Full deploy pipeline: git pull → SOPS decrypt → docker compose pull → docker compose up -d. Designed for CI to call after image push. Use ?async=true for background execution.",
     Tags:        []string{"git"},
 }, h.Deploy)
 ```
 
-**`internal/api/server.go`** — no change needed, git handler already registered.
+**`internal/api/server.go`** L147 — update `NewGitHandler` call to pass `Jobs`:
+
+```go
+// Was:  handler.NewGitHandler(deps.GitService).Register(api)
+// Now:
+handler.NewGitHandler(deps.GitService, deps.Jobs).Register(api)
+```
 
 #### Behavior
 
 - Requires `Operator` role (same as other stack ops)
-- Works only for git-backed stacks (returns 422 for local stacks)
-- Supports `?async=true` for background execution via `JobManager`
+- Works only for git-backed stacks (`SyncAndRedeploy` returns error for local stacks)
+- Supports `?async=true` for background execution via `JobManager` (same pattern as `/up`, `/pull`, `/build`)
+- Default: synchronous — blocks until deploy completes or 10min timeout
 - SOPS decrypt/re-encrypt handled by `SyncAndRedeploy`
 - Image pull is non-fatal (warns, continues with cached)
 - Publishes `StackDeployed` domain event on success
@@ -115,11 +148,20 @@ huma.Register(api, huma.Operation{
       -H "X-Requested-With: XMLHttpRequest"
 ```
 
+For async (fire-and-forget, poll job status later):
+```yaml
+- name: Deploy to Composer (async)
+  run: |
+    curl -sf -X POST "$COMPOSER_URL/api/v1/stacks/docs-ssh/deploy?async=true" \
+      -H "Authorization: Bearer ${{ secrets.COMPOSER_API_KEY }}" \
+      -H "X-Requested-With: XMLHttpRequest"
+```
+
 ---
 
 ### 2. Wire webhook triggers to pipeline runs
 
-The `TriggerWebhook` type exists in `aggregate.go:66` but nothing dispatches to it. Connect inbound webhooks to matching pipelines.
+The `TriggerWebhook` type exists in `domain/pipeline/aggregate.go:66` but nothing dispatches to it. Connect inbound webhooks to matching pipelines.
 
 #### Design
 
@@ -132,42 +174,44 @@ This enables DAG workflows like: pull image → run migrations → deploy → he
 
 #### Files to change
 
-**`internal/api/handler/webhook.go`** `Receive()` — after SyncAndRedeploy goroutine, add pipeline dispatch:
-
-```go
-// After L126 (existing SyncAndRedeploy goroutine):
-
-// Dispatch any pipelines triggered by this webhook
-go func() {
-    if h.pipelineSvc != nil {
-        h.pipelineSvc.RunByWebhookTrigger(context.Background(), stackName, payload.Branch)
-    }
-}()
-```
-
 **`internal/api/handler/webhook.go`** — add `pipelineSvc` dependency:
 
 ```go
 type WebhookHandler struct {
     gitSvc      *app.GitService
-    webhookRepo webhook.Repository
+    webhookRepo *store.WebhookRepo      // actual type (not webhook.Repository)
     jobs        *app.JobManager
-    pipelineSvc *app.PipelineService  // new
+    pipelineSvc *app.PipelineService    // new
+}
+
+func NewWebhookHandler(gitSvc *app.GitService, webhookRepo *store.WebhookRepo, jobs *app.JobManager, pipelineSvc *app.PipelineService) *WebhookHandler {
+    return &WebhookHandler{gitSvc: gitSvc, webhookRepo: webhookRepo, jobs: jobs, pipelineSvc: pipelineSvc}
 }
 ```
 
-**`internal/app/pipeline_service.go`** — add method:
+**`internal/api/handler/webhook.go`** `Receive()` — after L126 (end of SyncAndRedeploy goroutine), add pipeline dispatch:
+
+```go
+// Dispatch any pipelines triggered by this webhook (L127, after SyncAndRedeploy goroutine)
+if h.pipelineSvc != nil {
+    go h.pipelineSvc.RunByWebhookTrigger(context.Background(), stackName, payload.Branch)
+}
+```
+
+**`internal/app/pipeline_service.go`** — add `RunByWebhookTrigger` method:
 
 ```go
 // RunByWebhookTrigger finds pipelines with webhook triggers matching the
 // stack name and branch, then runs them asynchronously.
 func (s *PipelineService) RunByWebhookTrigger(ctx context.Context, stackName, branch string) {
-    pipelines, err := s.repo.List(ctx)
+    all, err := s.pipelines.List(ctx)
     if err != nil {
-        s.log.Error("listing pipelines for webhook trigger", zap.Error(err))
+        if s.logger != nil {
+            s.logger.Error("listing pipelines for webhook trigger", zap.Error(err))
+        }
         return
     }
-    for _, p := range pipelines {
+    for _, p := range all {
         for _, t := range p.Triggers {
             if t.Type != pipeline.TriggerWebhook {
                 continue
@@ -180,20 +224,50 @@ func (s *PipelineService) RunByWebhookTrigger(ctx context.Context, stackName, br
             if triggerBranch != "" && triggerBranch != branch {
                 continue
             }
-            s.log.Info("webhook triggered pipeline",
-                zap.String("pipeline", p.Name),
-                zap.String("stack", stackName))
-            go s.Run(ctx, p.ID, "webhook:"+stackName)
+            if s.logger != nil {
+                s.logger.Info("webhook triggered pipeline",
+                    zap.String("pipeline", p.Name),
+                    zap.String("stack", stackName))
+            }
+            if _, err := s.Run(ctx, p.ID, "webhook:"+stackName); err != nil {
+                if s.logger != nil {
+                    s.logger.Error("failed to run webhook-triggered pipeline",
+                        zap.String("pipeline", p.Name),
+                        zap.Error(err))
+                }
+            }
         }
     }
 }
 ```
 
-**`internal/api/server.go`** — pass `pipelineSvc` to `WebhookHandler`:
+Key differences from original plan:
+- Uses `s.pipelines` not `s.repo` (actual field name)
+- Uses `s.logger` not `s.log` (actual field name)
+- Nil-checks `s.logger` (field is set lazily, may be nil)
+- Handles `Run()` return value `(*pipeline.Run, error)` — logs error instead of ignoring
+- No goroutine per pipeline — `Run()` already spawns goroutine internally
+
+**`internal/app/pipeline_service.go`** — add `SetLogger` method (logger not passed in constructor):
 
 ```go
-// L196 area — webhook receiver registration
-webhookHandler := handler.NewWebhookHandler(gitSvc, webhookRepo, jobMgr, pipelineSvc)
+func (s *PipelineService) SetLogger(l *zap.Logger) { s.logger = l }
+```
+
+**`internal/api/server.go`** L197 — update `NewWebhookHandler` to pass `pipelineSvc`:
+
+```go
+// Was:  handler.NewWebhookHandler(deps.GitService, deps.WebhookRepo, deps.Jobs)
+// Now:
+handler.NewWebhookHandler(deps.GitService, deps.WebhookRepo, deps.Jobs, deps.PipelineService)
+```
+
+**`cmd/composerd/main.go`** ~L244 — set logger on pipeline service:
+
+```go
+if pipelineSvc != nil {
+    pipelineSvc.SetLogger(logger)
+}
 ```
 
 #### Pipeline webhook trigger config
@@ -224,53 +298,97 @@ webhookHandler := handler.NewWebhookHandler(gitSvc, webhookRepo, jobMgr, pipelin
 
 Pipeline compose steps (`compose_up`, `compose_pull`, etc.) bypass SOPS decrypt/re-encrypt. Stacks with encrypted `.env` will fail when deployed via pipeline.
 
+**Existing bug**: Compose steps also pass stack name directly as path arg to `compose.Up(ctx, stackName, "")` instead of resolving to the actual filesystem path. This fix addresses both issues.
+
 #### Files to change
 
-**`internal/app/pipeline_executor.go`** — wrap compose step execution with SOPS:
+**`internal/app/pipeline_executor.go`** — expand struct with stack/SOPS deps:
 
 ```go
-// Before existing compose step cases (~L143):
+type PipelineExecutor struct {
+    compose   *docker.Compose
+    bus       domevent.Bus
+    stacks    stack.StackRepository       // new — resolve stack name → path
+    gitCfgs   stack.GitConfigRepository   // new — per-stack SOPS age key
+    stacksDir string                      // new — global age key fallback
+}
+
+func NewPipelineExecutor(
+    compose *docker.Compose,
+    bus domevent.Bus,
+    stacks stack.StackRepository,
+    gitCfgs stack.GitConfigRepository,
+    stacksDir string,
+) *PipelineExecutor {
+    return &PipelineExecutor{
+        compose:   compose,
+        bus:       bus,
+        stacks:    stacks,
+        gitCfgs:   gitCfgs,
+        stacksDir: stacksDir,
+    }
+}
+```
+
+**`internal/app/pipeline_executor.go`** — add `executeComposeStep` method:
+
+```go
+// executeComposeStep resolves the stack path, handles SOPS decrypt/re-encrypt,
+// and runs the compose operation. Fixes the existing bug where stack name was
+// passed directly as filesystem path.
 func (e *PipelineExecutor) executeComposeStep(ctx context.Context, step pipeline.Step, op string) (string, error) {
-    stackName := step.Config["stack"]
-    st, err := e.stacks.GetByName(ctx, stackName)
-    if err != nil {
-        return "", fmt.Errorf("stack %q not found: %w", stackName, err)
+    stackName, _ := step.Config["stack"].(string)
+    if stackName == "" {
+        return "", fmt.Errorf("compose_%s: missing stack config", op)
     }
 
-    // SOPS decrypt if available
-    composePath := ""
-    if sops.IsAvailable() {
-        cfg, _ := e.gitCfgs.GetByStackName(ctx, stackName)
-        if cfg != nil {
-            composePath = filepath.Join(st.Path, cfg.ComposePath)
-            var perStackAgeKey string
-            if cfg.Credentials != nil {
-                perStackAgeKey = cfg.Credentials.AgeKey
-            }
-            ageKey := sops.ResolveAgeKey(perStackAgeKey, e.stacksDir)
-            sops.DecryptEnvFile(st.Path, ageKey)
-            sops.DecryptComposeSecrets(composePath, ageKey)
-            defer func() {
-                sops.ReEncryptEnvFile(st.Path)
-                sops.ReEncryptComposeSecrets(composePath)
-            }()
+    // Resolve stack name → filesystem path
+    var stackPath, composePath string
+    if e.stacks != nil {
+        st, err := e.stacks.GetByName(ctx, stackName)
+        if err != nil {
+            return "", fmt.Errorf("stack %q not found: %w", stackName, err)
         }
+        stackPath = st.Path
+
+        // SOPS decrypt if available
+        if sops.IsAvailable() && e.gitCfgs != nil {
+            cfg, _ := e.gitCfgs.GetByStackName(ctx, stackName)
+            if cfg != nil {
+                composePath = filepath.Join(st.Path, cfg.ComposePath)
+                var perStackAgeKey string
+                if cfg.Credentials != nil {
+                    perStackAgeKey = cfg.Credentials.AgeKey
+                }
+                ageKey := sops.ResolveAgeKey(perStackAgeKey, e.stacksDir)
+                sops.DecryptEnvFile(st.Path, ageKey)
+                sops.DecryptComposeSecrets(composePath, ageKey)
+                defer func() {
+                    sops.ReEncryptEnvFile(st.Path)
+                    sops.ReEncryptComposeSecrets(composePath)
+                }()
+            }
+        }
+    } else {
+        // Fallback: use stack name as path (legacy behavior)
+        stackPath = stackName
     }
 
+    var result *docker.ComposeResult
+    var err error
     switch op {
     case "up":
-        _, err = e.compose.Up(ctx, st.Path, composePath)
+        result, err = e.compose.Up(ctx, stackPath, composePath)
     case "down":
-        _, err = e.compose.Down(ctx, st.Path, composePath, false)
+        result, err = e.compose.Down(ctx, stackPath, composePath, false)
     case "pull":
-        _, err = e.compose.Pull(ctx, st.Path, composePath)
+        result, err = e.compose.Pull(ctx, stackPath, composePath)
     case "restart":
-        _, err = e.compose.Restart(ctx, st.Path, composePath)
+        result, err = e.compose.Restart(ctx, stackPath, composePath)
+    default:
+        return "", fmt.Errorf("unknown compose op %q", op)
     }
-    if err != nil {
-        return "", err
-    }
-    return fmt.Sprintf("compose %s completed for %s", op, stackName), nil
+    return composeOutput(result, err)
 }
 ```
 
@@ -287,16 +405,22 @@ case pipeline.StepComposeRestart:
     return e.executeComposeStep(ctx, step, "restart")
 ```
 
-**`internal/app/pipeline_executor.go`** — add dependencies:
+**`cmd/composerd/main.go`** L243 — update `NewPipelineExecutor` call:
 
 ```go
-type PipelineExecutor struct {
-    compose   *docker.Compose
-    stacks    stack.Repository   // new — resolve stack name → path
-    gitCfgs   stack.GitConfigRepository  // new — per-stack SOPS age key
-    stacksDir string             // new — global age key fallback
-    log       *zap.Logger
-}
+// Was:  pipelineExecutor = app.NewPipelineExecutor(compose, bus)
+// Now:
+pipelineExecutor = app.NewPipelineExecutor(compose, bus, stackRepo, gitConfigRepo, cfg.StacksDir)
+```
+
+**Test files** — update all `NewPipelineExecutor` calls:
+
+All existing test calls use `app.NewPipelineExecutor(nil, bus)` for non-compose tests. These need updating to pass `nil` for the new params:
+
+```go
+// Was:  executor := app.NewPipelineExecutor(nil, bus)
+// Now:
+executor := app.NewPipelineExecutor(nil, bus, nil, nil, "")
 ```
 
 ---
@@ -315,12 +439,19 @@ type PipelineExecutor struct {
 - `/deploy` is additive — new endpoint, no existing behavior changes
 - Pipeline webhook triggers are opt-in — only fires if a pipeline has a matching trigger
 - SOPS in pipeline executor is transparent — only activates if `.env` is encrypted
+- Pipeline executor falls back to stack-name-as-path when `stacks` repo is nil (tests)
 
 ## Testing
 
 - Unit test: `Deploy` handler calls `SyncAndRedeploy` with correct context/timeout
+- Unit test: `Deploy` handler async mode creates job + calls Start/Complete/Fail correctly
+- Unit test: `Deploy` handler returns 404 for non-existent stack
 - Unit test: `RunByWebhookTrigger` matches stack name + branch filter
+- Unit test: `RunByWebhookTrigger` skips non-matching pipelines
+- Unit test: `RunByWebhookTrigger` logs error when `Run()` fails
+- Unit test: `executeComposeStep` resolves stack name → path via repo
 - Unit test: `executeComposeStep` decrypts/re-encrypts SOPS correctly
+- Unit test: `executeComposeStep` falls back to name-as-path when stacks=nil
 - Integration test: CI pushes image → calls `/deploy` → stack running new image
 - Integration test: webhook fires → pipeline runs → stack deployed
 - E2E: full GH Actions workflow → Composer deploy → container healthy

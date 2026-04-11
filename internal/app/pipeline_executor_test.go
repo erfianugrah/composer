@@ -19,7 +19,7 @@ func TestPipelineExecutor_SimpleShellSteps(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus) // no compose needed for shell steps
+	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "") // no compose needed for shell steps
 
 	p, _ := pipeline.NewPipeline("test", "Shell test", "user1")
 	p.AddStep(pipeline.Step{
@@ -46,7 +46,7 @@ func TestPipelineExecutor_ParallelSteps(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus)
+	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "")
 
 	p, _ := pipeline.NewPipeline("test", "Parallel test", "user1")
 	// Two independent steps should run concurrently
@@ -80,7 +80,7 @@ func TestPipelineExecutor_StepFailure(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus)
+	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "")
 
 	p, _ := pipeline.NewPipeline("test", "Failure test", "user1")
 	p.AddStep(pipeline.Step{
@@ -106,7 +106,7 @@ func TestPipelineExecutor_ContinueOnError(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus)
+	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "")
 
 	p, _ := pipeline.NewPipeline("test", "Continue on error", "user1")
 	p.AddStep(pipeline.Step{
@@ -135,7 +135,7 @@ func TestPipelineExecutor_ContextCancellation(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus)
+	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "")
 
 	p, _ := pipeline.NewPipeline("test", "Cancellation", "user1")
 	p.AddStep(pipeline.Step{
@@ -166,7 +166,7 @@ func TestPipelineExecutor_Events(t *testing.T) {
 		return true
 	})
 
-	executor := app.NewPipelineExecutor(nil, bus)
+	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "")
 
 	p, _ := pipeline.NewPipeline("test", "Events", "user1")
 	p.AddStep(pipeline.Step{

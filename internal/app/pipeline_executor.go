@@ -8,13 +8,16 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	domevent "github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/domain/pipeline"
+	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
+	"github.com/erfianugrah/composer/internal/infra/sops"
 )
 
 // StepExecutor defines how to execute a single pipeline step.
@@ -22,12 +25,27 @@ type StepExecutor func(ctx context.Context, step pipeline.Step) (output string, 
 
 // PipelineExecutor runs pipeline steps in DAG order with concurrency.
 type PipelineExecutor struct {
-	compose *docker.Compose
-	bus     domevent.Bus
+	compose   *docker.Compose
+	bus       domevent.Bus
+	stacks    stack.StackRepository     // resolve stack name → path
+	gitCfgs   stack.GitConfigRepository // per-stack SOPS age key
+	stacksDir string                    // global age key fallback
 }
 
-func NewPipelineExecutor(compose *docker.Compose, bus domevent.Bus) *PipelineExecutor {
-	return &PipelineExecutor{compose: compose, bus: bus}
+func NewPipelineExecutor(
+	compose *docker.Compose,
+	bus domevent.Bus,
+	stacks stack.StackRepository,
+	gitCfgs stack.GitConfigRepository,
+	stacksDir string,
+) *PipelineExecutor {
+	return &PipelineExecutor{
+		compose:   compose,
+		bus:       bus,
+		stacks:    stacks,
+		gitCfgs:   gitCfgs,
+		stacksDir: stacksDir,
+	}
 }
 
 // Execute runs a pipeline and returns the completed run.
@@ -143,27 +161,13 @@ func (e *PipelineExecutor) Execute(ctx context.Context, p *pipeline.Pipeline, ru
 func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) (string, error) {
 	switch step.Type {
 	case pipeline.StepComposeUp:
-		stackName, _ := step.Config["stack"].(string)
-		if stackName == "" {
-			return "", fmt.Errorf("compose_up: missing stack config")
-		}
-		result, err := e.compose.Up(ctx, stackName, "")
-		return composeOutput(result, err)
-
+		return e.executeComposeStep(ctx, step, "up")
 	case pipeline.StepComposeDown:
-		stackName, _ := step.Config["stack"].(string)
-		result, err := e.compose.Down(ctx, stackName, "", false)
-		return composeOutput(result, err)
-
+		return e.executeComposeStep(ctx, step, "down")
 	case pipeline.StepComposePull:
-		stackName, _ := step.Config["stack"].(string)
-		result, err := e.compose.Pull(ctx, stackName, "")
-		return composeOutput(result, err)
-
+		return e.executeComposeStep(ctx, step, "pull")
 	case pipeline.StepComposeRestart:
-		stackName, _ := step.Config["stack"].(string)
-		result, err := e.compose.Restart(ctx, stackName, "")
-		return composeOutput(result, err)
+		return e.executeComposeStep(ctx, step, "restart")
 
 	case pipeline.StepShellCommand:
 		command, _ := step.Config["command"].(string)
@@ -231,6 +235,64 @@ func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) 
 	default:
 		return "", fmt.Errorf("unknown step type %q", step.Type)
 	}
+}
+
+// executeComposeStep resolves the stack path, handles SOPS decrypt/re-encrypt,
+// and runs the compose operation. Fixes the prior bug where stack name was
+// passed directly as filesystem path.
+func (e *PipelineExecutor) executeComposeStep(ctx context.Context, step pipeline.Step, op string) (string, error) {
+	stackName, _ := step.Config["stack"].(string)
+	if stackName == "" {
+		return "", fmt.Errorf("compose_%s: missing stack config", op)
+	}
+
+	// Resolve stack name → filesystem path
+	var stackPath, composePath string
+	if e.stacks != nil {
+		st, err := e.stacks.GetByName(ctx, stackName)
+		if err != nil {
+			return "", fmt.Errorf("stack %q not found: %w", stackName, err)
+		}
+		stackPath = st.Path
+
+		// SOPS decrypt if available
+		if sops.IsAvailable() && e.gitCfgs != nil {
+			cfg, _ := e.gitCfgs.GetByStackName(ctx, stackName)
+			if cfg != nil {
+				composePath = filepath.Join(st.Path, cfg.ComposePath)
+				var perStackAgeKey string
+				if cfg.Credentials != nil {
+					perStackAgeKey = cfg.Credentials.AgeKey
+				}
+				ageKey := sops.ResolveAgeKey(perStackAgeKey, e.stacksDir)
+				sops.DecryptEnvFile(st.Path, ageKey)
+				sops.DecryptComposeSecrets(composePath, ageKey)
+				defer func() {
+					sops.ReEncryptEnvFile(st.Path)
+					sops.ReEncryptComposeSecrets(composePath)
+				}()
+			}
+		}
+	} else {
+		// Fallback: use stack name as path (legacy/test behavior)
+		stackPath = stackName
+	}
+
+	var result *docker.ComposeResult
+	var err error
+	switch op {
+	case "up":
+		result, err = e.compose.Up(ctx, stackPath, composePath)
+	case "down":
+		result, err = e.compose.Down(ctx, stackPath, composePath, false)
+	case "pull":
+		result, err = e.compose.Pull(ctx, stackPath, composePath)
+	case "restart":
+		result, err = e.compose.Restart(ctx, stackPath, composePath)
+	default:
+		return "", fmt.Errorf("unknown compose op %q", op)
+	}
+	return composeOutput(result, err)
 }
 
 // composeOutput safely extracts output from a compose result, guarding against nil.

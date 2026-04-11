@@ -240,8 +240,9 @@ func main() {
 	var pipelineExecutor *app.PipelineExecutor
 	var pipelineSvc *app.PipelineService
 	if compose != nil {
-		pipelineExecutor = app.NewPipelineExecutor(compose, bus)
+		pipelineExecutor = app.NewPipelineExecutor(compose, bus, stackRepo, gitConfigRepo, cfg.StacksDir)
 		pipelineSvc = app.NewPipelineService(pipelineRepo, runRepo, pipelineExecutor)
+		pipelineSvc.SetLogger(logger)
 	}
 
 	// --- Cron Scheduler (for pipeline schedule triggers) ---

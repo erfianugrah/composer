@@ -144,7 +144,7 @@ func NewServer(deps Deps) *Server {
 
 	// Git operation handlers (requires GitService)
 	if deps.GitService != nil {
-		handler.NewGitHandler(deps.GitService).Register(api)
+		handler.NewGitHandler(deps.GitService, deps.Jobs).Register(api)
 	}
 
 	// Pipeline handlers (requires PipelineService)
@@ -194,7 +194,7 @@ func NewServer(deps Deps) *Server {
 
 	// Webhook receiver (raw chi handler -- validates signature, not session)
 	if deps.GitService != nil && deps.WebhookRepo != nil {
-		webhookHandler := handler.NewWebhookHandler(deps.GitService, deps.WebhookRepo, deps.Jobs)
+		webhookHandler := handler.NewWebhookHandler(deps.GitService, deps.WebhookRepo, deps.Jobs, deps.PipelineService)
 		webhookHandler.RegisterRaw(router)
 	}
 

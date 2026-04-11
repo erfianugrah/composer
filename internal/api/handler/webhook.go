@@ -23,10 +23,11 @@ type WebhookHandler struct {
 	gitSvc      *app.GitService
 	webhookRepo *store.WebhookRepo
 	jobs        *app.JobManager
+	pipelineSvc *app.PipelineService
 }
 
-func NewWebhookHandler(gitSvc *app.GitService, webhookRepo *store.WebhookRepo, jobs *app.JobManager) *WebhookHandler {
-	return &WebhookHandler{gitSvc: gitSvc, webhookRepo: webhookRepo, jobs: jobs}
+func NewWebhookHandler(gitSvc *app.GitService, webhookRepo *store.WebhookRepo, jobs *app.JobManager, pipelineSvc *app.PipelineService) *WebhookHandler {
+	return &WebhookHandler{gitSvc: gitSvc, webhookRepo: webhookRepo, jobs: jobs, pipelineSvc: pipelineSvc}
 }
 
 func (h *WebhookHandler) RegisterRaw(router chi.Router) {
@@ -124,6 +125,11 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 			h.jobs.Complete(jobID, action, "")
 		}
 	}()
+
+	// Dispatch any pipelines triggered by this webhook
+	if h.pipelineSvc != nil {
+		go h.pipelineSvc.RunByWebhookTrigger(context.Background(), stackName, payload.Branch)
+	}
 
 	resp := map[string]string{
 		"status": "accepted", "stack": stackName, "delivery_id": dlvID,
