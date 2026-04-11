@@ -157,18 +157,15 @@ func (s *GitService) Sync(ctx context.Context, name string) (changed bool, newSH
 	return changed, newSHA, nil
 }
 
-// SyncAndRedeploy syncs a git-backed stack and redeploys if the compose file changed.
-// This is the core GitOps flow triggered by webhooks.
+// SyncAndRedeploy syncs a git-backed stack and redeploys.
+// Always pulls images and redeploys when triggered by a webhook, even if the
+// compose file hasn't changed — the webhook itself signals a new image is available.
 func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action string, err error) {
 	s.log.Info("sync+redeploy", zap.String("stack", name))
-	changed, _, err := s.Sync(ctx, name)
+	_, _, err = s.Sync(ctx, name)
 	if err != nil {
 		s.log.Error("sync failed", zap.String("stack", name), zap.Error(err))
 		return "error", err
-	}
-
-	if !changed {
-		return "synced", nil
 	}
 
 	// Get git config to check auto-redeploy setting
@@ -198,6 +195,13 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 			sops.ReEncryptEnvFile(st.Path)
 			sops.ReEncryptComposeSecrets(filepath.Join(st.Path, cfg.ComposePath))
 		}()
+	}
+
+	// Pull latest images before deploying — ensures mutable tags like :latest
+	// are refreshed even when the compose file itself hasn't changed.
+	if _, pullErr := s.compose.Pull(ctx, st.Path, cfg.ComposePath); pullErr != nil {
+		s.log.Warn("image pull failed, deploying with cached images",
+			zap.String("stack", name), zap.Error(pullErr))
 	}
 
 	_, err = s.compose.Up(ctx, st.Path, cfg.ComposePath)
