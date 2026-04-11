@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -110,6 +111,28 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	if email == "" {
 		http.Error(w, "OAuth provider did not return an email", http.StatusBadRequest)
 		return
+	}
+
+	// Check domain allowlist (if configured). Existing users bypass this check
+	// so admins can manage access via user management instead of re-checking on every login.
+	if allowed := os.Getenv("COMPOSER_OAUTH_ALLOWED_DOMAINS"); allowed != "" {
+		domains := strings.Split(allowed, ",")
+		emailAllowed := false
+		for _, d := range domains {
+			d = strings.TrimSpace(d)
+			if d != "" && strings.HasSuffix(strings.ToLower(email), "@"+strings.ToLower(d)) {
+				emailAllowed = true
+				break
+			}
+		}
+		// Allow existing users regardless (admin may have manually created them)
+		if !emailAllowed {
+			existing, _ := h.users.GetByEmail(r.Context(), email)
+			if existing == nil {
+				http.Error(w, "Email domain not allowed for auto-provisioning", http.StatusForbidden)
+				return
+			}
+		}
 	}
 
 	// Find or create user

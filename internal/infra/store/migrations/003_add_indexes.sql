@@ -1,5 +1,17 @@
 -- +goose Up
 -- Performance indexes (P14)
+--
+-- NOTE: Several indexes below overlap with 001_initial.sql (different names,
+-- same columns). IF NOT EXISTS prevents errors but the duplicates are no-ops
+-- for databases already migrated through 001. Overlapping indexes:
+--   idx_sessions_user_id   ↔ idx_sessions_user       (sessions.user_id)
+--   idx_sessions_expires_at↔ idx_sessions_expires     (sessions.expires_at)
+--   idx_webhooks_stack_name↔ idx_webhooks_stack       (webhooks.stack_name)
+--   idx_webhook_deliveries_webhook_id ↔ idx_deliveries_webhook (prefix match)
+--   idx_pipeline_runs_pipeline_id     ↔ idx_runs_pipeline      (prefix match)
+--   idx_audit_log_created_at          ↔ idx_audit_created      (audit_log.created_at)
+-- Goose migrations are immutable once applied, so we keep them as-is.
+
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_api_keys_created_by ON api_keys(created_by);

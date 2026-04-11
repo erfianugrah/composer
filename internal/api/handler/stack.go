@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -386,7 +387,9 @@ func (h *StackHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*
 		return h.runAsync("deploy", input.Name, h.stacks.Deploy), nil
 	}
 	// Use background context so client disconnect can't kill the subprocess mid-operation
-	result, err := h.stacks.Deploy(context.Background(), input.Name)
+	opCtx, opCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer opCancel()
+	result, err := h.stacks.Deploy(opCtx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
@@ -407,7 +410,9 @@ func (h *StackHandler) BuildAndDeploy(ctx context.Context, input *dto.StackNameI
 	if input.Async && h.jobs != nil {
 		return h.runAsync("build_deploy", input.Name, h.stacks.BuildAndDeploy), nil
 	}
-	result, err := h.stacks.BuildAndDeploy(context.Background(), input.Name)
+	opCtx, opCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer opCancel()
+	result, err := h.stacks.BuildAndDeploy(opCtx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
@@ -432,7 +437,9 @@ func (h *StackHandler) Stop(ctx context.Context, input *dto.StackNameInput) (*dt
 	if input.Async && h.jobs != nil {
 		return h.runAsync("stop", input.Name, h.stacks.Stop), nil
 	}
-	result, err := h.stacks.Stop(context.Background(), input.Name)
+	opCtx, opCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer opCancel()
+	result, err := h.stacks.Stop(opCtx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
@@ -453,7 +460,9 @@ func (h *StackHandler) Restart(ctx context.Context, input *dto.StackNameInput) (
 	if input.Async && h.jobs != nil {
 		return h.runAsync("restart", input.Name, h.stacks.Restart), nil
 	}
-	result, err := h.stacks.Restart(context.Background(), input.Name)
+	opCtx, opCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer opCancel()
+	result, err := h.stacks.Restart(opCtx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
@@ -474,7 +483,9 @@ func (h *StackHandler) Pull(ctx context.Context, input *dto.StackNameInput) (*dt
 	if input.Async && h.jobs != nil {
 		return h.runAsync("pull", input.Name, h.stacks.Pull), nil
 	}
-	result, err := h.stacks.Pull(context.Background(), input.Name)
+	opCtx, opCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer opCancel()
+	result, err := h.stacks.Pull(opCtx, input.Name)
 	if err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")

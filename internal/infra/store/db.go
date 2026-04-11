@@ -65,8 +65,13 @@ func New(ctx context.Context, dbURL, dataDir string) (*DB, error) {
 	}
 
 	// P4: Connection pool configuration
-	sqlDB.SetMaxOpenConns(25)
-	sqlDB.SetMaxIdleConns(5)
+	if dbType == DBTypeSQLite {
+		sqlDB.SetMaxOpenConns(1) // SQLite serializes writes; 1 conn avoids BUSY errors
+		sqlDB.SetMaxIdleConns(1)
+	} else {
+		sqlDB.SetMaxOpenConns(25)
+		sqlDB.SetMaxIdleConns(5)
+	}
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
 	// Run migrations

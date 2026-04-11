@@ -82,7 +82,7 @@ export function Terminal({ containerId, shell = "/bin/sh" }: TerminalProps) {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const cols = term.cols;
     const rows = term.rows;
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/terminal/${containerId}?shell=${shell}&cols=${cols}&rows=${rows}`;
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/terminal/${encodeURIComponent(containerId)}?shell=${encodeURIComponent(shell)}&cols=${cols}&rows=${rows}`;
 
     const ws = new WebSocket(wsUrl);
     ws.binaryType = "arraybuffer";

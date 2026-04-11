@@ -56,6 +56,8 @@ func NewServer(deps Deps) *Server {
 		router.Use(chimiddleware.RealIP)
 	}
 	router.Use(chimiddleware.Recoverer)
+	router.Use(authmw.StoreRemoteIP)       // Store client IP for Huma handlers
+	router.Use(authmw.ExtendWriteDeadline) // Disable write timeout for SSE/WS paths
 	router.Use(authmw.SecurityHeaders)
 	router.Use(authmw.RateLimit(authmw.GeneralRateLimit()))
 

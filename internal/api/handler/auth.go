@@ -112,7 +112,13 @@ func (h *AuthHandler) Bootstrap(ctx context.Context, input *dto.BootstrapInput) 
 }
 
 func (h *AuthHandler) Login(ctx context.Context, input *dto.LoginInput) (*dto.LoginOutput, error) {
-	// Rate limit login by email (S20: prevents brute-force per account without enabling lockout DoS)
+	// Rate limit by IP first (prevents password spray across many emails from single IP)
+	clientIP := authmw.RemoteIPFromContext(ctx)
+	if clientIP != "" && !h.loginIPLimiter.Allow(clientIP) {
+		return nil, huma.Error429TooManyRequests("too many login attempts from this address, try again later")
+	}
+
+	// Rate limit by email (prevents brute-force per account without enabling lockout DoS)
 	if !h.loginLimiter.Allow(input.Body.Email) {
 		return nil, huma.Error429TooManyRequests("too many login attempts for this account, try again later")
 	}

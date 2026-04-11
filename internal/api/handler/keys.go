@@ -101,6 +101,12 @@ func (h *KeyHandler) Create(ctx context.Context, input *dto.CreateKeyInput) (*dt
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 
+	// Prevent privilege escalation: caller can only create keys at their level or below
+	callerRole := authmw.RoleFromContext(ctx)
+	if !callerRole.AtLeast(role) {
+		return nil, huma.Error403Forbidden("cannot create API key with higher role than your own")
+	}
+
 	callerID := authmw.UserIDFromContext(ctx)
 
 	var expiresAt *time.Time

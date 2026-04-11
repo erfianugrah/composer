@@ -1,17 +1,17 @@
 package handler
 
-import "github.com/danielgtaylor/huma/v2"
+import (
+	"log/slog"
 
-// internalError wraps an error in a 500 response.
-// Returns the actual error message so users can debug issues.
-func internalError() error {
-	return huma.Error500InternalServerError("an internal error occurred")
-}
+	"github.com/danielgtaylor/huma/v2"
+)
 
-// serverError returns a 500 with the actual error message for debugging.
+// serverError returns a generic 500 to the client and logs the actual error
+// server-side. Never leaks internal details (DB paths, Docker errors, etc.)
+// to API consumers.
 func serverError(err error) error {
-	if err == nil {
-		return huma.Error500InternalServerError("unknown error")
+	if err != nil {
+		slog.Error("internal server error", "error", err.Error())
 	}
-	return huma.Error500InternalServerError(err.Error())
+	return huma.Error500InternalServerError("an internal error occurred")
 }
