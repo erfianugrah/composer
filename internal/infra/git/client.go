@@ -35,12 +35,8 @@ func hostKeyCallback() sshlib.HostKeyCallback {
 			}
 		}
 	}
-	// Fallback: only if explicitly opted in
-	if os.Getenv("COMPOSER_SSH_INSECURE_HOST_KEY") == "true" {
-		return hostKeyCallback()
-	}
-	// Default: insecure (backwards compat, but known_hosts shipped in Docker image)
-	return hostKeyCallback()
+	// Fallback: insecure (backwards compat -- known_hosts shipped in Docker image)
+	return sshlib.InsecureIgnoreHostKey()
 }
 
 // isAllowedSSHKeyPath validates that a key file path is within allowed SSH directories.
