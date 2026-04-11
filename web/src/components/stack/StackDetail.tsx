@@ -403,7 +403,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
         const target = activeTerminal || stack.containers.find(c => c.status === "running")?.id;
         return (
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">Terminal</CardTitle>
                 {stack.containers.filter(c => c.status === "running").length > 1 && (

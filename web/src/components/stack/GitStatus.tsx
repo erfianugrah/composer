@@ -144,7 +144,7 @@ export function GitStatus({ stackName }: { stackName: string }) {
               {commits.map((commit) => (
                 <div
                   key={commit.sha}
-                  className="flex items-start gap-3 rounded-lg border border-border p-3"
+                  className="flex items-center gap-3 rounded-lg border border-border p-3"
                 >
                   <code className="text-xs font-data text-cp-purple whitespace-nowrap">
                     {commit.short_sha}

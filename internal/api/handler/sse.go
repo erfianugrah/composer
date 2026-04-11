@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,13 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 )
+
+// ansiRe matches ANSI escape sequences (CSI, OSC, simple escapes).
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]|\x1b[>=]`)
+
+func stripANSI(s string) string {
+	return ansiRe.ReplaceAllString(s, "")
+}
 
 // SSEHandler registers Server-Sent Events streaming endpoints.
 type SSEHandler struct {
@@ -196,8 +204,8 @@ func (h *SSEHandler) StreamContainerLogs(ctx context.Context, input *ContainerLo
 			return
 		}
 
-		// Sanitize non-UTF8 bytes (binary data, locale mismatches)
-		text := strings.ToValidUTF8(string(payload), "")
+		// Sanitize non-UTF8 bytes and strip ANSI escape sequences
+		text := stripANSI(strings.ToValidUTF8(string(payload), ""))
 		lines := strings.Split(strings.TrimRight(text, "\n\r"), "\n")
 		for _, line := range lines {
 			line = strings.TrimRight(line, "\r")
@@ -431,7 +439,7 @@ func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *StackLogInput, 
 					return
 				}
 
-				lines := strings.Split(strings.TrimSpace(string(payload)), "\n")
+				lines := strings.Split(strings.TrimSpace(stripANSI(string(payload))), "\n")
 				for _, line := range lines {
 					if line == "" {
 						continue

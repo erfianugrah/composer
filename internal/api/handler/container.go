@@ -190,7 +190,7 @@ func (h *ContainerHandler) Logs(ctx context.Context, input *ContainerLogsInput) 
 		stdout.WriteString(string(raw))
 	}
 
-	combined := stdout.String() + stderr.String()
+	combined := stripANSI(stdout.String() + stderr.String())
 	var lines []string
 	for _, line := range strings.Split(combined, "\n") {
 		if strings.TrimSpace(line) != "" {
