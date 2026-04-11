@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
@@ -17,7 +18,39 @@ const (
 	ctxAPIKey    contextKey = "apikey"
 	ctxRole      contextKey = "role"
 	ctxUserID    contextKey = "user_id"
+	ctxRemoteIP  contextKey = "remote_ip"
 )
+
+// ExtendWriteDeadline disables the server-level WriteTimeout for SSE and
+// WebSocket paths. These are long-lived connections that would be killed by
+// the 60s default. Regular API endpoints keep the server timeout.
+func ExtendWriteDeadline(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/sse/") || strings.Contains(r.URL.Path, "/ws/") {
+			rc := http.NewResponseController(w)
+			// Zero time = no deadline
+			rc.SetWriteDeadline(time.Time{})
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// StoreRemoteIP is middleware that stores r.RemoteAddr in the context
+// so Huma handlers (which don't receive http.Request) can access client IP.
+func StoreRemoteIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), ctxRemoteIP, r.RemoteAddr)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// RemoteIPFromContext retrieves the client IP stored by StoreRemoteIP middleware.
+func RemoteIPFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(ctxRemoteIP).(string); ok {
+		return v
+	}
+	return ""
+}
 
 // bypassPaths are public endpoints that skip authentication.
 var bypassPaths = map[string]bool{

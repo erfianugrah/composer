@@ -3,7 +3,10 @@ package app
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -204,6 +207,10 @@ func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) 
 		if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
 			return "", fmt.Errorf("http_request: only http:// and https:// URLs are allowed")
 		}
+		// SSRF protection: block private/link-local IPs unless explicitly allowed
+		if err := validateHTTPTarget(urlStr); err != nil {
+			return "", fmt.Errorf("http_request: %w", err)
+		}
 		// Use Go's http client instead of shelling out to curl (no SSRF via exotic protocols)
 		client := &http.Client{Timeout: 30 * time.Second}
 		req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
@@ -238,6 +245,37 @@ func composeOutput(result *docker.ComposeResult, err error) (string, error) {
 		return result.Stdout, nil
 	}
 	return "", nil
+}
+
+// validateHTTPTarget blocks requests to private/link-local/loopback IPs
+// to prevent SSRF attacks (e.g., cloud metadata at 169.254.169.254).
+// Set COMPOSER_PIPELINE_ALLOW_PRIVATE_IPS=true to disable this check.
+func validateHTTPTarget(rawURL string) error {
+	if os.Getenv("COMPOSER_PIPELINE_ALLOW_PRIVATE_IPS") == "true" {
+		return nil
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	host := u.Hostname()
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return fmt.Errorf("DNS lookup failed for %s: %w", host, err)
+	}
+
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("requests to private/internal IP %s (%s) are blocked; set COMPOSER_PIPELINE_ALLOW_PRIVATE_IPS=true to override", host, ipStr)
+		}
+	}
+	return nil
 }
 
 func (e *PipelineExecutor) publishEvent(evt domevent.Event) {

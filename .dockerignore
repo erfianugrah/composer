@@ -1,0 +1,38 @@
+# Git
+.git
+.github
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Tests
+e2e/
+web/e2e/
+web/test-results/
+web/playwright.config.ts
+**/*_test.go
+
+# Build artifacts
+composerd
+web/node_modules/
+web/.astro/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment / Secrets
+.env*
+!deploy/.env*
+
+# Misc
+*.log
+deploy/unraid/
+scripts/
+FIXES.md
+LICENSE

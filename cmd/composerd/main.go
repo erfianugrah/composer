@@ -278,15 +278,16 @@ func main() {
 	api.RegisterStaticFiles(srv.Router, composer.FrontendDist)
 
 	// --- HTTP Server ---
-	// WriteTimeout=0: SSE and WebSocket connections are long-lived;
-	// a global write timeout would kill them. Per-handler timeouts are
-	// enforced by context cancellation instead.
+	// WriteTimeout=60s applies to regular API endpoints. SSE and WebSocket
+	// handlers use http.ResponseController.SetWriteDeadline to extend/disable
+	// the deadline per-connection. ReadHeaderTimeout prevents slowloris.
 	httpSrv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      srv.Router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 0,
-		IdleTimeout:  120 * time.Second,
+		Addr:              fmt.Sprintf(":%d", cfg.Port),
+		Handler:           srv.Router,
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Cancellable context for background goroutines
