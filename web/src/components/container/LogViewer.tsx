@@ -133,7 +133,7 @@ function VirtualizedLogView({ lines, connected, paused, containerRef, onScroll }
   const virtualizer = useVirtualizer({
     count: lines.length,
     getScrollElement: () => containerRef.current,
-    estimateSize: () => 20, // ~20px per log line
+    estimateSize: () => 20, // initial estimate; measureElement corrects it
     overscan: 50,
   });
 
@@ -163,8 +163,10 @@ function VirtualizedLogView({ lines, connected, paused, containerRef, onScroll }
             return (
               <div
                 key={line.id}
+                ref={virtualizer.measureElement}
+                data-index={virtualItem.index}
                 className={`absolute left-0 w-full px-3 whitespace-pre-wrap break-all ${line.stream === "stderr" ? "text-cp-red/90" : ""}`}
-                style={{ top: `${virtualItem.start}px`, height: `${virtualItem.size}px` }}
+                style={{ top: `${virtualItem.start}px` }}
               >
                 <span className="text-muted-foreground select-none">
                   {new Date(line.ts).toISOString().slice(11, 19)}{" "}
