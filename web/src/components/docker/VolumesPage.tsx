@@ -72,10 +72,9 @@ export function VolumesPage() {
                     <Button size="xs" variant="destructive" onClick={async (e) => { e.stopPropagation(); if (!confirm(`Remove volume ${v.name}?`)) return; await apiFetch(`/api/v1/volumes/${v.name}`, { method: "DELETE" }); fetch_(); }}>Remove</Button>
                   </div>
                   {inspecting === v.name && (
-                    <pre
-                      className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap"
-                      dangerouslySetInnerHTML={{ __html: inspectData[v.name] ? highlightJSON(inspectData[v.name]) : "Loading..." }}
-                    />
+                    <pre className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap">
+                      {inspectData[v.name] ? highlightJSON(inspectData[v.name]) : "Loading..."}
+                    </pre>
                   )}
                 </div>
               ))}

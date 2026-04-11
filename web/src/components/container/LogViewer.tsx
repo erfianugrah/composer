@@ -172,7 +172,7 @@ function VirtualizedLogView({ lines, connected, containerRef, bottomRef, onScrol
                 {line.stream === "stderr" ? (
                   line.message
                 ) : (
-                  <span dangerouslySetInnerHTML={{ __html: highlightLog(line.message) }} />
+                  <span>{highlightLog(line.message)}</span>
                 )}
               </div>
             );

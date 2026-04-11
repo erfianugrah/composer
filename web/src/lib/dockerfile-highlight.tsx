@@ -1,7 +1,8 @@
 /**
- * Highlights Dockerfile syntax using a single-pass tokenizer.
- * Tokenizes first, then renders -- no overlapping regex replacements.
+ * Highlights Dockerfile syntax as React elements.
+ * Single-pass tokenizer — no dangerouslySetInnerHTML.
  */
+import { Fragment, type ReactNode } from "react";
 
 type TokenType = "comment" | "instruction" | "keyword" | "flag" | "variable" | "string" | "image" | "text";
 
@@ -16,20 +17,12 @@ const INSTRUCTIONS = new Set([
   "ONBUILD", "MAINTAINER",
 ]);
 
-// Single-pass regex: each alternative is tried left-to-right, first match wins.
-// Named groups identify the token type. Order matters for priority.
 const TOKEN_RE = /(?<comment>#.*$)|(?<variable>\$\{[^}]+\}|\$[A-Z_][A-Z0-9_]*)|(?<string>"[^"]*"|'[^']*')|(?<flag>--[a-z][-a-z0-9]*(?:=[^\s]*)?)|(?<word>\S+)/gi;
 
 function classifyWord(word: string, isFirst: boolean): Token {
   const upper = word.toUpperCase();
-
-  if (isFirst && INSTRUCTIONS.has(upper)) {
-    return { type: "instruction", value: word };
-  }
-  if (upper === "AS") {
-    return { type: "keyword", value: word };
-  }
-  // Image references: contains : with alphanumeric on both sides (e.g. node:18, ghcr.io/user/app:latest)
+  if (isFirst && INSTRUCTIONS.has(upper)) return { type: "instruction", value: word };
+  if (upper === "AS") return { type: "keyword", value: word };
   if (/^[a-z0-9._/-]+:[a-z0-9._-]+$/i.test(word) && !word.startsWith("--")) {
     return { type: "image", value: word };
   }
@@ -45,36 +38,24 @@ function tokenizeLine(line: string): Token[] {
   let match: RegExpExecArray | null;
 
   while ((match = TOKEN_RE.exec(line)) !== null) {
-    // Capture whitespace between tokens
     if (match.index > lastIndex) {
       tokens.push({ type: "text", value: line.slice(lastIndex, match.index) });
     }
     lastIndex = match.index + match[0].length;
 
-    if (match.groups?.comment) {
-      tokens.push({ type: "comment", value: match[0] });
-    } else if (match.groups?.variable) {
-      tokens.push({ type: "variable", value: match[0] });
-    } else if (match.groups?.string) {
-      tokens.push({ type: "string", value: match[0] });
-    } else if (match.groups?.flag) {
-      tokens.push({ type: "flag", value: match[0] });
-    } else if (match.groups?.word) {
-      tokens.push(classifyWord(match[0], isFirst));
-    }
+    if (match.groups?.comment) tokens.push({ type: "comment", value: match[0] });
+    else if (match.groups?.variable) tokens.push({ type: "variable", value: match[0] });
+    else if (match.groups?.string) tokens.push({ type: "string", value: match[0] });
+    else if (match.groups?.flag) tokens.push({ type: "flag", value: match[0] });
+    else if (match.groups?.word) tokens.push(classifyWord(match[0], isFirst));
     isFirst = false;
   }
 
-  // Trailing content
   if (lastIndex < line.length) {
     tokens.push({ type: "text", value: line.slice(lastIndex) });
   }
 
   return tokens;
-}
-
-function escapeHTML(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 const TOKEN_CLASS: Record<TokenType, string> = {
@@ -88,16 +69,22 @@ const TOKEN_CLASS: Record<TokenType, string> = {
   text: "",
 };
 
-function renderToken(token: Token): string {
-  const escaped = escapeHTML(token.value);
-  const cls = TOKEN_CLASS[token.type];
-  if (!cls) return escaped;
-  return `<span class="${cls}">${escaped}</span>`;
-}
+let keyCounter = 0;
 
-export function highlightDockerfile(content: string): string {
-  return content
-    .split("\n")
-    .map((line) => tokenizeLine(line).map(renderToken).join(""))
-    .join("\n");
+export function highlightDockerfile(content: string): ReactNode {
+  const lines = content.split("\n");
+  return lines.map((line, lineIdx) => {
+    const tokens = tokenizeLine(line);
+    return (
+      <Fragment key={keyCounter++}>
+        {lineIdx > 0 && "\n"}
+        {tokens.map((token) => {
+          const cls = TOKEN_CLASS[token.type];
+          return cls
+            ? <span key={keyCounter++} className={cls}>{token.value}</span>
+            : token.value;
+        })}
+      </Fragment>
+    );
+  });
 }

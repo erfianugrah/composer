@@ -346,10 +346,9 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 <CardTitle className="text-sm font-data">{df.name}</CardTitle>
               </CardHeader>
               <CardContent>
-                <pre
-                  className="text-xs font-data bg-cp-950 border border-border rounded p-3 max-h-96 overflow-auto whitespace-pre-wrap"
-                  dangerouslySetInnerHTML={{ __html: highlightDockerfile(df.content) }}
-                />
+                <pre className="text-xs font-data bg-cp-950 border border-border rounded p-3 max-h-96 overflow-auto whitespace-pre-wrap">
+                  {highlightDockerfile(df.content)}
+                </pre>
               </CardContent>
             </Card>
           ))}

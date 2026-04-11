@@ -75,10 +75,9 @@ export function NetworksPage() {
                     </div>
                   </div>
                   {inspecting === n.id && (
-                    <pre
-                      className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap"
-                      dangerouslySetInnerHTML={{ __html: inspectData[n.id] ? highlightJSON(inspectData[n.id]) : "Loading..." }}
-                    />
+                    <pre className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap">
+                      {inspectData[n.id] ? highlightJSON(inspectData[n.id]) : "Loading..."}
+                    </pre>
                   )}
                 </div>
               ))}
