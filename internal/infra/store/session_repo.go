@@ -12,18 +12,27 @@ import (
 
 // SessionRepo implements auth.SessionRepository using database/sql.
 type SessionRepo struct {
-	db *sql.DB
+	db DBTX
 }
 
-func NewSessionRepo(db *sql.DB) *SessionRepo {
+// NewSessionRepo creates a new SessionRepo.
+func NewSessionRepo(db DBTX) *SessionRepo {
 	return &SessionRepo{db: db}
+}
+
+// conn returns the transaction from ctx if present, otherwise the default db.
+func (r *SessionRepo) conn(ctx context.Context) DBTX {
+	if tx := TxFromContext(ctx); tx != nil {
+		return tx
+	}
+	return r.db
 }
 
 func (r *SessionRepo) Create(ctx context.Context, s *auth.Session) error {
 	// Store SHA-256 hash of token, not the token itself.
 	// The plain token is in s.ID (returned to client as cookie).
 	hashedID := auth.HashSessionToken(s.ID)
-	_, err := r.db.ExecContext(ctx,
+	_, err := r.conn(ctx).ExecContext(ctx,
 		`INSERT INTO sessions (id, user_id, role, created_at, expires_at)
 		 VALUES ($1, $2, $3, $4, $5)`,
 		hashedID, s.UserID, string(s.Role), s.CreatedAt, s.ExpiresAt,
@@ -39,7 +48,7 @@ func (r *SessionRepo) GetByID(ctx context.Context, id string) (*auth.Session, er
 	hashedID := auth.HashSessionToken(id)
 	s := &auth.Session{}
 	var role string
-	err := r.db.QueryRowContext(ctx,
+	err := r.conn(ctx).QueryRowContext(ctx,
 		`SELECT id, user_id, role, created_at, expires_at
 		 FROM sessions WHERE id = $1`, hashedID,
 	).Scan(&s.ID, &s.UserID, &role, &s.CreatedAt, &s.ExpiresAt)
@@ -55,17 +64,17 @@ func (r *SessionRepo) GetByID(ctx context.Context, id string) (*auth.Session, er
 
 func (r *SessionRepo) DeleteByID(ctx context.Context, id string) error {
 	hashedID := auth.HashSessionToken(id)
-	_, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, hashedID)
+	_, err := r.conn(ctx).ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, hashedID)
 	return err
 }
 
 func (r *SessionRepo) DeleteByUserID(ctx context.Context, userID string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID)
+	_, err := r.conn(ctx).ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID)
 	return err
 }
 
 func (r *SessionRepo) DeleteExpired(ctx context.Context) (int, error) {
-	result, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < $1`, time.Now().UTC())
+	result, err := r.conn(ctx).ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < $1`, time.Now().UTC())
 	if err != nil {
 		return 0, fmt.Errorf("deleting expired sessions: %w", err)
 	}

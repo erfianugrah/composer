@@ -27,6 +27,7 @@ func setupBareRepo(t *testing.T) string {
 	run(t, "", "git", "clone", bareDir, workDir)
 	run(t, workDir, "git", "config", "user.email", "test@example.com")
 	run(t, workDir, "git", "config", "user.name", "Test")
+	run(t, workDir, "git", "config", "commit.gpgsign", "false")
 
 	// Create initial compose.yaml
 	compose := "services:\n  web:\n    image: nginx:alpine\n"
@@ -51,7 +52,13 @@ func run(t *testing.T, dir string, name string, args ...string) {
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	// Disable GPG signing and system git config to avoid hangs in CI/test envs
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_COMMITTER_NAME=Test",
+		"GIT_COMMITTER_EMAIL=test@example.com",
+	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("command %s %v failed: %v\n%s", name, args, err, out)
@@ -118,6 +125,7 @@ func TestGitClient_PullWithChanges(t *testing.T) {
 	run(t, "", "git", "clone", bareRepo, pushDir)
 	run(t, pushDir, "git", "config", "user.email", "test@example.com")
 	run(t, pushDir, "git", "config", "user.name", "Test")
+	run(t, pushDir, "git", "config", "commit.gpgsign", "false")
 
 	newCompose := "services:\n  web:\n    image: httpd:alpine\n"
 	require.NoError(t, os.WriteFile(filepath.Join(pushDir, "compose.yaml"), []byte(newCompose), 0644))

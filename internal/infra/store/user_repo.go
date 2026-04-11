@@ -11,16 +11,24 @@ import (
 
 // UserRepo implements auth.UserRepository using database/sql.
 type UserRepo struct {
-	db *sql.DB
+	db DBTX
 }
 
 // NewUserRepo creates a new UserRepo.
-func NewUserRepo(db *sql.DB) *UserRepo {
+func NewUserRepo(db DBTX) *UserRepo {
 	return &UserRepo{db: db}
 }
 
+// conn returns the transaction from ctx if present, otherwise the default db.
+func (r *UserRepo) conn(ctx context.Context) DBTX {
+	if tx := TxFromContext(ctx); tx != nil {
+		return tx
+	}
+	return r.db
+}
+
 func (r *UserRepo) Create(ctx context.Context, u *auth.User) error {
-	_, err := r.db.ExecContext(ctx,
+	_, err := r.conn(ctx).ExecContext(ctx,
 		`INSERT INTO users (id, email, password_hash, role, auth_provider, created_at, updated_at, last_login_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		u.ID, u.Email, u.PasswordHash, string(u.Role), u.AuthProvider, u.CreatedAt, u.UpdatedAt, u.LastLoginAt,
@@ -32,19 +40,19 @@ func (r *UserRepo) Create(ctx context.Context, u *auth.User) error {
 }
 
 func (r *UserRepo) GetByID(ctx context.Context, id string) (*auth.User, error) {
-	return scanUser(r.db.QueryRowContext(ctx,
+	return scanUser(r.conn(ctx).QueryRowContext(ctx,
 		`SELECT id, email, password_hash, role, auth_provider, created_at, updated_at, last_login_at
 		 FROM users WHERE id = $1`, id))
 }
 
 func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*auth.User, error) {
-	return scanUser(r.db.QueryRowContext(ctx,
+	return scanUser(r.conn(ctx).QueryRowContext(ctx,
 		`SELECT id, email, password_hash, role, auth_provider, created_at, updated_at, last_login_at
 		 FROM users WHERE email = $1`, email))
 }
 
 func (r *UserRepo) List(ctx context.Context) ([]*auth.User, error) {
-	rows, err := r.db.QueryContext(ctx,
+	rows, err := r.conn(ctx).QueryContext(ctx,
 		`SELECT id, email, password_hash, role, auth_provider, created_at, updated_at, last_login_at
 		 FROM users ORDER BY created_at ASC LIMIT 500`)
 	if err != nil {
@@ -67,7 +75,7 @@ func (r *UserRepo) List(ctx context.Context) ([]*auth.User, error) {
 }
 
 func (r *UserRepo) Update(ctx context.Context, u *auth.User) error {
-	result, err := r.db.ExecContext(ctx,
+	result, err := r.conn(ctx).ExecContext(ctx,
 		`UPDATE users SET email=$2, password_hash=$3, role=$4, updated_at=$5, last_login_at=$6
 		 WHERE id=$1`,
 		u.ID, u.Email, u.PasswordHash, string(u.Role), u.UpdatedAt, u.LastLoginAt,
@@ -82,7 +90,7 @@ func (r *UserRepo) Update(ctx context.Context, u *auth.User) error {
 }
 
 func (r *UserRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, id)
+	_, err := r.conn(ctx).ExecContext(ctx, `DELETE FROM users WHERE id=$1`, id)
 	if err != nil {
 		return fmt.Errorf("deleting user: %w", err)
 	}
@@ -91,7 +99,7 @@ func (r *UserRepo) Delete(ctx context.Context, id string) error {
 
 func (r *UserRepo) Count(ctx context.Context) (int, error) {
 	var count int
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
+	err := r.conn(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("counting users: %w", err)
 	}

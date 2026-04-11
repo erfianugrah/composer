@@ -15,6 +15,52 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
+// DBTX is the common interface between *sql.DB and *sql.Tx.
+// Repos accept this so they can operate within or outside a transaction.
+type DBTX interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+type txContextKey struct{}
+
+// ContextWithTx stores a transaction in the context.
+func ContextWithTx(ctx context.Context, tx *sql.Tx) context.Context {
+	return context.WithValue(ctx, txContextKey{}, tx)
+}
+
+// TxFromContext retrieves a transaction from the context, if any.
+func TxFromContext(ctx context.Context) *sql.Tx {
+	tx, _ := ctx.Value(txContextKey{}).(*sql.Tx)
+	return tx
+}
+
+// DBTxRunner implements app.TxRunner using the store's DB.
+type DBTxRunner struct {
+	db *DB
+}
+
+// NewDBTxRunner creates a DBTxRunner that wraps the given DB.
+func NewDBTxRunner(db *DB) *DBTxRunner {
+	return &DBTxRunner{db: db}
+}
+
+// RunInTx executes fn within a database transaction.
+// If fn returns an error the transaction is rolled back; otherwise committed.
+func (r *DBTxRunner) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	tx, err := r.db.SQL.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	txCtx := ContextWithTx(ctx, tx)
+	if err := fn(txCtx); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
 // DBType represents the database backend.
 type DBType string
 

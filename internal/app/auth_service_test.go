@@ -42,7 +42,9 @@ func setupAuthService(t *testing.T) *app.AuthService {
 	sessions := store.NewSessionRepo(db.SQL)
 	keys := store.NewAPIKeyRepo(db.SQL)
 
-	return app.NewAuthService(users, sessions, keys)
+	svc := app.NewAuthService(users, sessions, keys)
+	svc.SetTxRunner(store.NewDBTxRunner(db))
+	return svc
 }
 
 func TestAuthService_Bootstrap(t *testing.T) {

@@ -221,6 +221,8 @@ func main() {
 
 	// --- Application Services ---
 	authSvc := app.NewAuthService(userRepo, sessionRepo, apiKeyRepo)
+	// M6: Wire transaction runner for atomic login (revoke+create+update in one tx)
+	authSvc.SetTxRunner(store.NewDBTxRunner(db))
 	// P2: Wire Valkey cache for session lookups (avoids DB query per authenticated request)
 	if valkeyCache != nil {
 		authSvc.SetCache(valkeyCache)

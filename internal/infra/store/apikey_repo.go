@@ -12,15 +12,24 @@ import (
 
 // APIKeyRepo implements auth.APIKeyRepository using database/sql.
 type APIKeyRepo struct {
-	db *sql.DB
+	db DBTX
 }
 
-func NewAPIKeyRepo(db *sql.DB) *APIKeyRepo {
+// NewAPIKeyRepo creates a new APIKeyRepo.
+func NewAPIKeyRepo(db DBTX) *APIKeyRepo {
 	return &APIKeyRepo{db: db}
 }
 
+// conn returns the transaction from ctx if present, otherwise the default db.
+func (r *APIKeyRepo) conn(ctx context.Context) DBTX {
+	if tx := TxFromContext(ctx); tx != nil {
+		return tx
+	}
+	return r.db
+}
+
 func (r *APIKeyRepo) Create(ctx context.Context, k *auth.APIKey) error {
-	_, err := r.db.ExecContext(ctx,
+	_, err := r.conn(ctx).ExecContext(ctx,
 		`INSERT INTO api_keys (id, name, hashed_key, role, created_by, last_used_at, expires_at, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		k.ID, k.Name, k.HashedKey, string(k.Role), k.CreatedBy, k.LastUsedAt, k.ExpiresAt, k.CreatedAt,
@@ -34,7 +43,7 @@ func (r *APIKeyRepo) Create(ctx context.Context, k *auth.APIKey) error {
 func (r *APIKeyRepo) GetByID(ctx context.Context, id string) (*auth.APIKey, error) {
 	k := &auth.APIKey{}
 	var role string
-	err := r.db.QueryRowContext(ctx,
+	err := r.conn(ctx).QueryRowContext(ctx,
 		`SELECT id, name, hashed_key, role, created_by, last_used_at, expires_at, created_at
 		 FROM api_keys WHERE id = $1`, id,
 	).Scan(&k.ID, &k.Name, &k.HashedKey, &role, &k.CreatedBy, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt)
@@ -51,7 +60,7 @@ func (r *APIKeyRepo) GetByID(ctx context.Context, id string) (*auth.APIKey, erro
 func (r *APIKeyRepo) GetByHashedKey(ctx context.Context, hashedKey string) (*auth.APIKey, error) {
 	k := &auth.APIKey{}
 	var role string
-	err := r.db.QueryRowContext(ctx,
+	err := r.conn(ctx).QueryRowContext(ctx,
 		`SELECT id, name, hashed_key, role, created_by, last_used_at, expires_at, created_at
 		 FROM api_keys WHERE hashed_key = $1`, hashedKey,
 	).Scan(&k.ID, &k.Name, &k.HashedKey, &role, &k.CreatedBy, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt)
@@ -66,7 +75,7 @@ func (r *APIKeyRepo) GetByHashedKey(ctx context.Context, hashedKey string) (*aut
 }
 
 func (r *APIKeyRepo) List(ctx context.Context) ([]*auth.APIKey, error) {
-	rows, err := r.db.QueryContext(ctx,
+	rows, err := r.conn(ctx).QueryContext(ctx,
 		`SELECT id, name, hashed_key, role, created_by, last_used_at, expires_at, created_at
 		 FROM api_keys ORDER BY created_at ASC LIMIT 500`)
 	if err != nil {
@@ -88,12 +97,12 @@ func (r *APIKeyRepo) List(ctx context.Context) ([]*auth.APIKey, error) {
 }
 
 func (r *APIKeyRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
+	_, err := r.conn(ctx).ExecContext(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
 	return err
 }
 
 func (r *APIKeyRepo) UpdateLastUsed(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx,
+	_, err := r.conn(ctx).ExecContext(ctx,
 		`UPDATE api_keys SET last_used_at = $2 WHERE id = $1`,
 		id, time.Now().UTC())
 	return err
