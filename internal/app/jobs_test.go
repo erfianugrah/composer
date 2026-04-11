@@ -194,3 +194,38 @@ func TestJobManager_UniqueIDs(t *testing.T) {
 		ids[j.ID] = true
 	}
 }
+
+func TestJobManager_GetReturnsCopy(t *testing.T) {
+	m := NewJobManager()
+	job := m.Create("deploy", "stack-a")
+	m.Start(job.ID)
+
+	// Get a copy and mutate it
+	got := m.Get(job.ID)
+	require.NotNil(t, got)
+	got.Status = JobFailed
+	got.Output = "tampered"
+
+	// Original should be unchanged
+	original := m.Get(job.ID)
+	assert.Equal(t, JobRunning, original.Status, "original should still be running")
+	assert.Empty(t, original.Output, "original output should be empty")
+}
+
+func TestJobManager_ListReturnsCopies(t *testing.T) {
+	m := NewJobManager()
+	job := m.Create("deploy", "stack-a")
+	m.Start(job.ID)
+
+	jobs := m.List()
+	require.Len(t, jobs, 1)
+
+	// Mutate listed job
+	jobs[0].Status = JobFailed
+	jobs[0].Error = "tampered"
+
+	// Original should be unchanged
+	original := m.Get(job.ID)
+	assert.Equal(t, JobRunning, original.Status)
+	assert.Empty(t, original.Error)
+}
