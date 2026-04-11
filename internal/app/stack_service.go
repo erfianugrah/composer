@@ -592,16 +592,16 @@ func (s *StackService) ConvertToLocal(ctx context.Context, name string) error {
 		return fmt.Errorf("stack %s is already local", name)
 	}
 
-	// Delete git config
-	if err := s.gitCfgs.Delete(ctx, name); err != nil {
-		return fmt.Errorf("deleting git config: %w", err)
-	}
-
-	// Update source type
+	// Update source type first (crash between ops leaves stack in local state = acceptable)
 	st.Source = stack.SourceLocal
 	st.UpdatedAt = time.Now().UTC()
 	if err := s.stacks.Update(ctx, st); err != nil {
 		return fmt.Errorf("updating stack source: %w", err)
+	}
+
+	// Delete git config
+	if err := s.gitCfgs.Delete(ctx, name); err != nil {
+		return fmt.Errorf("deleting git config: %w", err)
 	}
 
 	// Remove .git directory but keep compose file
@@ -722,7 +722,9 @@ func (s *StackService) UpdateCredentials(ctx context.Context, name string, creds
 	cfg.Credentials = creds
 
 	// Update auth method based on what's set
-	if creds.Token != "" {
+	if creds == nil {
+		cfg.AuthMethod = stack.GitAuthNone
+	} else if creds.Token != "" {
 		cfg.AuthMethod = stack.GitAuthToken
 	} else if creds.SSHKeyFile != "" {
 		cfg.AuthMethod = stack.GitAuthSSHFile

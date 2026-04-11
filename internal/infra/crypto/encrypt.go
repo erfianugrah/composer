@@ -60,6 +60,7 @@ func deriveKey() ([]byte, error) {
 	if err := os.WriteFile(keyFile, []byte(keyHex), 0600); err != nil {
 		// Can't persist -- use the key in memory only this run
 		// (won't be able to decrypt on restart, but at least this run works)
+		fmt.Fprintf(os.Stderr, "WARNING: could not persist encryption key to %s: %v — encrypted data will be lost on restart\n", keyFile, err)
 		h := sha256.Sum256([]byte(keyHex))
 		return h[:], nil
 	}

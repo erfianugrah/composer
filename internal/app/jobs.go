@@ -94,11 +94,16 @@ func (m *JobManager) Fail(id, errMsg string) {
 	}
 }
 
-// Get returns a job by ID.
+// Get returns a job by ID (returns a copy to avoid data races).
 func (m *JobManager) Get(id string) *Job {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.jobs[id]
+	j, ok := m.jobs[id]
+	if !ok {
+		return nil
+	}
+	cp := *j
+	return &cp
 }
 
 // List returns all jobs, newest first. Caps at 100.
@@ -107,7 +112,8 @@ func (m *JobManager) List() []*Job {
 	defer m.mu.RUnlock()
 	jobs := make([]*Job, 0, len(m.jobs))
 	for _, j := range m.jobs {
-		jobs = append(jobs, j)
+		cp := *j
+		jobs = append(jobs, &cp)
 	}
 	// Sort by created_at descending
 	for i := 0; i < len(jobs); i++ {

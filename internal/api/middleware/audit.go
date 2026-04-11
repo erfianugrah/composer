@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -35,8 +36,10 @@ func Audit(repo *store.AuditRepo) func(http.Handler) http.Handler {
 				userID := UserIDFromContext(r.Context())
 				action := deriveAction(r.Method, r.URL.Path)
 				ip := r.RemoteAddr
-				if fwd := r.Header.Get("X-Real-IP"); fwd != "" {
-					ip = fwd
+				if os.Getenv("COMPOSER_TRUSTED_PROXIES") != "" {
+					if fwd := r.Header.Get("X-Real-IP"); fwd != "" {
+						ip = fwd
+					}
 				}
 
 				var buf [8]byte
