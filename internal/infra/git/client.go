@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,6 +20,10 @@ import (
 
 	domstack "github.com/erfianugrah/composer/internal/domain/stack"
 )
+
+// errLimitReached is a sentinel used to stop go-git's ForEach iteration
+// once we have collected enough commits.
+var errLimitReached = errors.New("limit reached")
 
 // hostKeyCallback returns an SSH host key callback.
 // Uses known_hosts file if available, falls back to insecure if COMPOSER_SSH_INSECURE_HOST_KEY=true.
@@ -285,7 +290,7 @@ func (c *Client) Log(stackDir, composePath string, limit int) ([]CommitInfo, err
 	var commits []CommitInfo
 	err = iter.ForEach(func(commit *object.Commit) error {
 		if len(commits) >= limit {
-			return fmt.Errorf("limit reached")
+			return errLimitReached
 		}
 		commits = append(commits, CommitInfo{
 			SHA:      commit.Hash.String(),
@@ -297,8 +302,8 @@ func (c *Client) Log(stackDir, composePath string, limit int) ([]CommitInfo, err
 		return nil
 	})
 
-	// "limit reached" is not a real error
-	if err != nil && err.Error() != "limit reached" {
+	// errLimitReached is expected flow control, not a real error
+	if err != nil && !errors.Is(err, errLimitReached) {
 		return nil, err
 	}
 

@@ -37,6 +37,9 @@ services:
       COMPOSER_STACKS_DIR: "/opt/stacks"
       COMPOSER_LOG_FORMAT: "${LOG_FORMAT:-json}"
       COMPOSER_LOG_LEVEL: "${LOG_LEVEL:-info}"
+      # WARNING: Set to "true" for production behind HTTPS. Code defaults to true
+      # unless explicitly set to "false", but this compose override defaults false
+      # for local development without TLS.
       COMPOSER_COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       COMPOSER_ENCRYPTION_KEY: "${ENCRYPTION_KEY:-}"
       COMPOSER_TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"

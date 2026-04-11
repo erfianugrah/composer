@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 )
@@ -116,13 +117,9 @@ func (m *JobManager) List() []*Job {
 		jobs = append(jobs, &cp)
 	}
 	// Sort by created_at descending
-	for i := 0; i < len(jobs); i++ {
-		for j := i + 1; j < len(jobs); j++ {
-			if jobs[j].CreatedAt.After(jobs[i].CreatedAt) {
-				jobs[i], jobs[j] = jobs[j], jobs[i]
-			}
-		}
-	}
+	slices.SortFunc(jobs, func(a, b *Job) int {
+		return b.CreatedAt.Compare(a.CreatedAt) // descending
+	})
 	if len(jobs) > 100 {
 		jobs = jobs[:100]
 	}
