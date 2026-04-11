@@ -54,3 +54,18 @@ func TestSession_IsExpired(t *testing.T) {
 		t.Error("session with past ExpiresAt should be expired")
 	}
 }
+
+func TestNewSession_InvalidRole(t *testing.T) {
+	// Invalid role should be rejected (B1 fix)
+	_, err := auth.NewSession("user1", auth.Role("superadmin"), time.Hour)
+	if err == nil {
+		t.Error("expected error for invalid role, got nil")
+	}
+}
+
+func TestNewSession_EmptyRole(t *testing.T) {
+	_, err := auth.NewSession("user1", auth.Role(""), time.Hour)
+	if err == nil {
+		t.Error("expected error for empty role, got nil")
+	}
+}
