@@ -4,11 +4,14 @@ import { Button } from "@/components/ui/button";
 import { highlightLog } from "@/lib/log-highlight";
 
 interface LogLine {
+  id: number;
   stream: string;
   message: string;
   ts: string;
   containerId?: string;
 }
+
+let nextLineId = 0;
 
 interface Props {
   /** Single container log stream */
@@ -25,7 +28,6 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
   const [lines, setLines] = useState<LogLine[]>([]);
   const [connected, setConnected] = useState(false);
   const [paused, setPaused] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
 
@@ -47,6 +49,7 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
       try {
         const data = JSON.parse(e.data);
         const line: LogLine = {
+          id: nextLineId++,
           stream: data.stream || "stdout",
           message: data.message || "",
           ts: data.ts || new Date().toISOString(),
@@ -78,20 +81,13 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
     };
   }, [containerId, stackName, tail]);
 
-  // Auto-scroll to bottom unless paused
-  useEffect(() => {
-    if (!paused && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [lines, paused]);
-
   // Detect if user scrolled up (pause auto-scroll)
-  function handleScroll() {
+  const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     const atBottom = scrollHeight - scrollTop - clientHeight < 50;
     setPaused(!atBottom);
-  }
+  }, []);
 
   function clearLogs() {
     setLines([]);
@@ -109,10 +105,7 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
         <div className="ml-auto flex gap-1">
           <Button size="xs" variant="ghost" onClick={clearLogs}>Clear</Button>
           {paused && (
-            <Button size="xs" variant="ghost" onClick={() => {
-              setPaused(false);
-              bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-            }}>
+            <Button size="xs" variant="ghost" onClick={() => setPaused(false)}>
               Resume
             </Button>
           )}
@@ -121,8 +114,8 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
       <VirtualizedLogView
         lines={lines}
         connected={connected}
+        paused={paused}
         containerRef={containerRef}
-        bottomRef={bottomRef}
         onScroll={handleScroll}
       />
     </div>
@@ -130,11 +123,11 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
 }
 
 // P6: Virtualized log renderer -- only renders visible rows
-function VirtualizedLogView({ lines, connected, containerRef, bottomRef, onScroll }: {
+function VirtualizedLogView({ lines, connected, paused, containerRef, onScroll }: {
   lines: LogLine[];
   connected: boolean;
+  paused: boolean;
   containerRef: React.RefObject<HTMLDivElement | null>;
-  bottomRef: React.RefObject<HTMLDivElement | null>;
   onScroll: () => void;
 }) {
   const virtualizer = useVirtualizer({
@@ -143,6 +136,13 @@ function VirtualizedLogView({ lines, connected, containerRef, bottomRef, onScrol
     estimateSize: () => 20, // ~20px per log line
     overscan: 50,
   });
+
+  // Auto-scroll to bottom unless paused
+  useEffect(() => {
+    if (!paused && lines.length > 0) {
+      virtualizer.scrollToIndex(lines.length - 1, { align: "end" });
+    }
+  }, [lines, paused, virtualizer]);
 
   return (
     <div
@@ -162,7 +162,7 @@ function VirtualizedLogView({ lines, connected, containerRef, bottomRef, onScrol
             const line = lines[virtualItem.index];
             return (
               <div
-                key={virtualItem.index}
+                key={line.id}
                 className={`absolute left-0 w-full px-3 whitespace-pre-wrap break-all ${line.stream === "stderr" ? "text-cp-red/90" : ""}`}
                 style={{ top: `${virtualItem.start}px`, height: `${virtualItem.size}px` }}
               >
@@ -177,7 +177,6 @@ function VirtualizedLogView({ lines, connected, containerRef, bottomRef, onScrol
               </div>
             );
           })}
-          <div ref={bottomRef} />
         </div>
       )}
     </div>

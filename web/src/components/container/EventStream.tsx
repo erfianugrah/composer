@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface DockerEvent {
+  id: number;
   type: string;
   data: Record<string, unknown>;
   ts: string;
 }
+
+let nextEventId = 0;
 
 export function EventStream() {
   const [events, setEvents] = useState<DockerEvent[]>([]);
@@ -24,6 +27,7 @@ export function EventStream() {
     ).then(({ data }) => {
       if (data?.events?.length) {
         setEvents(data.events.map((e) => ({
+          id: nextEventId++,
           type: `${e.type}.${e.action}`,
           data: { actor: e.actor, id: e.id },
           ts: e.time,
@@ -53,6 +57,7 @@ export function EventStream() {
         try {
           const data = JSON.parse(e.data);
           const evt: DockerEvent = {
+            id: nextEventId++,
             type: e.type || "event",
             data,
             ts: new Date().toISOString(),
@@ -96,11 +101,11 @@ export function EventStream() {
     }
   }, [events, paused]);
 
-  function handleScroll() {
+  const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     setPaused(scrollHeight - scrollTop - clientHeight > 50);
-  }
+  }, []);
 
   function getEventColor(type: string): string {
     if (type.includes("start") || type.includes("deploy")) return "bg-cp-green/20 text-cp-green border-cp-green/30";
@@ -119,8 +124,19 @@ export function EventStream() {
         <span className={`h-2 w-2 rounded-full ${connected ? "bg-cp-green" : "bg-cp-red"}`} />
         <span className="text-muted-foreground">{connected ? "Streaming" : "Disconnected"}</span>
         <span className="text-muted-foreground font-data">{events.length} events</span>
+        {paused && (
+          <span className="text-cp-peach">Scroll paused</span>
+        )}
         <div className="ml-auto flex gap-1">
           <Button size="xs" variant="ghost" onClick={() => setEvents([])}>Clear</Button>
+          {paused && (
+            <Button size="xs" variant="ghost" onClick={() => {
+              setPaused(false);
+              bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+            }}>
+              Resume
+            </Button>
+          )}
         </div>
       </div>
       <div
@@ -136,8 +152,8 @@ export function EventStream() {
           </div>
         ) : (
           <div className="p-3 space-y-1">
-            {events.map((evt, i) => (
-              <div key={i} className="flex items-start gap-2 py-0.5">
+            {events.map((evt) => (
+              <div key={evt.id} className="flex items-start gap-2 py-0.5">
                 <span className="text-muted-foreground font-data select-none shrink-0 tabular-nums whitespace-nowrap">
                   {new Date(evt.ts).toISOString().slice(11, 19)}
                 </span>
