@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface WebhookSummary {
   id: string;
@@ -49,7 +50,6 @@ export function WebhookSettings() {
 
   function fetchWebhooks() {
     apiFetch<{ webhooks: WebhookSummary[] }>("/api/v1/webhooks").then(({ data, error: err }) => {
-      if (err && err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
       if (data) setWebhooks(data.webhooks || []);
       setLoading(false);
     });
@@ -95,6 +95,7 @@ export function WebhookSettings() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="space-y-6">
       {/* Create webhook */}
       <Card>
@@ -254,5 +255,6 @@ export function WebhookSettings() {
         </CardContent>
       </Card>
     </div>
+    </ErrorBoundary>
   );
 }

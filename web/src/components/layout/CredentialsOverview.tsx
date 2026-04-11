@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface StackSummary { name: string; source: string; }
 interface CredentialsData {
@@ -57,6 +58,7 @@ export function CredentialsOverview() {
   if (gitStacks.length === 0) return null;
 
   return (
+    <ErrorBoundary>
     <Card>
       <CardHeader>
         <CardTitle className="text-sm">Credentials Overview</CardTitle>
@@ -96,5 +98,6 @@ export function CredentialsOverview() {
         </p>
       </CardContent>
     </Card>
+    </ErrorBoundary>
   );
 }

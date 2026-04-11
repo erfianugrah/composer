@@ -119,8 +119,12 @@ func (s *PipelineService) Run(ctx context.Context, pipelineID, triggeredBy strin
 		defer runCancel()
 
 		result := s.executor.Execute(runCtx, p, run)
-		if err := s.runs.Update(context.Background(), result); err != nil && s.logger != nil {
-			s.logger.Warn("failed to update pipeline run", zap.String("run_id", run.ID), zap.Error(err))
+		// Only persist if the run wasn't cancelled externally.
+		// CancelRun handles persistence for cancelled runs to avoid last-write-wins race.
+		if runCtx.Err() == nil {
+			if err := s.runs.Update(context.Background(), result); err != nil && s.logger != nil {
+				s.logger.Warn("failed to update pipeline run", zap.String("run_id", run.ID), zap.Error(err))
+			}
 		}
 	}()
 

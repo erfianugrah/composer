@@ -461,9 +461,17 @@ type ImportResult struct {
 // Already-existing stacks (by name) are skipped.
 func (s *StackService) ImportFromDir(ctx context.Context, sourceDir string) (*ImportResult, error) {
 	// Validate import path (S12) -- block sensitive system directories
-	absDir, _ := filepath.Abs(sourceDir)
+	absDir, err := filepath.Abs(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving import path: %w", err)
+	}
+	// Resolve symlinks to prevent bypassing the blocklist via symlink → /etc
+	resolved, err := filepath.EvalSymlinks(absDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving symlinks in import path: %w", err)
+	}
 	for _, blocked := range []string{"/etc", "/var/run", "/proc", "/sys", "/dev", "/root", "/boot"} {
-		if strings.HasPrefix(absDir, blocked) {
+		if strings.HasPrefix(resolved, blocked) || strings.HasPrefix(absDir, blocked) {
 			return nil, fmt.Errorf("import from %s is not permitted", blocked)
 		}
 	}

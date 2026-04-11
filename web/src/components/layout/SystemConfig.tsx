@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface SSHKeyInfo {
   name: string;
@@ -63,7 +64,6 @@ export function SystemConfig() {
     async function load() {
       const { data, error: err } = await apiFetch<ConfigData>("/api/v1/system/config");
       if (err) {
-        if (err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
         setError(err);
       } else if (data) {
         setConfig(data);
@@ -120,6 +120,7 @@ export function SystemConfig() {
   if (!config) return null;
 
   return (
+    <ErrorBoundary>
     <div className="space-y-4">
       {/* SSH Keys */}
       <Card>
@@ -335,5 +336,6 @@ export function SystemConfig() {
         </CardContent>
       </Card>
     </div>
+    </ErrorBoundary>
   );
 }

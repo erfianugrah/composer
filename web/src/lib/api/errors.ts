@@ -96,6 +96,14 @@ export async function apiFetch<T = unknown>(
       },
     });
     if (!res.ok) {
+      // Auto-redirect to login on 401 (session expired or invalid)
+      if (res.status === 401 && typeof window !== "undefined") {
+        // Don't redirect if already on login page
+        if (!window.location.pathname.startsWith("/login")) {
+          window.location.href = "/login";
+          return { data: null, error: "Session expired" };
+        }
+      }
       return { data: null, error: await extractError(res) };
     }
     const contentType = res.headers.get("content-type") || "";

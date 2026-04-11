@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface UserSummary {
   id: string;
@@ -33,7 +34,6 @@ export function UserManagement() {
   function fetchUsers() {
     apiFetch<{ users: UserSummary[] }>("/api/v1/users").then(({ data, error: err }) => {
       if (err) {
-        if (err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
         setError(err);
       } else {
         setUsers(data?.users || []);
@@ -71,6 +71,7 @@ export function UserManagement() {
   }
 
   return (
+    <ErrorBoundary>
     <Card>
       <CardHeader>
         <CardTitle className="text-sm">User Management</CardTitle>
@@ -166,5 +167,6 @@ export function UserManagement() {
         )}
       </CardContent>
     </Card>
+    </ErrorBoundary>
   );
 }

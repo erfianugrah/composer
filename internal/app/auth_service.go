@@ -15,6 +15,12 @@ var (
 	ErrNotFound           = errors.New("not found")
 )
 
+// TxRunner executes a function within a database transaction.
+// The repositories used inside fn must operate on the same transaction.
+type TxRunner interface {
+	RunInTx(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 // SessionCache is an optional interface for invalidating cached sessions/keys.
 type SessionCache interface {
 	GetSession(ctx context.Context, sessionID string) (*auth.Session, error)
@@ -29,6 +35,7 @@ type AuthService struct {
 	sessions auth.SessionRepository
 	keys     auth.APIKeyRepository
 	cache    SessionCache // optional, nil = no cache
+	tx       TxRunner     // optional, nil = no transactions
 }
 
 // NewAuthService creates a new AuthService.
@@ -47,6 +54,11 @@ func NewAuthService(
 // SetCache attaches an optional session/key cache for invalidation.
 func (s *AuthService) SetCache(c SessionCache) {
 	s.cache = c
+}
+
+// SetTxRunner attaches an optional transaction runner for atomic operations.
+func (s *AuthService) SetTxRunner(tx TxRunner) {
+	s.tx = tx
 }
 
 // IsBootstrapNeeded returns true if no users exist in the database.
@@ -101,26 +113,36 @@ func (s *AuthService) Login(ctx context.Context, email, password string, ttl tim
 		return nil, ErrInvalidCredentials
 	}
 
-	// Revoke existing sessions (session fixation prevention).
-	// Cache invalidation happens via TTL since we don't track session IDs per user in cache.
-	if err := s.sessions.DeleteByUserID(ctx, user.ID); err != nil {
-		return nil, fmt.Errorf("revoking old sessions: %w", err)
-	}
-
 	session, err := auth.NewSession(user.ID, user.Role, ttl)
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
 
-	if err := s.sessions.Create(ctx, session); err != nil {
-		return nil, fmt.Errorf("persisting session: %w", err)
+	// Wrap session rotation in a transaction when available.
+	// If tx is nil, operations run independently (pre-existing behavior).
+	doLogin := func(ctx context.Context) error {
+		if err := s.sessions.DeleteByUserID(ctx, user.ID); err != nil {
+			return fmt.Errorf("revoking old sessions: %w", err)
+		}
+		if err := s.sessions.Create(ctx, session); err != nil {
+			return fmt.Errorf("persisting session: %w", err)
+		}
+		now := time.Now().UTC()
+		user.LastLoginAt = &now
+		if err := s.users.Update(ctx, user); err != nil {
+			return fmt.Errorf("updating last login: %w", err)
+		}
+		return nil
 	}
 
-	// Update last login
-	now := time.Now().UTC()
-	user.LastLoginAt = &now
-	if err := s.users.Update(ctx, user); err != nil {
-		return nil, fmt.Errorf("updating last login: %w", err)
+	if s.tx != nil {
+		if err := s.tx.RunInTx(ctx, doLogin); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := doLogin(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	return session, nil

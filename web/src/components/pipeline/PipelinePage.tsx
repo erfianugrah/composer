@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface PipelineSummary {
   id: string;
@@ -45,7 +46,6 @@ export function PipelinePage() {
 
   function fetchPipelines() {
     apiFetch<{ pipelines: PipelineSummary[] }>("/api/v1/pipelines").then(({ data, error: err }) => {
-      if (err && err.includes("Invalid credentials")) { window.location.href = "/login"; return; }
       if (data) setPipelines(data.pipelines || []);
       setLoading(false);
     });
@@ -121,6 +121,7 @@ export function PipelinePage() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="space-y-6">
       {/* Create pipeline form */}
       <div className="flex justify-end">
@@ -244,5 +245,6 @@ export function PipelinePage() {
         </Card>
       )}
     </div>
+    </ErrorBoundary>
   );
 }

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface ImageInfo { id: string; tags: string[]; size: number; created: number; }
 
@@ -30,6 +31,7 @@ export function ImagesPage() {
   const totalSize = images.reduce((sum, img) => sum + img.size, 0);
 
   return (
+    <ErrorBoundary>
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
         <Card><CardContent className="p-6"><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Images</p><p className="text-2xl font-bold tabular-nums font-data">{images.length}</p></CardContent></Card>
@@ -82,5 +84,6 @@ export function ImagesPage() {
         </CardContent>
       </Card>
     </div>
+    </ErrorBoundary>
   );
 }
