@@ -843,6 +843,74 @@ func (s *StackService) publishEvent(evt event.Event) {
 	}
 }
 
+// ActionContext holds the resolved context for a streaming compose action.
+// The caller must call Cleanup() when done (releases lock, re-encrypts SOPS).
+type ActionContext struct {
+	StackPath   string
+	ComposeFile string
+	cleanup     func()
+}
+
+// Cleanup releases the stack lock and re-encrypts SOPS secrets.
+func (ac *ActionContext) Cleanup() {
+	if ac.cleanup != nil {
+		ac.cleanup()
+	}
+}
+
+// PrepareAction locks the stack, resolves the compose file, decrypts SOPS secrets,
+// and returns an ActionContext for the caller to run compose commands against.
+// The caller MUST call ActionContext.Cleanup() when done.
+func (s *StackService) PrepareAction(ctx context.Context, name string) (*ActionContext, error) {
+	s.locks.lock(name)
+
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil {
+		s.locks.unlock(name)
+		return nil, err
+	}
+	if st == nil {
+		s.locks.unlock(name)
+		return nil, ErrNotFound
+	}
+
+	cf := s.resolveComposeFile(ctx, name)
+	s.decryptSopsSecrets(ctx, name, st.Path)
+
+	return &ActionContext{
+		StackPath:   st.Path,
+		ComposeFile: cf,
+		cleanup: func() {
+			s.reEncryptSopsSecrets(st.Path)
+			s.locks.unlock(name)
+		},
+	}, nil
+}
+
+// PublishActionEvent emits the appropriate domain event for a completed compose action.
+func (s *StackService) PublishActionEvent(name, action string, actionErr error) {
+	now := time.Now()
+	if actionErr != nil {
+		s.publishEvent(event.StackError{Name: name, Error: actionErr.Error(), Timestamp: now})
+		return
+	}
+	switch action {
+	case "up", "update", "build":
+		s.publishEvent(event.StackDeployed{Name: name, Timestamp: now})
+	case "down":
+		s.publishEvent(event.StackStopped{Name: name, Timestamp: now})
+	case "restart":
+		s.publishEvent(event.StackDeployed{Name: name, Timestamp: now})
+	case "pull":
+		s.publishEvent(event.StackUpdated{Name: name, Timestamp: now})
+	}
+}
+
+// GetCompose returns the Compose CLI wrapper for direct use (e.g., streaming WS handlers).
+func (s *StackService) GetCompose() *docker.Compose {
+	return s.compose
+}
+
 // DecryptEnvContent returns the decrypted .env content for display in the UI.
 // If the file is SOPS-encrypted, decrypts in memory without modifying disk.
 // If not encrypted or sops is unavailable, returns raw content.

@@ -184,6 +184,13 @@ func NewServer(deps Deps) *Server {
 			Get("/api/v1/ws/terminal/{id}", termHandler.ServeHTTP)
 	}
 
+	// WebSocket compose action streaming (PTY output for pull/deploy progress)
+	if deps.StackService != nil {
+		composeWS := ws.NewComposeHandler(deps.StackService)
+		router.With(authmw.RequireRole(auth.RoleOperator)).
+			Get("/api/v1/ws/stacks/{name}/action", composeWS.ServeHTTP)
+	}
+
 	// OAuth/OIDC (raw chi handlers -- goth needs raw http)
 	if deps.UserRepo != nil && deps.SessionRepo != nil {
 		oauthHandler := handler.NewOAuthHandler(deps.AuthService, deps.UserRepo, deps.SessionRepo)

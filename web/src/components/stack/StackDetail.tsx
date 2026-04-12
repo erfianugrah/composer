@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api/errors";
 
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
 const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
+const ActionTerminal = lazy(() => import("./ActionTerminal").then(m => ({ default: m.ActionTerminal })));
 const ComposeEditor = lazy(() => import("./ComposeEditor").then(m => ({ default: m.ComposeEditor })));
 const ContainerStats = lazy(() => import("@/components/container/ContainerStats").then(m => ({ default: m.ContainerStats })));
 const LogViewer = lazy(() => import("@/components/container/LogViewer").then(m => ({ default: m.LogViewer })));
@@ -71,6 +72,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [attachGitUrl, setAttachGitUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "git">("containers");
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
+  const [streamingAction, setStreamingAction] = useState<string | null>(null);
 
   const fetchStack = async () => {
     const { data, error } = await apiFetch<StackData>(`/api/v1/stacks/${stackName}`);
@@ -183,22 +185,25 @@ export function StackDetail({ stackName }: { stackName: string }) {
           )}
         </div>
         <div className="flex flex-wrap gap-2" data-testid="stack-actions">
-          <Button size="sm" onClick={() => doAction("up")} disabled={!!actionLoading} data-testid="btn-deploy">
+          <Button size="sm" onClick={() => { setStreamingAction("update"); setActionOutput(""); setActionError(""); }} disabled={!!actionLoading || !!streamingAction} data-testid="btn-update">
+            Update
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => doAction("up")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-deploy">
             {actionLoading === "up" ? "Deploying..." : "Deploy"}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => doAction("build")} disabled={!!actionLoading} data-testid="btn-build">
+          <Button size="sm" variant="outline" onClick={() => doAction("build")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-build">
             {actionLoading === "build" ? "Building..." : "Build & Deploy"}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => doAction("restart")} disabled={!!actionLoading} data-testid="btn-restart">
+          <Button size="sm" variant="outline" onClick={() => doAction("restart")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-restart">
             Restart
           </Button>
-          <Button size="sm" variant="outline" onClick={() => doAction("pull")} disabled={!!actionLoading} data-testid="btn-pull">
+          <Button size="sm" variant="outline" onClick={() => doAction("pull")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-pull">
             Pull
           </Button>
-          <Button size="sm" variant="destructive" onClick={() => doAction("down")} disabled={!!actionLoading} data-testid="btn-stop">
+          <Button size="sm" variant="destructive" onClick={() => doAction("down")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-stop">
             Stop
           </Button>
-          <Button size="sm" variant="destructive" onClick={handleDelete} disabled={!!actionLoading} data-testid="btn-delete">
+          <Button size="sm" variant="destructive" onClick={handleDelete} disabled={!!actionLoading || !!streamingAction} data-testid="btn-delete">
             {actionLoading === "delete" ? "Deleting..." : "Delete"}
           </Button>
         </div>
@@ -212,8 +217,20 @@ export function StackDetail({ stackName }: { stackName: string }) {
         </div>
       )}
 
+      {/* Streaming action terminal (Update, etc.) */}
+      {streamingAction && (
+        <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
+          <ActionTerminal
+            stackName={stackName}
+            action={streamingAction}
+            onClose={() => setStreamingAction(null)}
+            onDone={(code) => { setTimeout(fetchStack, 1000); }}
+          />
+        </Suspense>
+      )}
+
       {/* Action output (stdout/stderr from deploy/stop/restart/pull) */}
-      {actionOutput && (
+      {actionOutput && !streamingAction && (
         <div className="rounded-lg border border-border bg-cp-950 p-3" data-testid="action-output">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-muted-foreground uppercase tracking-wider">Command Output</span>

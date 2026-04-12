@@ -5,6 +5,7 @@ go 1.26.1
 require (
 	filippo.io/age v1.3.1
 	github.com/coder/websocket v1.8.14
+	github.com/creack/pty v1.1.24
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/go-chi/chi/v5 v5.2.5

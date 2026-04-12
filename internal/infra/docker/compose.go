@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/creack/pty"
 	"go.uber.org/zap"
 )
 
@@ -216,6 +218,73 @@ func (c *Compose) run(ctx context.Context, workDir string, composeFile string, a
 		zap.Duration("duration", duration),
 	)
 	return result, nil
+}
+
+// PTYProcess holds a running compose command attached to a PTY.
+// Read from PTY to get terminal output; call Wait() to block until done.
+type PTYProcess struct {
+	PTY  *os.File // read output from here
+	cmd  *exec.Cmd
+	done chan struct{}
+	err  error
+}
+
+// Wait blocks until the compose command finishes and returns any error.
+func (p *PTYProcess) Wait() error {
+	<-p.done
+	return p.err
+}
+
+// Close closes the PTY master fd.
+func (p *PTYProcess) Close() {
+	p.PTY.Close()
+}
+
+// Resize changes the PTY window size (triggers SIGWINCH in the child process).
+func (p *PTYProcess) Resize(cols, rows uint16) error {
+	return pty.Setsize(p.PTY, &pty.Winsize{Cols: cols, Rows: rows})
+}
+
+// RunPTY starts a compose command attached to a PTY for real-time streaming.
+// Returns a PTYProcess; the caller reads output from PTY and must call Close().
+// The command runs in a goroutine; call Wait() to block until completion.
+func (c *Compose) RunPTY(ctx context.Context, workDir, composeFile string, cols, rows uint16, args ...string) (*PTYProcess, error) {
+	var fullArgs []string
+	if composeFile != "" {
+		fullArgs = append([]string{"compose", "-f", composeFile}, args...)
+	} else {
+		fullArgs = append([]string{"compose"}, args...)
+	}
+
+	cmdStr := "docker " + strings.Join(fullArgs, " ")
+	c.log.Info("compose exec (pty)",
+		zap.String("command", cmdStr),
+		zap.String("dir", workDir),
+	)
+
+	cmd := exec.CommandContext(ctx, "docker", fullArgs...)
+	cmd.Dir = workDir
+	if c.dockerHost != "" {
+		cmd.Env = append(cmd.Environ(), "DOCKER_HOST="+c.dockerHost)
+	}
+
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})
+	if err != nil {
+		return nil, fmt.Errorf("starting compose with pty: %w", err)
+	}
+
+	proc := &PTYProcess{
+		PTY:  ptmx,
+		cmd:  cmd,
+		done: make(chan struct{}),
+	}
+
+	go func() {
+		proc.err = cmd.Wait()
+		close(proc.done)
+	}()
+
+	return proc, nil
 }
 
 // limitedBuffer is a bytes.Buffer that stops accepting writes after max bytes.
