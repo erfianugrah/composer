@@ -27,11 +27,12 @@ type GitLogOutput struct {
 }
 
 type GitCommitOutput struct {
-	SHA      string    `json:"sha"`
-	ShortSHA string    `json:"short_sha"`
-	Message  string    `json:"message"`
-	Author   string    `json:"author"`
-	Date     time.Time `json:"date"`
+	SHA            string    `json:"sha"`
+	ShortSHA       string    `json:"short_sha"`
+	Message        string    `json:"message"`
+	Author         string    `json:"author"`
+	Date           time.Time `json:"date"`
+	ChangedCompose bool      `json:"changed_compose" doc:"True if this commit modified the compose file"`
 }
 
 type GitStatusInput struct {

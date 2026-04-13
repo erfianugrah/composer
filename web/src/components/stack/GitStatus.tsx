@@ -20,6 +20,7 @@ interface GitCommit {
   message: string;
   author: string;
   date: string;
+  changed_compose: boolean;
 }
 
 const syncStatusColor: Record<string, string> = {
@@ -153,7 +154,12 @@ export function GitStatus({ stackName }: { stackName: string }) {
                     {commit.short_sha}
                   </code>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate">{commit.message}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm truncate">{commit.message}</p>
+                      {commit.changed_compose && (
+                        <Badge className="bg-cp-blue/20 text-cp-blue border-cp-blue/30 shrink-0">compose</Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {commit.author} &middot; {new Date(commit.date).toLocaleDateString()}
                     </p>

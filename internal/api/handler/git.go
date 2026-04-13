@@ -103,7 +103,7 @@ func (h *GitHandler) Log(ctx context.Context, input *dto.GitLogInput) (*dto.GitL
 	for _, c := range commits {
 		out.Body.Commits = append(out.Body.Commits, dto.GitCommitOutput{
 			SHA: c.SHA, ShortSHA: c.ShortSHA, Message: c.Message,
-			Author: c.Author, Date: c.Date,
+			Author: c.Author, Date: c.Date, ChangedCompose: c.ChangedCompose,
 		})
 	}
 	return out, nil

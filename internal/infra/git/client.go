@@ -275,13 +275,8 @@ func (c *Client) Log(stackDir, composePath string, limit int) ([]CommitInfo, err
 		return nil, fmt.Errorf("opening repo: %w", err)
 	}
 
-	logOpts := &git.LogOptions{
-		PathFilter: func(path string) bool {
-			return path == composePath
-		},
-	}
-
-	iter, err := repo.Log(logOpts)
+	// Show all commits (no PathFilter) so the user sees the full branch history.
+	iter, err := repo.Log(&git.LogOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("getting log: %w", err)
 	}
@@ -292,12 +287,28 @@ func (c *Client) Log(stackDir, composePath string, limit int) ([]CommitInfo, err
 		if len(commits) >= limit {
 			return errLimitReached
 		}
+
+		// Check if this commit touched the compose file by diffing against parent.
+		changedCompose := false
+		if composePath != "" {
+			stats, statErr := commit.Stats()
+			if statErr == nil {
+				for _, s := range stats {
+					if s.Name == composePath {
+						changedCompose = true
+						break
+					}
+				}
+			}
+		}
+
 		commits = append(commits, CommitInfo{
-			SHA:      commit.Hash.String(),
-			ShortSHA: commit.Hash.String()[:7],
-			Message:  strings.TrimSpace(commit.Message),
-			Author:   commit.Author.Name,
-			Date:     commit.Author.When,
+			SHA:            commit.Hash.String(),
+			ShortSHA:       commit.Hash.String()[:7],
+			Message:        strings.TrimSpace(commit.Message),
+			Author:         commit.Author.Name,
+			Date:           commit.Author.When,
+			ChangedCompose: changedCompose,
 		})
 		return nil
 	})
@@ -393,11 +404,12 @@ func (c *Client) IsRepo(dir string) bool {
 
 // CommitInfo holds information about a git commit.
 type CommitInfo struct {
-	SHA      string    `json:"sha"`
-	ShortSHA string    `json:"short_sha"`
-	Message  string    `json:"message"`
-	Author   string    `json:"author"`
-	Date     time.Time `json:"date"`
+	SHA            string    `json:"sha"`
+	ShortSHA       string    `json:"short_sha"`
+	Message        string    `json:"message"`
+	Author         string    `json:"author"`
+	Date           time.Time `json:"date"`
+	ChangedCompose bool      `json:"changed_compose"` // true if this commit modified the compose file
 }
 
 // fileChangedBetween checks if a specific file changed between two commits.
