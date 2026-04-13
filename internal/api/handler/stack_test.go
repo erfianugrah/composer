@@ -64,6 +64,7 @@ func setupStackServer(t *testing.T) *api.Server {
 		nil, // no logger in tests
 		stacksDir,
 		t.TempDir(), // dataDir
+		app.NewStackLocks(),
 	)
 
 	jobManager := app.NewJobManager()

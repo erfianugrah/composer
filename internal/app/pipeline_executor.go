@@ -30,6 +30,7 @@ type PipelineExecutor struct {
 	stacks    stack.StackRepository     // resolve stack name → path
 	gitCfgs   stack.GitConfigRepository // per-stack SOPS age key
 	stacksDir string                    // global age key fallback
+	locks     *StackLocks               // shared with StackService — prevents concurrent compose ops
 }
 
 func NewPipelineExecutor(
@@ -38,6 +39,7 @@ func NewPipelineExecutor(
 	stacks stack.StackRepository,
 	gitCfgs stack.GitConfigRepository,
 	stacksDir string,
+	locks *StackLocks,
 ) *PipelineExecutor {
 	return &PipelineExecutor{
 		compose:   compose,
@@ -45,6 +47,7 @@ func NewPipelineExecutor(
 		stacks:    stacks,
 		gitCfgs:   gitCfgs,
 		stacksDir: stacksDir,
+		locks:     locks,
 	}
 }
 
@@ -245,6 +248,9 @@ func (e *PipelineExecutor) executeComposeStep(ctx context.Context, step pipeline
 	if stackName == "" {
 		return "", fmt.Errorf("compose_%s: missing stack config", op)
 	}
+
+	e.locks.Lock(stackName)
+	defer e.locks.Unlock(stackName)
 
 	// Resolve stack name → filesystem path
 	var stackPath, composePath string

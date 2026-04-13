@@ -26,6 +26,7 @@ type GitService struct {
 	bus       domevent.Bus
 	log       *zap.Logger
 	stacksDir string
+	locks     *StackLocks // shared with StackService — prevents concurrent compose ops
 }
 
 func NewGitService(
@@ -36,6 +37,7 @@ func NewGitService(
 	bus domevent.Bus,
 	log *zap.Logger,
 	stacksDir string,
+	locks *StackLocks,
 ) *GitService {
 	if log == nil {
 		log = zap.NewNop()
@@ -43,6 +45,7 @@ func NewGitService(
 	return &GitService{
 		stacks: stacks, gitCfgs: gitCfgs, gitClient: gitClient,
 		compose: compose, bus: bus, log: log.Named("git"), stacksDir: stacksDir,
+		locks: locks,
 	}
 }
 
@@ -97,6 +100,8 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 	s.publishEvent(domevent.StackCreated{Name: name, Timestamp: time.Now()})
 
 	// Auto-deploy after clone
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 	s.log.Info("auto-deploying cloned stack", zap.String("stack", name))
 	if sops.IsAvailable() {
 		var perStackAgeKey string
@@ -161,6 +166,8 @@ func (s *GitService) Sync(ctx context.Context, name string) (changed bool, newSH
 // Always pulls images and redeploys when triggered by a webhook, even if the
 // compose file hasn't changed — the webhook itself signals a new image is available.
 func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action string, err error) {
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 	s.log.Info("sync+redeploy", zap.String("stack", name))
 	_, _, err = s.Sync(ctx, name)
 	if err != nil {

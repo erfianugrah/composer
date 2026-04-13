@@ -228,10 +228,11 @@ func main() {
 		authSvc.SetCache(valkeyCache)
 		logger.Info("auth session cache enabled via Valkey")
 	}
+	stackLocks := app.NewStackLocks() // shared across all services that run compose operations
 	var gitSvc *app.GitService
 	if dockerClient != nil {
-		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, logger, cfg.StacksDir, cfg.DataDir)
-		gitSvc = app.NewGitService(stackRepo, gitConfigRepo, gitClient, compose, bus, logger, cfg.StacksDir)
+		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, logger, cfg.StacksDir, cfg.DataDir, stackLocks)
+		gitSvc = app.NewGitService(stackRepo, gitConfigRepo, gitClient, compose, bus, logger, cfg.StacksDir, stackLocks)
 	}
 
 	// --- Pipeline Service ---
@@ -240,7 +241,7 @@ func main() {
 	var pipelineExecutor *app.PipelineExecutor
 	var pipelineSvc *app.PipelineService
 	if compose != nil {
-		pipelineExecutor = app.NewPipelineExecutor(compose, bus, stackRepo, gitConfigRepo, cfg.StacksDir)
+		pipelineExecutor = app.NewPipelineExecutor(compose, bus, stackRepo, gitConfigRepo, cfg.StacksDir, stackLocks)
 		pipelineSvc = app.NewPipelineService(pipelineRepo, runRepo, pipelineExecutor)
 		pipelineSvc.SetLogger(logger)
 	}

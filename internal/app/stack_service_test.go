@@ -84,7 +84,7 @@ func (r *mockGitConfigRepo) UpdateSyncStatus(_ context.Context, _ string, _ stac
 // ---------------------------------------------------------------------------
 
 func TestImportFromDir_BlocksSensitivePaths(t *testing.T) {
-	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 
 	blocked := []string{"/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/var/run"}
 	for _, path := range blocked {
@@ -95,7 +95,7 @@ func TestImportFromDir_BlocksSensitivePaths(t *testing.T) {
 }
 
 func TestImportFromDir_BlocksSensitiveSubPaths(t *testing.T) {
-	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 
 	// Sub-paths under blocked dirs should also be blocked (or fail with permission denied)
 	subpaths := []string{"/etc/nginx", "/proc/1", "/sys/class", "/dev/shm"}
@@ -121,7 +121,7 @@ func TestImportFromDir_BlocksSymlinkToSensitive(t *testing.T) {
 	err := os.Symlink("/etc", symlink)
 	require.NoError(t, err)
 
-	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	_, err = svc.ImportFromDir(context.Background(), symlink)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not permitted")
@@ -134,7 +134,7 @@ func TestImportFromDir_AllowsNormalDir(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(stackDir, "compose.yaml"), []byte("services:\n  web:\n    image: nginx\n"), 0644))
 
 	stacksDir := t.TempDir()
-	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, stacksDir, t.TempDir())
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, stacksDir, t.TempDir(), NewStackLocks())
 
 	result, err := svc.ImportFromDir(context.Background(), sourceDir)
 	require.NoError(t, err)
@@ -154,7 +154,7 @@ func TestImportFromDir_SkipsExisting(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(context.Background(), existing))
 
-	svc := NewStackService(repo, newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(repo, newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	result, err := svc.ImportFromDir(context.Background(), sourceDir)
 	require.NoError(t, err)
 	assert.Contains(t, result.Skipped, "existing")
@@ -167,7 +167,7 @@ func TestImportFromDir_SkipsNonStackDirs(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "notastack"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "notastack", "README.md"), []byte("hello"), 0644))
 
-	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	result, err := svc.ImportFromDir(context.Background(), sourceDir)
 	require.NoError(t, err)
 	assert.Empty(t, result.Imported)
@@ -183,7 +183,7 @@ func TestImportFromDir_MultipleStacks(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  web:\n    image: nginx\n"), 0644))
 	}
 
-	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	result, err := svc.ImportFromDir(context.Background(), sourceDir)
 	require.NoError(t, err)
 	assert.Len(t, result.Imported, 3)
@@ -197,7 +197,7 @@ func TestImportFromDir_AcceptsAlternateComposeNames(t *testing.T) {
 	require.NoError(t, os.MkdirAll(stackDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(stackDir, "docker-compose.yml"), []byte("services:\n  web:\n    image: nginx\n"), 0644))
 
-	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	result, err := svc.ImportFromDir(context.Background(), sourceDir)
 	require.NoError(t, err)
 	assert.Contains(t, result.Imported, "legacy")
@@ -214,7 +214,7 @@ func TestUpdateCredentials_NilCreds(t *testing.T) {
 		AuthMethod: stack.GitAuthToken,
 	}
 
-	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	err := svc.UpdateCredentials(context.Background(), "mystack", nil)
 	require.NoError(t, err)
 
@@ -229,7 +229,7 @@ func TestUpdateCredentials_WithToken(t *testing.T) {
 		RepoURL: "https://github.com/test/repo",
 	}
 
-	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	err := svc.UpdateCredentials(context.Background(), "mystack", &stack.GitCredentials{Token: "ghp_abc123"})
 	require.NoError(t, err)
 
@@ -244,7 +244,7 @@ func TestUpdateCredentials_WithSSHKey(t *testing.T) {
 		RepoURL: "https://github.com/test/repo",
 	}
 
-	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	err := svc.UpdateCredentials(context.Background(), "mystack", &stack.GitCredentials{SSHKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----"})
 	require.NoError(t, err)
 
@@ -258,7 +258,7 @@ func TestUpdateCredentials_WithSSHKeyFile(t *testing.T) {
 		RepoURL: "https://github.com/test/repo",
 	}
 
-	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	err := svc.UpdateCredentials(context.Background(), "mystack", &stack.GitCredentials{SSHKeyFile: "/home/user/.ssh/id_ed25519"})
 	require.NoError(t, err)
 
@@ -272,7 +272,7 @@ func TestUpdateCredentials_WithBasicAuth(t *testing.T) {
 		RepoURL: "https://github.com/test/repo",
 	}
 
-	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	err := svc.UpdateCredentials(context.Background(), "mystack", &stack.GitCredentials{Username: "admin", Password: "secret"})
 	require.NoError(t, err)
 
@@ -287,7 +287,7 @@ func TestUpdateCredentials_EmptyCredsResetsToNone(t *testing.T) {
 		AuthMethod: stack.GitAuthToken,
 	}
 
-	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	// Empty creds (no fields set) should result in AuthNone
 	err := svc.UpdateCredentials(context.Background(), "mystack", &stack.GitCredentials{})
 	require.NoError(t, err)
@@ -297,7 +297,7 @@ func TestUpdateCredentials_EmptyCredsResetsToNone(t *testing.T) {
 }
 
 func TestUpdateCredentials_NotFound(t *testing.T) {
-	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir())
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
 	err := svc.UpdateCredentials(context.Background(), "nonexistent", nil)
 	assert.ErrorIs(t, err, ErrNotFound)
 }

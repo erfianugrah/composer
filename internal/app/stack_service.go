@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+
 	"time"
 
 	"go.uber.org/zap"
@@ -28,33 +28,7 @@ type StackService struct {
 	log       *zap.Logger
 	stacksDir string
 	dataDir   string
-	locks     stackLocks // per-stack mutex to prevent concurrent operations
-}
-
-// stackLocks provides per-stack mutual exclusion.
-type stackLocks struct {
-	mu    sync.Mutex
-	locks map[string]*sync.Mutex
-}
-
-func (l *stackLocks) lock(name string) {
-	l.mu.Lock()
-	m, ok := l.locks[name]
-	if !ok {
-		m = &sync.Mutex{}
-		l.locks[name] = m
-	}
-	l.mu.Unlock()
-	m.Lock()
-}
-
-func (l *stackLocks) unlock(name string) {
-	l.mu.Lock()
-	m := l.locks[name]
-	l.mu.Unlock()
-	if m != nil {
-		m.Unlock()
-	}
+	locks     *StackLocks // per-stack mutex to prevent concurrent compose operations (shared)
 }
 
 // NewStackService creates a new StackService.
@@ -67,6 +41,7 @@ func NewStackService(
 	log *zap.Logger,
 	stacksDir string,
 	dataDir string,
+	locks *StackLocks,
 ) *StackService {
 	if log == nil {
 		log = zap.NewNop()
@@ -80,14 +55,14 @@ func NewStackService(
 		log:       log.Named("stacks"),
 		stacksDir: stacksDir,
 		dataDir:   dataDir,
-		locks:     stackLocks{locks: make(map[string]*sync.Mutex)},
+		locks:     locks,
 	}
 }
 
 // Create creates a new local stack with the given compose content.
 func (s *StackService) Create(ctx context.Context, name, composeContent string) (*stack.Stack, error) {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	stackPath := filepath.Join(s.stacksDir, name)
 
@@ -215,8 +190,8 @@ func (s *StackService) List(ctx context.Context) ([]*stack.Stack, error) {
 // The sync status is marked "dirty" to warn the user that the next git sync
 // will overwrite these local edits unless they are committed and pushed.
 func (s *StackService) Update(ctx context.Context, name, composeContent string) (*stack.Stack, error) {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
@@ -259,8 +234,8 @@ func (s *StackService) Update(ctx context.Context, name, composeContent string) 
 
 // Delete removes a stack.
 func (s *StackService) Delete(ctx context.Context, name string, removeVolumes bool) error {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
@@ -283,17 +258,15 @@ func (s *StackService) Delete(ctx context.Context, name string, removeVolumes bo
 	s.publishEvent(event.StackDeleted{Name: name, Timestamp: time.Now()})
 
 	// Clean up the per-stack lock to prevent unbounded growth
-	s.locks.mu.Lock()
-	delete(s.locks.locks, name)
-	s.locks.mu.Unlock()
+	s.locks.Delete(name)
 
 	return nil
 }
 
 // Deploy runs docker compose up.
 func (s *StackService) Deploy(ctx context.Context, name string) (*docker.ComposeResult, error) {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
@@ -322,8 +295,8 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 
 // BuildAndDeploy runs docker compose up --build (builds Dockerfiles then starts).
 func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker.ComposeResult, error) {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
@@ -350,8 +323,8 @@ func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker
 
 // Stop runs docker compose down.
 func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeResult, error) {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
@@ -376,8 +349,8 @@ func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeRe
 
 // Restart runs docker compose restart.
 func (s *StackService) Restart(ctx context.Context, name string) (*docker.ComposeResult, error) {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
@@ -401,8 +374,8 @@ func (s *StackService) Restart(ctx context.Context, name string) (*docker.Compos
 
 // Pull runs docker compose pull.
 func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeResult, error) {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
@@ -544,8 +517,8 @@ func (s *StackService) ImportFromDir(ctx context.Context, sourceDir string) (*Im
 // ConvertToGit converts a local stack to a git-backed stack by initializing
 // a git repo, committing the compose file, and optionally pushing to a remote.
 func (s *StackService) ConvertToGit(ctx context.Context, name string, repoURL, branch string, creds *stack.GitCredentials) error {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil || st == nil {
@@ -589,8 +562,8 @@ func (s *StackService) ConvertToGit(ctx context.Context, name string, repoURL, b
 // ConvertToLocal detaches a git-backed stack from its git repo,
 // keeping the compose file on disk. The git config is deleted.
 func (s *StackService) ConvertToLocal(ctx context.Context, name string) error {
-	s.locks.lock(name)
-	defer s.locks.unlock(name)
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil || st == nil {
@@ -862,15 +835,15 @@ func (ac *ActionContext) Cleanup() {
 // and returns an ActionContext for the caller to run compose commands against.
 // The caller MUST call ActionContext.Cleanup() when done.
 func (s *StackService) PrepareAction(ctx context.Context, name string) (*ActionContext, error) {
-	s.locks.lock(name)
+	s.locks.Lock(name)
 
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {
-		s.locks.unlock(name)
+		s.locks.Unlock(name)
 		return nil, err
 	}
 	if st == nil {
-		s.locks.unlock(name)
+		s.locks.Unlock(name)
 		return nil, ErrNotFound
 	}
 
@@ -882,7 +855,7 @@ func (s *StackService) PrepareAction(ctx context.Context, name string) (*ActionC
 		ComposeFile: cf,
 		cleanup: func() {
 			s.reEncryptSopsSecrets(st.Path)
-			s.locks.unlock(name)
+			s.locks.Unlock(name)
 		},
 	}, nil
 }
