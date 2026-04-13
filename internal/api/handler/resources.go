@@ -88,6 +88,30 @@ func (h *ResourceHandler) Register(api huma.API) {
 		OperationID: "pruneImages", Method: http.MethodPost,
 		Path: "/api/v1/images/prune", Summary: "Remove unused Docker images", Tags: []string{"images"},
 	}, h.PruneImages)
+
+	// System-wide cleanup
+	huma.Register(api, huma.Operation{
+		OperationID: "pruneContainers", Method: http.MethodPost,
+		Path:    "/api/v1/containers/prune",
+		Summary: "Remove stopped containers", Tags: []string{"docker"},
+	}, h.PruneContainers)
+	huma.Register(api, huma.Operation{
+		OperationID: "pruneNetworks", Method: http.MethodPost,
+		Path:    "/api/v1/networks/prune",
+		Summary: "Remove unused Docker networks", Tags: []string{"docker"},
+	}, h.PruneNetworks)
+	huma.Register(api, huma.Operation{
+		OperationID: "pruneBuildCache", Method: http.MethodPost,
+		Path:    "/api/v1/builder/prune",
+		Summary: "Remove Docker build cache", Tags: []string{"docker"},
+	}, h.PruneBuildCache)
+	huma.Register(api, huma.Operation{
+		OperationID: "systemPrune", Method: http.MethodPost,
+		Path:        "/api/v1/docker/prune",
+		Summary:     "System prune: containers + images + networks + build cache + volumes (optional)",
+		Description: "Equivalent to `docker system prune`. Removes stopped containers, unused networks, dangling images, and build cache. Pass ?all=true for all unused images, ?volumes=true to also prune volumes.",
+		Tags:        []string{"docker"},
+	}, h.SystemPrune)
 }
 
 // --- Networks ---
@@ -302,11 +326,15 @@ func (h *ResourceHandler) RemoveImage(ctx context.Context, input *ImageIDInput) 
 	return nil, nil
 }
 
-func (h *ResourceHandler) PruneImages(ctx context.Context, input *struct{}) (*PruneOutput, error) {
+type PruneImagesInput struct {
+	All bool `query:"all" default:"false" doc:"Remove all unused images, not just dangling/untagged"`
+}
+
+func (h *ResourceHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*PruneOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
-	reclaimed, err := h.docker.PruneImages(ctx)
+	reclaimed, err := h.docker.PruneImages(ctx, input.All)
 	if err != nil {
 		return nil, serverError(err)
 	}
@@ -400,4 +428,105 @@ func (h *ResourceHandler) RecentEvents(ctx context.Context, input *RecentEventsI
 			return out, nil
 		}
 	}
+}
+
+// --- Prune handlers ---
+
+func (h *ResourceHandler) PruneContainers(ctx context.Context, input *struct{}) (*PruneOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+	reclaimed, err := h.docker.PruneContainers(ctx)
+	if err != nil {
+		return nil, serverError(err)
+	}
+	out := &PruneOutput{}
+	out.Body.SpaceReclaimed = formatBytes(reclaimed)
+	return out, nil
+}
+
+type PruneNetworksOutput struct {
+	Body struct {
+		NetworksDeleted []string `json:"networks_deleted"`
+	}
+}
+
+func (h *ResourceHandler) PruneNetworks(ctx context.Context, input *struct{}) (*PruneNetworksOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+	deleted, err := h.docker.PruneNetworks(ctx)
+	if err != nil {
+		return nil, serverError(err)
+	}
+	out := &PruneNetworksOutput{}
+	out.Body.NetworksDeleted = deleted
+	return out, nil
+}
+
+func (h *ResourceHandler) PruneBuildCache(ctx context.Context, input *struct{}) (*PruneOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+	reclaimed, err := h.docker.PruneBuildCache(ctx)
+	if err != nil {
+		return nil, serverError(err)
+	}
+	out := &PruneOutput{}
+	out.Body.SpaceReclaimed = formatBytes(reclaimed)
+	return out, nil
+}
+
+type SystemPruneInput struct {
+	All     bool `query:"all" default:"true" doc:"Remove all unused images (not just dangling)"`
+	Volumes bool `query:"volumes" default:"false" doc:"Also prune unused volumes"`
+}
+
+type SystemPruneOutput struct {
+	Body struct {
+		ContainersReclaimed string   `json:"containers_reclaimed"`
+		ImagesReclaimed     string   `json:"images_reclaimed"`
+		NetworksDeleted     []string `json:"networks_deleted"`
+		BuildCacheReclaimed string   `json:"build_cache_reclaimed"`
+		VolumesReclaimed    string   `json:"volumes_reclaimed,omitempty"`
+		TotalReclaimed      string   `json:"total_reclaimed"`
+	}
+}
+
+func (h *ResourceHandler) SystemPrune(ctx context.Context, input *SystemPruneInput) (*SystemPruneOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+
+	var total uint64
+	out := &SystemPruneOutput{}
+
+	// 1. Containers
+	cr, _ := h.docker.PruneContainers(ctx)
+	total += cr
+	out.Body.ContainersReclaimed = formatBytes(cr)
+
+	// 2. Networks
+	nd, _ := h.docker.PruneNetworks(ctx)
+	out.Body.NetworksDeleted = nd
+
+	// 3. Images
+	ir, _ := h.docker.PruneImages(ctx, input.All)
+	total += ir
+	out.Body.ImagesReclaimed = formatBytes(ir)
+
+	// 4. Build cache
+	br, _ := h.docker.PruneBuildCache(ctx)
+	total += br
+	out.Body.BuildCacheReclaimed = formatBytes(br)
+
+	// 5. Volumes (optional — destructive)
+	if input.Volumes {
+		vr, _ := h.docker.PruneVolumes(ctx)
+		total += vr
+		out.Body.VolumesReclaimed = formatBytes(vr)
+	}
+
+	out.Body.TotalReclaimed = formatBytes(total)
+	return out, nil
 }

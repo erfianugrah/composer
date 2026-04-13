@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
@@ -432,8 +433,39 @@ func (c *Client) RemoveImage(ctx context.Context, id string) error {
 	return err
 }
 
-func (c *Client) PruneImages(ctx context.Context) (uint64, error) {
-	report, err := c.cli.ImagesPrune(ctx, filters.Args{})
+// PruneImages removes unused images. If all is true, removes all unused images
+// (not just dangling/untagged). This is the critical distinction — dangling-only
+// misses old tagged images from previous pulls.
+func (c *Client) PruneImages(ctx context.Context, all bool) (uint64, error) {
+	f := filters.NewArgs()
+	if all {
+		f.Add("dangling", "false")
+	}
+	report, err := c.cli.ImagesPrune(ctx, f)
+	if err != nil {
+		return 0, err
+	}
+	return report.SpaceReclaimed, nil
+}
+
+func (c *Client) PruneContainers(ctx context.Context) (uint64, error) {
+	report, err := c.cli.ContainersPrune(ctx, filters.Args{})
+	if err != nil {
+		return 0, err
+	}
+	return report.SpaceReclaimed, nil
+}
+
+func (c *Client) PruneNetworks(ctx context.Context) ([]string, error) {
+	report, err := c.cli.NetworksPrune(ctx, filters.Args{})
+	if err != nil {
+		return nil, err
+	}
+	return report.NetworksDeleted, nil
+}
+
+func (c *Client) PruneBuildCache(ctx context.Context) (uint64, error) {
+	report, err := c.cli.BuildCachePrune(ctx, types.BuildCachePruneOptions{All: true})
 	if err != nil {
 		return 0, err
 	}

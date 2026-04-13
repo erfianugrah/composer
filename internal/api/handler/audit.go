@@ -28,16 +28,19 @@ func (h *AuditHandler) Register(api huma.API) {
 }
 
 type AuditListInput struct {
-	Limit int `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Max entries to return"`
+	Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Max entries to return"`
+	Action string `query:"action" doc:"Filter by action (e.g. stack.deploy, stack.up)"`
+	Stack  string `query:"stack" doc:"Filter by stack name (matches in resource path)"`
 }
 
 type AuditEntryDTO struct {
-	ID        string `json:"id"`
-	UserID    string `json:"user_id"`
-	Action    string `json:"action"`
-	Resource  string `json:"resource"`
-	IPAddress string `json:"ip_address"`
-	CreatedAt string `json:"created_at"`
+	ID        string         `json:"id"`
+	UserID    string         `json:"user_id"`
+	Action    string         `json:"action"`
+	Resource  string         `json:"resource"`
+	Detail    map[string]any `json:"detail,omitempty"`
+	IPAddress string         `json:"ip_address"`
+	CreatedAt string         `json:"created_at"`
 }
 
 type AuditListOutput struct {
@@ -51,7 +54,7 @@ func (h *AuditHandler) List(ctx context.Context, input *AuditListInput) (*AuditL
 		return nil, err
 	}
 
-	entries, err := h.repo.Recent(ctx, input.Limit)
+	entries, err := h.repo.RecentFiltered(ctx, input.Limit, input.Action, input.Stack)
 	if err != nil {
 		return nil, serverError(err)
 	}
@@ -64,6 +67,7 @@ func (h *AuditHandler) List(ctx context.Context, input *AuditListInput) (*AuditL
 			UserID:    e.UserID,
 			Action:    e.Action,
 			Resource:  e.Resource,
+			Detail:    e.Detail,
 			IPAddress: e.IPAddress,
 			CreatedAt: e.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		})
