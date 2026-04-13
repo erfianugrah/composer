@@ -264,8 +264,11 @@ func (c *Compose) RunPTY(ctx context.Context, workDir, composeFile string, cols,
 
 	cmd := exec.CommandContext(ctx, "docker", fullArgs...)
 	cmd.Dir = workDir
+	// Always build explicit env for PTY commands so TERM is set even when
+	// the server runs headless (systemd/container with no TERM).
+	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
 	if c.dockerHost != "" {
-		cmd.Env = append(cmd.Environ(), "DOCKER_HOST="+c.dockerHost)
+		cmd.Env = append(cmd.Env, "DOCKER_HOST="+c.dockerHost)
 	}
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})

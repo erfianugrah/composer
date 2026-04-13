@@ -37,18 +37,22 @@ export function GitStatus({ stackName }: { stackName: string }) {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
 
-  function fetchStatus() {
-    apiFetch<GitStatusData>(`/api/v1/stacks/${stackName}/git/status`).then(({ data, error: err }) => {
-      if (data) setStatus(data);
-      if (err) setError(err);
-    });
+  async function fetchStatus() {
+    const { data, error: err } = await apiFetch<GitStatusData>(
+      `/api/v1/stacks/${stackName}/git/status`,
+      { cache: "no-store" } as RequestInit,
+    );
+    if (data) setStatus(data);
+    if (err) setError(err);
   }
 
-  function fetchLog() {
-    apiFetch<{ commits: GitCommit[] }>(`/api/v1/stacks/${stackName}/git/log?limit=10`).then(({ data, error: err }) => {
-      if (data) setCommits(data.commits || []);
-      if (err) setError(err);
-    });
+  async function fetchLog() {
+    const { data, error: err } = await apiFetch<{ commits: GitCommit[] }>(
+      `/api/v1/stacks/${stackName}/git/log?limit=10`,
+      { cache: "no-store" } as RequestInit,
+    );
+    if (data) setCommits(data.commits || []);
+    if (err) setError(err);
   }
 
   useEffect(() => {
@@ -61,8 +65,7 @@ export function GitStatus({ stackName }: { stackName: string }) {
     setError("");
     const { error: err } = await apiFetch(`/api/v1/stacks/${stackName}/sync`, { method: "POST" });
     if (err) setError(err);
-    fetchStatus();
-    fetchLog();
+    await Promise.all([fetchStatus(), fetchLog()]);
     setSyncing(false);
   }
 
