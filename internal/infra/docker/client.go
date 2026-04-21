@@ -429,7 +429,7 @@ func (c *Client) PullImage(ctx context.Context, ref string) error {
 }
 
 func (c *Client) RemoveImage(ctx context.Context, id string) error {
-	_, err := c.cli.ImageRemove(ctx, id, image.RemoveOptions{PruneChildren: true})
+	_, err := c.cli.ImageRemove(ctx, id, image.RemoveOptions{Force: true, PruneChildren: true})
 	return err
 }
 

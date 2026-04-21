@@ -93,6 +93,74 @@ func TestCompose_ValidateAndUp(t *testing.T) {
 	t.Logf("compose down stdout: %s", result.Stdout)
 }
 
+func TestClient_ListImages(t *testing.T) {
+	c, err := docker.NewClient("")
+	require.NoError(t, err)
+	defer c.Close()
+
+	imgs, err := c.ListImages(context.Background())
+	require.NoError(t, err)
+	t.Logf("Found %d images", len(imgs))
+}
+
+func TestClient_PullAndRemoveImage(t *testing.T) {
+	c, err := docker.NewClient("")
+	require.NoError(t, err)
+	defer c.Close()
+
+	ctx := context.Background()
+	const ref = "busybox:uclibc"
+
+	// Pull a small image
+	err = c.PullImage(ctx, ref)
+	require.NoError(t, err)
+
+	// Verify it appears in list
+	imgs, err := c.ListImages(ctx)
+	require.NoError(t, err)
+	var imgID string
+	for _, img := range imgs {
+		for _, tag := range img.Tags {
+			if tag == ref {
+				imgID = img.ID
+				break
+			}
+		}
+	}
+	require.NotEmpty(t, imgID, "expected to find pulled image %s", ref)
+
+	// Remove it (Force=true should succeed even without stopped containers)
+	err = c.RemoveImage(ctx, imgID)
+	require.NoError(t, err)
+
+	// Verify it's gone
+	imgs, err = c.ListImages(ctx)
+	require.NoError(t, err)
+	for _, img := range imgs {
+		for _, tag := range img.Tags {
+			assert.NotEqual(t, ref, tag, "image should have been removed")
+		}
+	}
+}
+
+func TestClient_PruneImages(t *testing.T) {
+	c, err := docker.NewClient("")
+	require.NoError(t, err)
+	defer c.Close()
+
+	ctx := context.Background()
+
+	// Prune dangling only (default) — should not error
+	reclaimed, err := c.PruneImages(ctx, false)
+	require.NoError(t, err)
+	t.Logf("Dangling prune reclaimed: %d bytes", reclaimed)
+
+	// Prune all unused — should not error
+	reclaimed, err = c.PruneImages(ctx, true)
+	require.NoError(t, err)
+	t.Logf("All-unused prune reclaimed: %d bytes", reclaimed)
+}
+
 func TestCompose_ValidateInvalid(t *testing.T) {
 	dir := t.TempDir()
 	// Invalid YAML

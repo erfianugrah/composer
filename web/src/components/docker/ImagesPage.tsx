@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,51 @@ function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
   if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+}
+
+function PruneDropdown({ onPrune }: { onPrune: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  async function prune(all: boolean) {
+    setOpen(false);
+    const label = all ? "all unused images (including tagged)" : "dangling (untagged) images only";
+    if (!confirm(`Remove ${label}? This cannot be undone.`)) return;
+    const { data } = await apiFetch<{ space_reclaimed: string }>(
+      `/api/v1/images/prune${all ? "?all=true" : ""}`, { method: "POST" },
+    );
+    if (data) alert(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
+    onPrune();
+  }
+
+  return (
+    <div className="flex justify-end relative" ref={ref}>
+      <Button size="sm" variant="destructive" onClick={() => setOpen((v) => !v)}>
+        Prune Unused
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 min-w-[200px] rounded-md border border-border bg-popover p-1 shadow-md">
+          <button onClick={() => prune(false)} className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors">
+            Dangling only
+            <span className="block text-[10px] text-muted-foreground">Untagged images</span>
+          </button>
+          <button onClick={() => prune(true)} className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors">
+            All unused
+            <span className="block text-[10px] text-muted-foreground">Including old tagged versions</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ImagesPage() {
@@ -51,14 +96,7 @@ export function ImagesPage() {
           {error && <p className="text-sm text-cp-red mt-2">{error}</p>}
         </CardContent>
       </Card>
-      <div className="flex justify-end">
-        <Button size="sm" variant="destructive" onClick={async () => {
-          if (!confirm("Remove all unused images? This cannot be undone.")) return;
-          const { data } = await apiFetch<{ space_reclaimed: string }>("/api/v1/images/prune", { method: "POST" });
-          if (data) alert(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
-          fetch_();
-        }}>Prune Unused</Button>
-      </div>
+      <PruneDropdown onPrune={fetch_} />
       <Card>
         <CardHeader><div className="flex items-center justify-between"><CardTitle className="text-sm">Images</CardTitle><Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button></div></CardHeader>
         <CardContent>
