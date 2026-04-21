@@ -249,11 +249,14 @@ func (p *PTYProcess) Resize(cols, rows uint16) error {
 // Returns a PTYProcess; the caller reads output from PTY and must call Close().
 // The command runs in a goroutine; call Wait() to block until completion.
 func (c *Compose) RunPTY(ctx context.Context, workDir, composeFile string, cols, rows uint16, args ...string) (*PTYProcess, error) {
+	// --progress=tty forces docker compose to use in-place cursor-movement
+	// progress display. Without it, compose may fall back to plain mode even
+	// when attached to a PTY (e.g., inside containers or headless servers).
 	var fullArgs []string
 	if composeFile != "" {
-		fullArgs = append([]string{"compose", "-f", composeFile}, args...)
+		fullArgs = append([]string{"compose", "--progress=tty", "-f", composeFile}, args...)
 	} else {
-		fullArgs = append([]string{"compose"}, args...)
+		fullArgs = append([]string{"compose", "--progress=tty"}, args...)
 	}
 
 	cmdStr := "docker " + strings.Join(fullArgs, " ")
