@@ -334,9 +334,12 @@ func (h *ResourceHandler) PruneImages(ctx context.Context, input *PruneImagesInp
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
-	reclaimed, err := h.docker.PruneImages(ctx, input.All)
+	// Decouple from HTTP request context — prune can take minutes on large hosts.
+	opCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	reclaimed, err := h.docker.PruneImages(opCtx, input.All)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	out := &PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
@@ -498,31 +501,35 @@ func (h *ResourceHandler) SystemPrune(ctx context.Context, input *SystemPruneInp
 		return nil, err
 	}
 
+	// Decouple from HTTP request context — full system prune can take minutes.
+	opCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
 	var total uint64
 	out := &SystemPruneOutput{}
 
 	// 1. Containers
-	cr, _ := h.docker.PruneContainers(ctx)
+	cr, _ := h.docker.PruneContainers(opCtx)
 	total += cr
 	out.Body.ContainersReclaimed = formatBytes(cr)
 
 	// 2. Networks
-	nd, _ := h.docker.PruneNetworks(ctx)
+	nd, _ := h.docker.PruneNetworks(opCtx)
 	out.Body.NetworksDeleted = nd
 
 	// 3. Images
-	ir, _ := h.docker.PruneImages(ctx, input.All)
+	ir, _ := h.docker.PruneImages(opCtx, input.All)
 	total += ir
 	out.Body.ImagesReclaimed = formatBytes(ir)
 
 	// 4. Build cache
-	br, _ := h.docker.PruneBuildCache(ctx)
+	br, _ := h.docker.PruneBuildCache(opCtx)
 	total += br
 	out.Body.BuildCacheReclaimed = formatBytes(br)
 
 	// 5. Volumes (optional — destructive)
 	if input.Volumes {
-		vr, _ := h.docker.PruneVolumes(ctx)
+		vr, _ := h.docker.PruneVolumes(opCtx)
 		total += vr
 		out.Body.VolumesReclaimed = formatBytes(vr)
 	}

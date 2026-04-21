@@ -21,12 +21,13 @@ const (
 	ctxRemoteIP  contextKey = "remote_ip"
 )
 
-// ExtendWriteDeadline disables the server-level WriteTimeout for SSE and
-// WebSocket paths. These are long-lived connections that would be killed by
-// the 60s default. Regular API endpoints keep the server timeout.
+// ExtendWriteDeadline disables the server-level WriteTimeout for SSE,
+// WebSocket, and prune paths. These are long-lived or slow operations that
+// would be killed by the 60s default. Regular API endpoints keep the server timeout.
 func ExtendWriteDeadline(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "/sse/") || strings.Contains(r.URL.Path, "/ws/") {
+		if strings.Contains(r.URL.Path, "/sse/") || strings.Contains(r.URL.Path, "/ws/") ||
+			strings.Contains(r.URL.Path, "/prune") {
 			rc := http.NewResponseController(w)
 			// Zero time = no deadline
 			rc.SetWriteDeadline(time.Time{})
