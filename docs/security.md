@@ -37,7 +37,7 @@ Encryption is **automatic** -- no configuration needed:
 
 - **Git credentials** (tokens, SSH keys, passwords) are encrypted with AES-256-GCM before storage in the database
 - **Webhook secrets** are encrypted with AES-256-GCM before storage in the database
-- **SSH key files** on disk (`~/.ssh/`, `/home/composer/.ssh/`) are encrypted at rest on startup
+- **SSH key files** on disk at `/home/composer/.ssh/` are encrypted at rest on startup (see [SSH Key Files](#ssh-key-files) for the targeting policy)
 - **Per-stack SSH key files** can be specified via the `ssh_key_file` field (auth method `ssh_file`), allowing individual stacks to use dedicated keys
 - **`.env` files** are written with `0600` permissions (owner read/write only)
 - A unique 12-byte nonce is generated per encryption operation
@@ -46,9 +46,46 @@ Encryption is **automatic** -- no configuration needed:
 
 ### SSH Key Files
 
-On every startup, Composer scans SSH directories for plaintext private key files and encrypts them in place. Public keys (`.pub`), `known_hosts`, and `config` files are left untouched. When go-git needs an SSH key for clone/pull operations, the key file is transparently decrypted in memory.
+On every startup Composer scans a list of SSH directories for plaintext private key files and encrypts them in place. When go-git needs an SSH key for clone/pull operations, the file is transparently decrypted in memory.
 
-This means SSH key files mounted into the container (e.g., via `-v ~/.ssh:/home/composer/.ssh:ro`) will be encrypted after the first boot. If you need the original plaintext keys, keep a copy outside the container.
+#### Targeting policy
+
+The scan is **explicit and opt-in** — it never infers a target from `$HOME`:
+
+- **Default target**: `/home/composer/.ssh` (the canonical container path). Every composer Docker image runs as the `composer` user with that HOME, so this covers the production case. On a developer machine the directory doesn't exist, so the scan is a no-op.
+- **Additional targets**: set `COMPOSER_SSH_DIR=/path/to/dir` to have the scan also cover a custom location. Use this when running composerd outside the official container with SSH material you want encrypted.
+
+This policy was tightened after an incident where running `composerd` ad-hoc on a developer workstation encrypted the operator's personal `~/.ssh` directory. The old behaviour unconditionally scanned `$HOME/.ssh` and `/home/composer/.ssh`; the new behaviour only touches paths the operator asked for.
+
+#### What gets encrypted
+
+A file is touched only if **both** conditions hold:
+
+1. Its filename is not on the skip list (`config`, `authorized_keys`, anything starting with `known_hosts`, anything ending in `.pub`, already-encrypted files with an `enc:` prefix, empty files)
+2. Its first line contains a recognised private-key BEGIN marker (`-----BEGIN OPENSSH PRIVATE KEY-----`, `-----BEGIN RSA PRIVATE KEY-----`, etc.)
+
+This two-step check means arbitrary non-key files a user drops in the SSH directory (notes, backups, random text) are left alone even if their filename doesn't match a skip rule.
+
+#### Mounting host keys
+
+Mounting an SSH key file into the container (for example via `-v ~/.ssh:/home/composer/.ssh:rw`) will cause those keys to be encrypted on first boot. Mount **read-only** if you want to keep the plaintext intact on the host:
+
+```yaml
+volumes:
+  - ${HOME}/.ssh:/home/composer/.ssh:ro
+```
+
+#### Recovery from accidental encryption
+
+If a key got encrypted and you still have the corresponding `encryption.key` file, use `cmd/decryptssh` to reverse it:
+
+```sh
+COMPOSER_DATA_DIR=/path/to/data go run ./cmd/decryptssh -- ~/.ssh/id_foo
+# or
+COMPOSER_ENCRYPTION_KEY='...' go run ./cmd/decryptssh -- ~/.ssh/id_foo
+```
+
+The tool accepts `--dry-run` to preview, writes to a `.tmp` sibling and renames only on success so a mid-write crash leaves the encrypted original intact.
 
 ### Key Resolution
 

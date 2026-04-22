@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -180,22 +179,32 @@ func main() {
 	}
 
 	// --- Encrypt SSH keys at rest ---
-	// On first boot (or after mounting new keys), encrypt any plaintext SSH private
-	// keys in the composer home SSH directory. Keys are transparently decrypted
-	// when go-git needs them.
-	sshDir := filepath.Join(os.Getenv("HOME"), ".ssh")
-	if n, err := crypto.EncryptSSHKeys(sshDir); err != nil {
-		logger.Warn("failed to encrypt SSH keys", zap.Error(err))
-	} else if n > 0 {
-		logger.Info("encrypted SSH keys at rest", zap.Int("count", n), zap.String("dir", sshDir))
+	//
+	// SAFETY: In production (the official Docker image) composerd runs as the
+	// `composer` user with HOME=/home/composer, and the SSH key dir is
+	// /home/composer/.ssh by design. Running composerd ad-hoc on a developer
+	// machine previously encrypted the developer's personal ~/.ssh — a
+	// destructive side effect if the auto-generated encryption key lived in a
+	// throwaway data dir.
+	//
+	// New policy:
+	//   - Default target is the canonical container path (/home/composer/.ssh).
+	//     It does not exist on dev machines, so EncryptSSHKeys is a no-op.
+	//   - Operators who legitimately want a different dir encrypted set
+	//     COMPOSER_SSH_DIR=/path/explicitly. No heuristic; opt-in only.
+	//   - We never infer the target from $HOME.
+	sshDirs := []string{"/home/composer/.ssh"}
+	if custom := os.Getenv("COMPOSER_SSH_DIR"); custom != "" {
+		sshDirs = append(sshDirs, custom)
 	}
-	// Also try /home/composer/.ssh (container path)
-	composerSSH := "/home/composer/.ssh"
-	if composerSSH != sshDir {
-		if n, err := crypto.EncryptSSHKeys(composerSSH); err != nil {
-			logger.Warn("failed to encrypt SSH keys", zap.Error(err))
+	for _, dir := range sshDirs {
+		if _, err := os.Stat(dir); err != nil {
+			continue // silently skip non-existent paths (the common dev case)
+		}
+		if n, err := crypto.EncryptSSHKeys(dir); err != nil {
+			logger.Warn("failed to encrypt SSH keys", zap.Error(err), zap.String("dir", dir))
 		} else if n > 0 {
-			logger.Info("encrypted SSH keys at rest", zap.Int("count", n), zap.String("dir", composerSSH))
+			logger.Info("encrypted SSH keys at rest", zap.Int("count", n), zap.String("dir", dir))
 		}
 	}
 
