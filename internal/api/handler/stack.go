@@ -66,7 +66,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/stacks",
 		Summary:     "List all stacks",
+		Description: "Returns every stack known to Composer with container counts and status (running / stopped / partial / unknown). Viewer+.",
 		Tags:        []string{"stacks"},
+		Errors:      errsViewer,
 	}, h.List)
 
 	huma.Register(api, huma.Operation{
@@ -74,7 +76,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks",
 		Summary:     "Create a new stack",
+		Description: "Creates a local-source stack from the supplied compose YAML. The compose content is written to `<stacks_dir>/<name>/compose.yaml` but not deployed. Use `deployStack` to bring services up.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.Create)
 
 	huma.Register(api, huma.Operation{
@@ -82,7 +86,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/stacks/{name}",
 		Summary:     "Get stack details",
+		Description: "Returns compose content, `.env` content (optionally SOPS-decrypted), detected Dockerfiles, containers, and git config (if git-backed).",
 		Tags:        []string{"stacks"},
+		Errors:      errsViewerNotFound,
 	}, h.Get)
 
 	huma.Register(api, huma.Operation{
@@ -90,7 +96,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPut,
 		Path:        "/api/v1/stacks/{name}",
 		Summary:     "Update stack compose content",
+		Description: "Overwrites the compose.yaml on disk. For git-backed stacks this marks sync_status=dirty until a new commit is pushed or rollback is performed.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.Update)
 
 	huma.Register(api, huma.Operation{
@@ -98,7 +106,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/stacks/{name}",
 		Summary:     "Delete a stack",
+		Description: "Stops the stack, removes containers, and deletes the stack directory. Pass `?remove_volumes=true` to also drop named volumes (destructive).",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.Delete)
 
 	huma.Register(api, huma.Operation{
@@ -106,7 +116,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/up",
 		Summary:     "Deploy stack (docker compose up)",
+		Description: "Runs `docker compose up -d` in the stack directory. Use `?async=true` to return a job ID immediately and poll `/api/v1/jobs/{id}` for completion. Synchronous calls time out at 10 minutes.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.Deploy)
 
 	huma.Register(api, huma.Operation{
@@ -114,15 +126,19 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/down",
 		Summary:     "Stop stack (docker compose down)",
+		Description: "Runs `docker compose down` to stop and remove containers. Volumes and networks are preserved. Supports `?async=true`.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.Stop)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "buildAndDeployStack",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/build",
-		Summary:     "Build images from Dockerfiles and deploy (docker compose up --build)",
+		Summary:     "Build images and deploy",
+		Description: "Runs `docker compose up -d --build` to rebuild images from Dockerfiles then deploy. Supports `?async=true`.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.BuildAndDeploy)
 
 	huma.Register(api, huma.Operation{
@@ -130,7 +146,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/restart",
 		Summary:     "Restart stack",
+		Description: "Restarts all services in the stack via `docker compose restart`. Supports `?async=true`.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.Restart)
 
 	huma.Register(api, huma.Operation{
@@ -138,7 +156,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/pull",
 		Summary:     "Pull latest images for stack",
+		Description: "Pulls the newest version of every image referenced by compose.yaml. Does not redeploy — call `deployStack` afterwards to apply. Supports `?async=true`.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.Pull)
 
 	huma.Register(api, huma.Operation{
@@ -146,7 +166,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/validate",
 		Summary:     "Validate compose syntax",
+		Description: "Runs `docker compose config` to validate and normalize the compose file. Returns the validation output; non-zero exit surfaces compose syntax errors.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.Validate)
 
 	huma.Register(api, huma.Operation{
@@ -154,7 +176,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/stacks/{name}/diff",
 		Summary:     "Show pending compose changes vs saved version",
+		Description: "Computes a line diff between the on-disk compose.yaml and Docker's resolved config. Useful to preview what a deploy would actually apply.",
 		Tags:        []string{"stacks"},
+		Errors:      errsViewerNotFound,
 	}, h.Diff)
 
 	huma.Register(api, huma.Operation{
@@ -162,7 +186,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/exec",
 		Summary:     "Run a docker compose command against this stack",
+		Description: "Runs an allowlisted `docker compose <args>` in the stack's directory. Read-only subcommands (ps, logs, top, config, images, port, version, ls, events, build) are operator+. Shell-equivalent subcommands (exec, cp) require admin.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.ExecCompose)
 
 	huma.Register(api, huma.Operation{
@@ -170,7 +196,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPut,
 		Path:        "/api/v1/stacks/{name}/env",
 		Summary:     "Update .env file for a stack",
+		Description: "Writes the provided content to `<stack>/.env`. Sending empty content deletes the file. Does not validate content or trigger a deploy.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.UpdateEnv)
 
 	huma.Register(api, huma.Operation{
@@ -178,7 +206,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/stacks/{name}/credentials",
 		Summary:     "Get resolved credential chain for a stack",
+		Description: "Returns the effective git/SSH/SOPS credentials used for this stack plus where each came from (per-stack, global, env). Redacts secret material — only sources are reported.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.GetCredentials)
 
 	huma.Register(api, huma.Operation{
@@ -186,15 +216,19 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPut,
 		Path:        "/api/v1/stacks/{name}/credentials",
 		Summary:     "Update per-stack credential overrides",
+		Description: "Replaces the stack's per-stack credentials (git token, SSH key, SOPS age key, basic-auth). Sending an empty value for a field clears that override so the global credential takes effect.",
 		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.UpdateCredentials)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "importStacks",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/import",
-		Summary:     "Import stacks from an external directory (e.g. Dockge migration)",
+		Summary:     "Import stacks from an external directory",
+		Description: "Scans a host directory (e.g. a Dockge data dir) and imports any discovered compose projects as local stacks. Existing stacks are skipped. Admin only.",
 		Tags:        []string{"stacks"},
+		Errors:      errsAdminMutation,
 	}, h.Import)
 
 	huma.Register(api, huma.Operation{
@@ -202,7 +236,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/convert/git",
 		Summary:     "Convert a local stack to git-backed",
+		Description: "Turns an existing local stack into a git-tracked stack by cloning the provided repo over the stack directory. Credentials can be supplied per-stack or defer to global settings.",
 		Tags:        []string{"stacks", "git"},
+		Errors:      errsOperatorMutation,
 	}, h.ConvertToGit)
 
 	huma.Register(api, huma.Operation{
@@ -210,7 +246,9 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/convert/local",
 		Summary:     "Detach a git-backed stack and convert to local",
+		Description: "Removes the stack's git metadata so it's no longer tracked against a remote. The current on-disk compose content is preserved; future edits happen locally only.",
 		Tags:        []string{"stacks", "git"},
+		Errors:      errsOperatorMutation,
 	}, h.ConvertToLocal)
 }
 
@@ -220,31 +258,37 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 	}
 	stacks, err := h.stacks.List(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
+	}
+
+	// Fetch every container once and bucket by stack name (compose project label).
+	// Previously this loop made N individual Docker API calls — now it's one.
+	type counts struct{ total, running int }
+	byStack := map[string]counts{}
+	if all, err := h.stacks.Containers(ctx, ""); err == nil {
+		for _, c := range all {
+			if c.StackName == "" {
+				continue
+			}
+			b := byStack[c.StackName]
+			b.total++
+			if c.IsRunning() {
+				b.running++
+			}
+			byStack[c.StackName] = b
+		}
 	}
 
 	out := &dto.StackListOutput{}
 	out.Body.Stacks = make([]dto.StackSummary, 0, len(stacks))
 	for _, s := range stacks {
-		// Get container counts for this stack
-		var containerCount, runningCount int
-		if h.stacks != nil {
-			containers, err := h.stacks.Containers(ctx, s.Name)
-			if err == nil {
-				containerCount = len(containers)
-				for _, c := range containers {
-					if c.IsRunning() {
-						runningCount++
-					}
-				}
-			}
-		}
+		b := byStack[s.Name]
 		out.Body.Stacks = append(out.Body.Stacks, dto.StackSummary{
 			Name:           s.Name,
 			Source:         string(s.Source),
 			Status:         string(s.Status),
-			ContainerCount: containerCount,
-			RunningCount:   runningCount,
+			ContainerCount: b.total,
+			RunningCount:   b.running,
 			CreatedAt:      s.CreatedAt,
 			UpdatedAt:      s.UpdatedAt,
 		})
@@ -277,7 +321,7 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.StackDetailOutput{}
@@ -374,7 +418,7 @@ func (h *StackHandler) Delete(ctx context.Context, input *dto.DeleteStackInput) 
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return nil, nil
 }
@@ -394,7 +438,7 @@ func (h *StackHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -444,7 +488,7 @@ func (h *StackHandler) Stop(ctx context.Context, input *dto.StackNameInput) (*dt
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -467,7 +511,7 @@ func (h *StackHandler) Restart(ctx context.Context, input *dto.StackNameInput) (
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -490,7 +534,7 @@ func (h *StackHandler) Pull(ctx context.Context, input *dto.StackNameInput) (*dt
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -594,38 +638,36 @@ func (h *StackHandler) ConvertToLocal(ctx context.Context, input *dto.ConvertToL
 }
 
 // ExecCompose runs an arbitrary docker compose subcommand against a stack.
-// Requires operator+ role. The command string is split by whitespace into args
-// and passed to `docker compose <args>` in the stack's directory.
+// Requires operator+ role for read-only subcommands; admin for shell-equivalent
+// ones (exec, cp). The command string is tokenized with quote-awareness so
+// arguments containing spaces survive.
 //
 // Example: {"command": "logs --tail 50 web"} runs `docker compose logs --tail 50 web`
-// Example: {"command": "ps"} runs `docker compose ps`
-// Example: {"command": "exec web env"} runs `docker compose exec web env`
+// Example: {"command": `exec web sh -c "env"`} runs `docker compose exec web sh -c "env"`
 func (h *StackHandler) ExecCompose(ctx context.Context, input *dto.ExecComposeInput) (*dto.ExecComposeOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
 
-	args := strings.Fields(input.Body.Command)
+	args, err := docker.ShellSplit(input.Body.Command)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
 	if len(args) == 0 {
 		return nil, huma.Error422UnprocessableEntity("command is empty")
 	}
 
-	// Allowlist of safe compose subcommands (S13)
-	allowed := map[string]bool{
-		"ps": true, "logs": true, "top": true, "config": true,
-		"images": true, "port": true, "version": true, "ls": true,
-		"events": true, "build": true,
+	// Role check: admin-only subcommands require privilege elevation even
+	// though the endpoint itself is operator+.
+	isAdmin := authmw.CheckRole(ctx, auth.RoleAdmin) == nil
+	if docker.IsComposeAdminOnly(args[0]) && !isAdmin {
+		return nil, huma.Error403Forbidden("compose " + args[0] + " requires admin role")
 	}
-	// exec and cp require admin (shell-equivalent access)
-	adminOnly := map[string]bool{"exec": true, "cp": true}
-	if adminOnly[args[0]] {
-		if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
-			return nil, huma.Error403Forbidden("compose " + args[0] + " requires admin role")
-		}
-		allowed[args[0]] = true
-	}
-	if !allowed[args[0]] {
-		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed; permitted: ps, logs, top, config, images, port, version, ls, events, build (+ exec, cp for admin)")
+	ok, permitted := docker.ComposeAllowed(args[0], isAdmin)
+	if !ok {
+		return nil, huma.Error422UnprocessableEntity(
+			"command '" + args[0] + "' is not allowed; permitted: " + strings.Join(permitted, ", "),
+		)
 	}
 
 	result, err := h.stacks.ExecCompose(ctx, input.Name, args)
@@ -644,7 +686,7 @@ func (h *StackHandler) ExecCompose(ctx context.Context, input *dto.ExecComposeIn
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return out, nil
 }
@@ -714,7 +756,7 @@ func (h *StackHandler) UpdateEnv(ctx context.Context, input *dto.UpdateEnvInput)
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	envPath := st.Path + "/.env"
@@ -723,7 +765,7 @@ func (h *StackHandler) UpdateEnv(ctx context.Context, input *dto.UpdateEnvInput)
 		os.Remove(envPath)
 	} else {
 		if err := os.WriteFile(envPath, []byte(input.Body.Env), 0600); err != nil {
-			return nil, serverError(err)
+			return nil, serverError(ctx, err)
 		}
 	}
 	return nil, nil
@@ -739,7 +781,7 @@ func (h *StackHandler) GetCredentials(ctx context.Context, input *dto.GetStackIn
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.StackCredentialsOutput{}
@@ -778,7 +820,7 @@ func (h *StackHandler) UpdateCredentials(ctx context.Context, input *dto.UpdateS
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return nil, nil
 }
@@ -793,7 +835,7 @@ func (h *StackHandler) Diff(ctx context.Context, input *dto.GetStackInput) (*dto
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	// Compare current compose.yaml on disk vs the normalized config Docker would use.

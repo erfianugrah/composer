@@ -14,6 +14,7 @@ import (
 	ageLib "filippo.io/age"
 
 	composer "github.com/erfianugrah/composer"
+	"github.com/erfianugrah/composer/internal/api/dto"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/infra/crypto"
@@ -36,74 +37,96 @@ func NewSystemHandler(docker *docker.Client, dataDir string) *SystemHandler {
 func (h *SystemHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "systemInfo", Method: http.MethodGet,
-		Path: "/api/v1/system/info", Summary: "Docker engine info", Tags: []string{"system"},
+		Path:        "/api/v1/system/info",
+		Summary:     "Docker engine info",
+		Description: "Returns Docker daemon version, runtime, OS/arch, and counts of containers and images. Requires Docker to be available.",
+		Tags:        []string{"system"},
+		Errors:      errsDockerDependent,
 	}, h.Info)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "systemVersion", Method: http.MethodGet,
-		Path: "/api/v1/system/version", Summary: "Composer version info", Tags: []string{"system"},
+		Path:        "/api/v1/system/version",
+		Summary:     "Composer version info",
+		Description: "Returns Composer version, Go runtime version, OS/arch, and process uptime. Viewer+.",
+		Tags:        []string{"system"},
+		Errors:      errsViewer,
 	}, h.Version)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "systemConfig", Method: http.MethodGet,
-		Path: "/api/v1/system/config", Summary: "Global config status (SSH keys, SOPS, encryption)", Tags: []string{"system"},
+		Path:        "/api/v1/system/config",
+		Summary:     "Global config status",
+		Description: "Reports SSH keys, SOPS age key, global git token, encryption key source, and database type. Secret material is always redacted. Admin only.",
+		Tags:        []string{"system"},
+		Errors:      errsAdminMutation,
 	}, h.Config)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateAgeKey", Method: http.MethodPut,
-		Path: "/api/v1/system/config/age-key", Summary: "Set or update the global age key for SOPS", Tags: []string{"system"},
+		Path:        "/api/v1/system/config/age-key",
+		Summary:     "Set or update the global age key for SOPS",
+		Description: "Stores a provided age private key as the global SOPS decryption key. Send empty string to remove. Admin only.",
+		Tags:        []string{"system"},
+		Errors:      errsAdminMutation,
 	}, h.UpdateAgeKey)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "generateAgeKey", Method: http.MethodPost,
-		Path: "/api/v1/system/config/age-key/generate", Summary: "Generate a new age key pair and save", Tags: []string{"system"},
+		Path:        "/api/v1/system/config/age-key/generate",
+		Summary:     "Generate a new age key pair and save",
+		Description: "Generates and persists a fresh age keypair for SOPS. The private key is returned ONCE in the response; save or encrypt it externally. Admin only.",
+		Tags:        []string{"system"},
+		Errors:      errsAdminMutation,
 	}, h.GenerateAgeKey)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getGitToken", Method: http.MethodGet,
-		Path: "/api/v1/system/config/git-token", Summary: "Get global git token status", Tags: []string{"system"},
+		Path:        "/api/v1/system/config/git-token",
+		Summary:     "Get global git token status",
+		Description: "Returns whether a global git token is configured and a preview (first 8 chars). Admin only.",
+		Tags:        []string{"system"},
+		Errors:      errsAdminMutation,
 	}, h.GetGitToken)
 	huma.Register(api, huma.Operation{
 		OperationID: "updateGitToken", Method: http.MethodPut,
-		Path: "/api/v1/system/config/git-token", Summary: "Set or remove global git access token", Tags: []string{"system"},
+		Path:        "/api/v1/system/config/git-token",
+		Summary:     "Set or remove global git access token",
+		Description: "Stores a plaintext git token encrypted at rest. Empty value removes the token. Admin only.",
+		Tags:        []string{"system"},
+		Errors:      errsAdminMutation,
 	}, h.UpdateGitToken)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "addSSHKey", Method: http.MethodPost,
-		Path: "/api/v1/system/config/ssh-keys", Summary: "Add an SSH key by pasting content", Tags: []string{"system"},
+		Path:        "/api/v1/system/config/ssh-keys",
+		Summary:     "Add an SSH key by pasting content",
+		Description: "Writes a PEM-encoded SSH private key to the composer SSH dir and encrypts it at rest. Admin only.",
+		Tags:        []string{"system"},
+		Errors:      errsAdminMutation,
 	}, h.AddSSHKey)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteSSHKey", Method: http.MethodDelete,
-		Path: "/api/v1/system/config/ssh-keys/{name}", Summary: "Delete an SSH key file", Tags: []string{"system"},
+		Path:        "/api/v1/system/config/ssh-keys/{name}",
+		Summary:     "Delete an SSH key file",
+		Description: "Removes the SSH key file (and its .pub counterpart if present). Admin only.",
+		Tags:        []string{"system"},
+		Errors:      errsAdminMutation,
 	}, h.DeleteSSHKey)
 }
 
-type SystemInfoOutput struct {
-	Body struct {
-		Docker struct {
-			Version    string `json:"version"`
-			APIVersion string `json:"api_version"`
-			Runtime    string `json:"runtime"`
-			OS         string `json:"os"`
-			Arch       string `json:"arch"`
-			Containers int    `json:"containers"`
-			Images     int    `json:"images"`
-		} `json:"docker"`
-	}
-}
-
-func (h *SystemHandler) Info(ctx context.Context, input *struct{}) (*SystemInfoOutput, error) {
+func (h *SystemHandler) Info(ctx context.Context, input *struct{}) (*dto.SystemInfoOutput, error) {
 	if h.docker == nil {
 		return nil, huma.Error503ServiceUnavailable("docker not available")
 	}
 
 	info, err := h.docker.Info(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
-	out := &SystemInfoOutput{}
+	out := &dto.SystemInfoOutput{}
 	out.Body.Docker.Version = info.ServerVersion
 	out.Body.Docker.APIVersion = info.Driver
 	out.Body.Docker.Runtime = h.docker.Runtime()
@@ -114,18 +137,8 @@ func (h *SystemHandler) Info(ctx context.Context, input *struct{}) (*SystemInfoO
 	return out, nil
 }
 
-type VersionOutput struct {
-	Body struct {
-		Version   string `json:"version"`
-		GoVersion string `json:"go_version"`
-		OS        string `json:"os"`
-		Arch      string `json:"arch"`
-		Uptime    string `json:"uptime"`
-	}
-}
-
-func (h *SystemHandler) Version(ctx context.Context, input *struct{}) (*VersionOutput, error) {
-	out := &VersionOutput{}
+func (h *SystemHandler) Version(ctx context.Context, input *struct{}) (*dto.VersionOutput, error) {
+	out := &dto.VersionOutput{}
 	out.Body.Version = composer.Version
 	out.Body.GoVersion = runtime.Version()
 	out.Body.OS = runtime.GOOS
@@ -136,41 +149,17 @@ func (h *SystemHandler) Version(ctx context.Context, input *struct{}) (*VersionO
 
 // --- Global Config ---
 
-type SSHKeyInfo struct {
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	Encrypted bool   `json:"encrypted" doc:"True if encrypted at rest with enc: prefix"`
-}
-
-type ConfigOutput struct {
-	Body struct {
-		SSHKeys         []SSHKeyInfo `json:"ssh_keys" doc:"SSH keys detected on the system"`
-		EncryptionKey   string       `json:"encryption_key" doc:"Source of encryption key: env, file, or none"`
-		SopsAvailable   bool         `json:"sops_available" doc:"Whether sops binary is in PATH"`
-		AgeKeyLoaded    bool         `json:"age_key_loaded" doc:"Whether a global age key was found"`
-		AgeKeySource    string       `json:"age_key_source" doc:"Where the age key was loaded from"`
-		AgePublicKey    string       `json:"age_public_key,omitempty" doc:"Age public key (recipient) for encrypting new secrets"`
-		GitTokenSet     bool         `json:"git_token_set" doc:"Whether a global git token is configured"`
-		GitTokenPreview string       `json:"git_token_preview,omitempty" doc:"First 8 chars of the token"`
-		NotifyURL       string       `json:"notify_url,omitempty" doc:"Webhook notification URL (redacted)"`
-		SlackWebhook    bool         `json:"slack_webhook" doc:"Whether Slack webhook is configured"`
-		TrustedProxies  bool         `json:"trusted_proxies" doc:"Whether X-Real-IP headers are trusted"`
-		CookieSecure    string       `json:"cookie_secure"`
-		DatabaseType    string       `json:"database_type" doc:"sqlite or postgres"`
-	}
-}
-
-func (h *SystemHandler) Config(ctx context.Context, input *struct{}) (*ConfigOutput, error) {
+func (h *SystemHandler) Config(ctx context.Context, input *struct{}) (*dto.ConfigOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 
-	out := &ConfigOutput{}
+	out := &dto.ConfigOutput{}
 
 	// SSH keys (never nil -- empty array for JSON serialization)
 	out.Body.SSHKeys = listSSHKeys()
 	if out.Body.SSHKeys == nil {
-		out.Body.SSHKeys = []SSHKeyInfo{}
+		out.Body.SSHKeys = []dto.SSHKeyInfo{}
 	}
 
 	// Encryption key source
@@ -236,25 +225,12 @@ func (h *SystemHandler) Config(ctx context.Context, input *struct{}) (*ConfigOut
 	return out, nil
 }
 
-type UpdateAgeKeyInput struct {
-	Body struct {
-		AgeKey string `json:"age_key" doc:"Age private key (AGE-SECRET-KEY-...) or empty to remove"`
-	}
-}
-
-type UpdateAgeKeyOutput struct {
-	Body struct {
-		PublicKey string `json:"public_key,omitempty" doc:"Corresponding age public key"`
-		Saved     bool   `json:"saved"`
-	}
-}
-
-func (h *SystemHandler) UpdateAgeKey(ctx context.Context, input *UpdateAgeKeyInput) (*UpdateAgeKeyOutput, error) {
+func (h *SystemHandler) UpdateAgeKey(ctx context.Context, input *dto.UpdateAgeKeyInput) (*dto.UpdateAgeKeyOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 
-	out := &UpdateAgeKeyOutput{}
+	out := &dto.UpdateAgeKeyOutput{}
 
 	if input.Body.AgeKey == "" {
 		// Remove the key file
@@ -280,7 +256,7 @@ func (h *SystemHandler) UpdateAgeKey(ctx context.Context, input *UpdateAgeKeyInp
 	}
 
 	if err := sops.SaveAgeKey(h.dataDir, key, pubKey); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out.Body.PublicKey = pubKey
@@ -288,48 +264,27 @@ func (h *SystemHandler) UpdateAgeKey(ctx context.Context, input *UpdateAgeKeyInp
 	return out, nil
 }
 
-type GenerateAgeKeyOutput struct {
-	Body struct {
-		PrivateKey string `json:"private_key" doc:"Generated age private key (shown once)"`
-		PublicKey  string `json:"public_key" doc:"Corresponding age public key (recipient)"`
-	}
-}
-
-func (h *SystemHandler) GenerateAgeKey(ctx context.Context, input *struct{}) (*GenerateAgeKeyOutput, error) {
+func (h *SystemHandler) GenerateAgeKey(ctx context.Context, input *struct{}) (*dto.GenerateAgeKeyOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 
 	privKey, pubKey, err := sops.GenerateAgeKey()
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	if err := sops.SaveAgeKey(h.dataDir, privKey, pubKey); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
-	out := &GenerateAgeKeyOutput{}
+	out := &dto.GenerateAgeKeyOutput{}
 	out.Body.PrivateKey = privKey
 	out.Body.PublicKey = pubKey
 	return out, nil
 }
 
-type AddSSHKeyInput struct {
-	Body struct {
-		Name    string `json:"name" minLength:"1" doc:"Key file name (e.g. id_ed25519, id_github)"`
-		Content string `json:"content" minLength:"1" doc:"PEM-encoded SSH private key content"`
-	}
-}
-
-type AddSSHKeyOutput struct {
-	Body struct {
-		Path      string `json:"path"`
-		Encrypted bool   `json:"encrypted"`
-	}
-}
-
-func (h *SystemHandler) AddSSHKey(ctx context.Context, input *AddSSHKeyInput) (*AddSSHKeyOutput, error) {
+func (h *SystemHandler) AddSSHKey(ctx context.Context, input *dto.AddSSHKeyInput) (*dto.AddSSHKeyOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
@@ -347,23 +302,19 @@ func (h *SystemHandler) AddSSHKey(ctx context.Context, input *AddSSHKeyInput) (*
 
 	// Write the key, then encrypt it at rest
 	if err := os.WriteFile(keyPath, []byte(content+"\n"), 0600); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	// Encrypt at rest using our AES-256-GCM layer
 	crypto.EncryptFile(keyPath)
 
-	out := &AddSSHKeyOutput{}
+	out := &dto.AddSSHKeyOutput{}
 	out.Body.Path = keyPath
 	out.Body.Encrypted = true
 	return out, nil
 }
 
-type DeleteSSHKeyInput struct {
-	Name string `path:"name" doc:"Key file name"`
-}
-
-func (h *SystemHandler) DeleteSSHKey(ctx context.Context, input *DeleteSSHKeyInput) (*struct{}, error) {
+func (h *SystemHandler) DeleteSSHKey(ctx context.Context, input *dto.DeleteSSHKeyInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
@@ -385,24 +336,11 @@ func (h *SystemHandler) DeleteSSHKey(ctx context.Context, input *DeleteSSHKeyInp
 
 // --- Global Git Token ---
 
-type UpdateGitTokenInput struct {
-	Body struct {
-		Token string `json:"token" doc:"Global git access token (GitHub PAT, GitLab token, etc.). Empty to remove."`
-	}
-}
-
-type GitTokenOutput struct {
-	Body struct {
-		Configured bool   `json:"configured"`
-		Preview    string `json:"preview,omitempty" doc:"First 8 chars of token for identification"`
-	}
-}
-
-func (h *SystemHandler) GetGitToken(ctx context.Context, input *struct{}) (*GitTokenOutput, error) {
+func (h *SystemHandler) GetGitToken(ctx context.Context, input *struct{}) (*dto.GitTokenOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
-	out := &GitTokenOutput{}
+	out := &dto.GitTokenOutput{}
 	tokenPath := filepath.Join(h.dataDir, "git-token")
 	if data, err := crypto.DecryptFile(tokenPath); err == nil && data != "" {
 		out.Body.Configured = true
@@ -413,7 +351,7 @@ func (h *SystemHandler) GetGitToken(ctx context.Context, input *struct{}) (*GitT
 	return out, nil
 }
 
-func (h *SystemHandler) UpdateGitToken(ctx context.Context, input *UpdateGitTokenInput) (*GitTokenOutput, error) {
+func (h *SystemHandler) UpdateGitToken(ctx context.Context, input *dto.UpdateGitTokenInput) (*dto.GitTokenOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
@@ -422,14 +360,14 @@ func (h *SystemHandler) UpdateGitToken(ctx context.Context, input *UpdateGitToke
 
 	if token == "" {
 		os.Remove(tokenPath)
-		return &GitTokenOutput{}, nil
+		return &dto.GitTokenOutput{}, nil
 	}
 
 	if err := crypto.WriteEncrypted(tokenPath, token); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
-	out := &GitTokenOutput{}
+	out := &dto.GitTokenOutput{}
 	out.Body.Configured = true
 	if len(token) > 8 {
 		out.Body.Preview = token[:8] + "..."
@@ -439,8 +377,8 @@ func (h *SystemHandler) UpdateGitToken(ctx context.Context, input *UpdateGitToke
 
 // --- helpers ---
 
-func listSSHKeys() []SSHKeyInfo {
-	var keys []SSHKeyInfo
+func listSSHKeys() []dto.SSHKeyInfo {
+	var keys []dto.SSHKeyInfo
 	seen := make(map[string]bool) // resolved path -> already listed
 
 	for _, dir := range []string{
@@ -473,7 +411,7 @@ func listSSHKeys() []SSHKeyInfo {
 			path := filepath.Join(dir, name)
 			data, err := os.ReadFile(path)
 			encrypted := err == nil && len(data) > 4 && string(data[:4]) == "enc:"
-			keys = append(keys, SSHKeyInfo{
+			keys = append(keys, dto.SSHKeyInfo{
 				Name:      name,
 				Path:      path,
 				Encrypted: encrypted,

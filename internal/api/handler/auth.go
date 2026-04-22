@@ -38,7 +38,9 @@ func (h *AuthHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/auth/bootstrap",
 		Summary:     "Check if bootstrap is needed (no users exist)",
+		Description: "Returns {needed: true} while the user table is empty. Used by the setup wizard to decide whether to prompt for first-admin creation. Public endpoint.",
 		Tags:        []string{"auth"},
+		Security:    []map[string][]string{}, // public
 	}, h.BootstrapStatus)
 
 	huma.Register(api, huma.Operation{
@@ -46,8 +48,10 @@ func (h *AuthHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/auth/bootstrap",
 		Summary:     "Create the first admin user",
-		Description: "Only works when no users exist in the database.",
+		Description: "Creates the initial admin account. Rejected with 409 once any user exists. Public endpoint (this is the only way to escape the chicken-and-egg auth requirement).",
 		Tags:        []string{"auth"},
+		Security:    []map[string][]string{}, // public
+		Errors:      errsAuthBootstrap,
 	}, h.Bootstrap)
 
 	huma.Register(api, huma.Operation{
@@ -55,8 +59,10 @@ func (h *AuthHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/auth/login",
 		Summary:     "Log in with email and password",
-		Description: "Returns a session cookie on success.",
+		Description: "Authenticates against the user table and issues a session. Sets the `composer_session` cookie on success. Rate-limited per email and per IP. Public endpoint.",
 		Tags:        []string{"auth"},
+		Security:    []map[string][]string{}, // public
+		Errors:      errsAuthLogin,
 	}, h.Login)
 
 	huma.Register(api, huma.Operation{
@@ -64,7 +70,9 @@ func (h *AuthHandler) Register(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/auth/logout",
 		Summary:     "Destroy the current session",
+		Description: "Revokes the current session token and clears the `composer_session` cookie. Requires an active session.",
 		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusUnauthorized},
 	}, h.Logout)
 
 	huma.Register(api, huma.Operation{
@@ -72,25 +80,18 @@ func (h *AuthHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/auth/session",
 		Summary:     "Validate current session",
-		Description: "Returns user info if the session is valid.",
+		Description: "Returns the authenticated user's ID and role when the session or API key is valid. Used by SPAs to populate the current-user UI state.",
 		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusUnauthorized},
 	}, h.Session)
 }
 
-func (h *AuthHandler) BootstrapStatus(ctx context.Context, input *struct{}) (*struct {
-	Body struct {
-		Needed bool `json:"needed" doc:"True if no users exist and bootstrap is required"`
-	}
-}, error) {
+func (h *AuthHandler) BootstrapStatus(ctx context.Context, input *struct{}) (*dto.BootstrapStatusOutput, error) {
 	needed, err := h.auth.IsBootstrapNeeded(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
-	resp := &struct {
-		Body struct {
-			Needed bool `json:"needed" doc:"True if no users exist and bootstrap is required"`
-		}
-	}{}
+	resp := &dto.BootstrapStatusOutput{}
 	resp.Body.Needed = needed
 	return resp, nil
 }
@@ -128,7 +129,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *dto.LoginInput) (*dto.Lo
 		if errors.Is(err, app.ErrInvalidCredentials) {
 			return nil, huma.Error401Unauthorized("invalid email or password")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	// Auto-detect TLS: if COMPOSER_COOKIE_SECURE is set, use it;
@@ -157,12 +158,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *dto.LoginInput) (*dto.Lo
 	return resp, nil
 }
 
-// LogoutOutput clears the session cookie.
-type LogoutOutput struct {
-	SetCookie []*dto.SetCookieValue `header:"Set-Cookie"`
-}
-
-func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutput, error) {
+func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*dto.LogoutOutput, error) {
 	sessionID := authmw.SessionIDFromContext(ctx)
 	if sessionID == "" {
 		return nil, huma.Error401Unauthorized("not authenticated")
@@ -170,7 +166,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 
 	// Destroy session in DB
 	if err := h.auth.Logout(ctx, sessionID); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	// Clear the cookie
@@ -185,7 +181,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 	}
 
 	cookieVal := dto.SetCookieValue(clearCookie.String())
-	return &LogoutOutput{
+	return &dto.LogoutOutput{
 		SetCookie: []*dto.SetCookieValue{&cookieVal},
 	}, nil
 }

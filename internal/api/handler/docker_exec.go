@@ -7,17 +7,18 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/erfianugrah/composer/internal/api/dto"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/domain/auth"
-	"github.com/erfianugrah/composer/internal/infra/docker"
+	dockerinfra "github.com/erfianugrah/composer/internal/infra/docker"
 )
 
 // DockerExecHandler provides a global docker command runner.
 type DockerExecHandler struct {
-	compose *docker.Compose
+	compose *dockerinfra.Compose
 }
 
-func NewDockerExecHandler(compose *docker.Compose) *DockerExecHandler {
+func NewDockerExecHandler(compose *dockerinfra.Compose) *DockerExecHandler {
 	return &DockerExecHandler{compose: compose}
 }
 
@@ -26,49 +27,36 @@ func (h *DockerExecHandler) Register(api huma.API) {
 		OperationID: "execDockerCommand",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/docker/exec",
-		Summary:     "Run a docker command (admin only). No SSH needed.",
+		Summary:     "Run a docker command (admin only)",
+		Description: "Executes a whitelisted `docker <subcommand>` on the host. Intended as an SSH-free debugging console. Allowlisted to read-only subcommands (ps, images, network, volume, system, info, version, inspect, logs, stats, top, port, diff, history, search, tag). Admin only.",
 		Tags:        []string{"docker"},
+		Errors:      errsAdminMutation,
 	}, h.Exec)
 }
 
-type DockerExecInput struct {
-	Body struct {
-		Command string `json:"command" minLength:"1" doc:"Docker subcommand (e.g. 'ps', 'images', 'network ls', 'volume ls')"`
-	}
-}
-
-type DockerExecOutput struct {
-	Body struct {
-		Stdout   string `json:"stdout"`
-		Stderr   string `json:"stderr"`
-		ExitCode int    `json:"exit_code"`
-	}
-}
-
-func (h *DockerExecHandler) Exec(ctx context.Context, input *DockerExecInput) (*DockerExecOutput, error) {
+func (h *DockerExecHandler) Exec(ctx context.Context, input *dto.DockerExecInput) (*dto.DockerExecOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 
-	args := strings.Fields(input.Body.Command)
+	args, err := dockerinfra.ShellSplit(input.Body.Command)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
 	if len(args) == 0 {
 		return nil, huma.Error422UnprocessableEntity("command is empty")
 	}
 
-	// Allowlist of safe docker subcommands (S14 -- compose removed, use dedicated endpoints)
-	allowed := map[string]bool{
-		"ps": true, "images": true, "network": true, "volume": true,
-		"system": true, "info": true, "version": true, "inspect": true,
-		"logs": true, "stats": true, "top": true, "port": true,
-		"diff": true, "history": true, "search": true, "tag": true,
-	}
-	if !allowed[args[0]] {
-		return nil, huma.Error422UnprocessableEntity("command '" + args[0] + "' is not allowed; permitted: ps, images, network, volume, system, info, version, inspect, logs, stats, top, port, diff, history, search, tag")
+	ok, permitted := dockerinfra.DockerAllowed(args[0])
+	if !ok {
+		return nil, huma.Error422UnprocessableEntity(
+			"command '" + args[0] + "' is not allowed; permitted: " + strings.Join(permitted, ", "),
+		)
 	}
 
 	result, err := h.compose.RunDocker(ctx, args)
 
-	out := &DockerExecOutput{}
+	out := &dto.DockerExecOutput{}
 	if result != nil {
 		out.Body.Stdout = result.Stdout
 		out.Body.Stderr = result.Stderr
@@ -78,7 +66,7 @@ func (h *DockerExecHandler) Exec(ctx context.Context, input *DockerExecInput) (*
 		if result != nil {
 			return out, nil
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return out, nil
 }

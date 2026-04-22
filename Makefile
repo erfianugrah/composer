@@ -9,7 +9,7 @@ dev: ## Start Go (air) + Astro dev server
 
 # ── Build ────────────────────────────────────────────────────────
 
-build: build-frontend build-backend ## Build everything
+build: generate build-frontend build-backend ## Build everything (regenerates TS client first)
 
 build-backend: ## Build Go binary
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o composerd ./cmd/composerd/
@@ -51,9 +51,10 @@ docker-run: docker ## Build and run Docker image (needs Postgres + Valkey)
 
 # ── Generate ─────────────────────────────────────────────────────
 
-generate: ## Generate OpenAPI TypeScript client (needs running server)
-	@echo "Start server first: COMPOSER_PORT=8080 COMPOSER_LOG_FORMAT=console go run ./cmd/composerd/"
-	cd web && bunx openapi-typescript http://localhost:8080/openapi.json -o src/lib/api/types.ts
+generate: ## Dump OpenAPI spec + regenerate TypeScript client
+	go run ./cmd/dumpopenapi/ > web/src/lib/api/openapi.json
+	cd web && bunx openapi-typescript src/lib/api/openapi.json -o src/lib/api/types.ts
+	@echo "Regenerated web/src/lib/api/{openapi.json,types.ts}"
 
 # ── Clean ────────────────────────────────────────────────────────
 

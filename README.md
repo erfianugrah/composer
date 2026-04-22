@@ -10,7 +10,7 @@ Think Dockge's simplicity meets Portainer's power -- built from scratch with Go,
 - **Three creation modes** -- From template (10 presets), clone from Git repo, or paste raw YAML
 - **Build & Deploy** -- `docker compose up --build` for projects with Dockerfiles. Build images live
 - **Background jobs** -- Long-running compose operations run async (`?async=true`). Jobs drawer in UI with live status polling
-- **REST API first** -- 99 endpoints with auto-generated OpenAPI 3.1 spec. Every operation is scriptable
+- **REST API first** -- 80+ endpoints with auto-generated OpenAPI 3.1 spec (security schemes, enum-validated fields, per-operation error codes). TypeScript client regenerated offline via `make generate`. Every operation is scriptable
 - **Stack console** -- Run `docker compose` commands per stack without SSH access. Usable by humans, scripts, and LLM agents
 - **Docker resource management** -- Networks, volumes, images: list, create, remove, prune from the web UI
 - **Dockge migration** -- Import stacks from external directories with one click

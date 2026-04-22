@@ -11,6 +11,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
 	composer "github.com/erfianugrah/composer"
+	"github.com/erfianugrah/composer/internal/api/dto"
 	"github.com/erfianugrah/composer/internal/api/handler"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/api/ws"
@@ -77,6 +78,64 @@ func NewServer(deps Deps) *Server {
 	// Huma API (auto-generates OpenAPI 3.1)
 	config := huma.DefaultConfig("Composer", composer.Version)
 	config.Info.Description = "A lightweight, self-hosted Docker Compose management platform with GitOps, pipelines, and RBAC."
+	config.Info.License = &huma.License{
+		Name:       "MIT",
+		Identifier: "MIT",
+	}
+	config.Info.Contact = &huma.Contact{
+		Name: "Composer",
+		URL:  "https://github.com/erfianugrah/composer",
+	}
+	config.OpenAPI.Servers = []*huma.Server{
+		{URL: "/", Description: "Current host"},
+	}
+	// Security schemes: session cookie (browser), API key (CLI/CI), Bearer token (alt form)
+	config.OpenAPI.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"cookieAuth": {
+			Type:        "apiKey",
+			In:          "cookie",
+			Name:        "composer_session",
+			Description: "Session cookie set by POST /api/v1/auth/login",
+		},
+		"apiKeyAuth": {
+			Type:        "apiKey",
+			In:          "header",
+			Name:        "X-API-Key",
+			Description: "API key created via POST /api/v1/keys",
+		},
+		"bearerAuth": {
+			Type:         "http",
+			Scheme:       "bearer",
+			BearerFormat: "composer-api-key",
+			Description:  "API key passed as `Authorization: Bearer <key>`",
+		},
+	}
+	// Default: any registered security scheme satisfies requirement
+	config.OpenAPI.Security = []map[string][]string{
+		{"cookieAuth": {}},
+		{"apiKeyAuth": {}},
+		{"bearerAuth": {}},
+	}
+	// Tag descriptions improve grouped rendering in Stoplight / Swagger UI.
+	config.OpenAPI.Tags = []*huma.Tag{
+		{Name: "system", Description: "Server info, version, and global configuration"},
+		{Name: "auth", Description: "Login, logout, session, and bootstrap"},
+		{Name: "users", Description: "User management (admin only)"},
+		{Name: "keys", Description: "API key management (plaintext shown once at creation)"},
+		{Name: "stacks", Description: "Docker Compose stack lifecycle"},
+		{Name: "git", Description: "Git-backed stack sync, rollback, and deploy pipeline"},
+		{Name: "containers", Description: "Container inspection and lifecycle"},
+		{Name: "networks", Description: "Docker network management"},
+		{Name: "volumes", Description: "Docker volume management"},
+		{Name: "images", Description: "Docker image management"},
+		{Name: "docker", Description: "Daemon-wide operations (events, prune, exec)"},
+		{Name: "pipelines", Description: "Multi-step automation pipelines with triggers"},
+		{Name: "webhooks", Description: "Inbound git webhook configuration and delivery history"},
+		{Name: "jobs", Description: "Background job status for async compose operations"},
+		{Name: "audit", Description: "Audit log of mutating operations (admin only)"},
+		{Name: "templates", Description: "Built-in stack template catalog"},
+		{Name: "sse", Description: "Server-Sent Events streams (logs, stats, events, pipeline output)"},
+	}
 	api := humachi.New(router, config)
 
 	// Health check (bypasses auth)
@@ -85,19 +144,11 @@ func NewServer(deps Deps) *Server {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/system/health",
 		Summary:     "Health check",
+		Description: "Public liveness probe. Returns {status, version}. No authentication required.",
 		Tags:        []string{"system"},
-	}, func(ctx context.Context, input *struct{}) (*struct {
-		Body struct {
-			Status  string `json:"status" example:"healthy"`
-			Version string `json:"version"`
-		}
-	}, error) {
-		resp := &struct {
-			Body struct {
-				Status  string `json:"status" example:"healthy"`
-				Version string `json:"version"`
-			}
-		}{}
+		Security:    []map[string][]string{}, // public
+	}, func(ctx context.Context, input *struct{}) (*dto.HealthCheckOutput, error) {
+		resp := &dto.HealthCheckOutput{}
 		resp.Body.Status = "healthy"
 		resp.Body.Version = composer.Version
 		return resp, nil

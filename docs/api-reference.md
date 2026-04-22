@@ -4,11 +4,17 @@ Composer exposes a REST API with auto-generated OpenAPI 3.1 spec.
 
 **Live spec:** `GET /openapi.json` or `GET /openapi.yaml`
 
-**Total endpoints:** 99
+**Total endpoints:** 80 Huma-registered operations (+ WebSocket, OAuth, and webhook receiver paths registered as raw chi handlers).
+
+The spec declares three security schemes (`cookieAuth`, `apiKeyAuth`, `bearerAuth`) and enumerates per-operation error codes (401 / 403 / 404 / 409 / 422 / 429 / 500) so generated clients can branch on specific failures. Output fields for status-like data (`StackSummary.Status`, `ContainerOutput.Health`, `GitSourceOutput.SyncStatus`, etc.) declare their enum values in the schema.
+
+Regenerate the TypeScript client (`web/src/lib/api/types.ts`) offline via `make generate` — no running server needed.
 
 ## Authentication
 
-All endpoints except health, bootstrap, and login require authentication via session cookie or API key. OpenAPI spec and docs also require authentication (viewer+).
+All endpoints except health, bootstrap, login, templates, and public OAuth paths require authentication via session cookie or API key. The OpenAPI spec (`/openapi.json`, `/openapi.yaml`) and docs UI (`/docs`) are publicly readable for tooling integration.
+
+Public endpoints are marked with an empty `security: []` override in the spec; every other endpoint inherits the three-way security requirement (any of cookie, X-API-Key, or Bearer).
 
 ### Session Cookie
 
@@ -258,3 +264,34 @@ RFC 9457 (Problem Details):
   "detail": "Valid session or API key required"
 }
 ```
+
+500 responses include the chi request ID so operators can correlate with server logs:
+
+```json
+{
+  "status": 500,
+  "title": "Internal Server Error",
+  "detail": "an internal error occurred (request_id: abc123-xyz)"
+}
+```
+
+## Validation Constraints
+
+Every input DTO declares:
+
+- `maxLength` on free-form strings (compose content capped at 512 KB, `.env` at 256 KB, tokens/keys at 512–16384 bytes)
+- `pattern` on IDs with known formats (stack names `^[A-Za-z0-9_-]+$`, commit SHAs `^[0-9a-fA-F]+$`, webhook IDs `^wh_[0-9a-f]+$`)
+- `format` on email and timestamp fields
+- `enum` on role, auth method, sync status, step type, trigger type, container status/health, event type
+
+Huma caps request bodies at 1 MB per operation by default. Larger payloads return HTTP 413.
+
+## Partial Updates
+
+- `PUT /api/v1/webhooks/{id}` uses pointer semantics (`*string`, `*bool`) — omit a field to keep the current value, send empty string (`""`) to clear.
+- `PUT /api/v1/stacks/{name}/credentials` uses full-replace semantics — send every field you want set; empty string clears.
+- `PUT /api/v1/users/{id}` uses empty-string-means-keep semantics for email and role (both are required fields and cannot be cleared).
+
+## Webhook Secret Lifecycle
+
+`POST /api/v1/webhooks` returns a `WebhookCreatedOutput` with the plaintext HMAC secret — shown ONCE. Subsequent reads (`GET`, `PUT`) return a `WebhookOutput` with the secret redacted to `****<last-4-chars>`. This mirrors the API key pattern.

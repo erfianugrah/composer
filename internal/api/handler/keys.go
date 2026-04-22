@@ -25,22 +25,38 @@ func NewKeyHandler(auth *app.AuthService) *KeyHandler {
 func (h *KeyHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listKeys", Method: http.MethodGet,
-		Path: "/api/v1/keys", Summary: "List API keys (redacted)", Tags: []string{"keys"},
+		Path:        "/api/v1/keys",
+		Summary:     "List API keys (redacted)",
+		Description: "Returns every API key's ID, name, role, last-used and expiry timestamps. Plaintext values are never returned here — they're only shown once at creation.",
+		Tags:        []string{"keys"},
+		Errors:      errsViewer,
 	}, h.List)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "createKey", Method: http.MethodPost,
-		Path: "/api/v1/keys", Summary: "Create API key (plaintext shown once)", Tags: []string{"keys"},
+		Path:        "/api/v1/keys",
+		Summary:     "Create API key (plaintext shown once)",
+		Description: "Generates a new API key with the given name and role. The plaintext key is returned ONCE in the response body — save it immediately. Operators can only create keys at their role level or below.",
+		Tags:        []string{"keys"},
+		Errors:      errsOperatorMutation,
 	}, h.Create)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getKey", Method: http.MethodGet,
-		Path: "/api/v1/keys/{id}", Summary: "Get API key details", Tags: []string{"keys"},
+		Path:        "/api/v1/keys/{id}",
+		Summary:     "Get API key details",
+		Description: "Returns metadata about a single API key (no plaintext).",
+		Tags:        []string{"keys"},
+		Errors:      errsViewerNotFound,
 	}, h.Get)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteKey", Method: http.MethodDelete,
-		Path: "/api/v1/keys/{id}", Summary: "Revoke API key", Tags: []string{"keys"},
+		Path:        "/api/v1/keys/{id}",
+		Summary:     "Revoke API key",
+		Description: "Permanently revokes the API key. Requests using the key will immediately start returning 401.",
+		Tags:        []string{"keys"},
+		Errors:      errsOperatorMutation,
 	}, h.Delete)
 }
 
@@ -51,7 +67,7 @@ func (h *KeyHandler) List(ctx context.Context, input *struct{}) (*dto.KeyListOut
 
 	keys, err := h.auth.ListAPIKeys(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.KeyListOutput{}
@@ -72,7 +88,7 @@ func (h *KeyHandler) Get(ctx context.Context, input *dto.KeyIDInput) (*dto.KeyDe
 
 	keys, err := h.auth.ListAPIKeys(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	for _, k := range keys {
@@ -120,7 +136,7 @@ func (h *KeyHandler) Create(ctx context.Context, input *dto.CreateKeyInput) (*dt
 
 	result, err := h.auth.CreateAPIKey(ctx, input.Body.Name, role, callerID, expiresAt)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.KeyCreatedOutput{}
@@ -139,7 +155,7 @@ func (h *KeyHandler) Delete(ctx context.Context, input *dto.KeyIDInput) (*struct
 	}
 
 	if err := h.auth.DeleteAPIKey(ctx, input.ID); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return nil, nil
 }

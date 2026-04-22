@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
 
+	"github.com/erfianugrah/composer/internal/api/dto"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/domain/event"
@@ -45,7 +46,9 @@ func (h *SSEHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/sse/events",
 		Summary:     "Stream Docker events in real-time",
+		Description: "Server-Sent Events stream of domain events (stack lifecycle, container state/health). Clients should reconnect on disconnection; events are fire-and-forget and not replayed. Viewer+.",
 		Tags:        []string{"sse"},
+		Errors:      errsViewer,
 	}, map[string]any{
 		"stack.deployed":   event.StackDeployed{},
 		"stack.stopped":    event.StackStopped{},
@@ -62,7 +65,9 @@ func (h *SSEHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/sse/containers/{id}/logs",
 		Summary:     "Stream container logs in real-time",
+		Description: "SSE stream of log lines from a single container. Demuxes Docker's stdout/stderr frames and strips ANSI escapes. Viewer+.",
 		Tags:        []string{"sse"},
+		Errors:      errsViewerNotFound,
 	}, map[string]any{
 		"log": event.LogEntry{},
 	}, h.StreamContainerLogs)
@@ -73,7 +78,9 @@ func (h *SSEHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/sse/containers/{id}/stats",
 		Summary:     "Stream container CPU/memory/network stats",
+		Description: "SSE stream of container resource usage (~1 event/sec): CPU%, memory, network, block I/O, PID count. Viewer+.",
 		Tags:        []string{"sse"},
+		Errors:      errsViewerNotFound,
 	}, map[string]any{
 		"stats": event.ContainerStats{},
 	}, h.StreamContainerStats)
@@ -84,7 +91,9 @@ func (h *SSEHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/sse/stacks/{name}/logs",
 		Summary:     "Stream aggregated logs for all services in a stack",
+		Description: "SSE stream that multiplexes logs from every container in the stack. Each event is prefixed with the container name. Viewer+.",
 		Tags:        []string{"sse"},
+		Errors:      errsViewerNotFound,
 	}, map[string]any{
 		"log": event.LogEntry{},
 	}, h.StreamStackLogs)
@@ -95,7 +104,9 @@ func (h *SSEHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/sse/pipelines/{id}/runs/{runId}",
 		Summary:     "Stream live pipeline run output",
+		Description: "SSE stream filtered to a specific pipeline run. Emits `pipeline.step.started`, `pipeline.step.finished`, and `pipeline.run.finished` events. The stream auto-closes when the run finishes. Operator+.",
 		Tags:        []string{"sse"},
+		Errors:      errsViewerNotFound,
 	}, map[string]any{
 		"pipeline.step.started":  event.PipelineStepStarted{},
 		"pipeline.step.finished": event.PipelineStepFinished{},
@@ -132,33 +143,8 @@ func (h *SSEHandler) StreamEvents(ctx context.Context, input *struct{}, send sse
 	}
 }
 
-// ContainerLogInput defines the path/query params for log streaming.
-type ContainerLogInput struct {
-	ID    string `path:"id" doc:"Container ID"`
-	Tail  string `query:"tail" default:"100" doc:"Number of lines from the end"`
-	Since string `query:"since" default:"" doc:"Show logs since timestamp or relative (e.g. 5m)"`
-}
-
-// StackLogInput defines the path/query params for stack-level log streaming.
-type StackLogInput struct {
-	Name  string `path:"name" doc:"Stack name"`
-	Tail  string `query:"tail" default:"50" doc:"Lines per container"`
-	Since string `query:"since" default:"" doc:"Since timestamp"`
-}
-
-// PipelineRunSSEInput defines the path params for pipeline run streaming.
-type PipelineRunSSEInput struct {
-	ID    string `path:"id" doc:"Pipeline ID"`
-	RunID string `path:"runId" doc:"Run ID"`
-}
-
-// ContainerStatsInput defines the path params for stats streaming.
-type ContainerStatsInput struct {
-	ID string `path:"id" doc:"Container ID"`
-}
-
 // StreamContainerLogs streams container logs via SSE. Requires viewer+ role.
-func (h *SSEHandler) StreamContainerLogs(ctx context.Context, input *ContainerLogInput, send sse.Sender) {
+func (h *SSEHandler) StreamContainerLogs(ctx context.Context, input *dto.ContainerLogInput, send sse.Sender) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return
 	}
@@ -225,7 +211,7 @@ func (h *SSEHandler) StreamContainerLogs(ctx context.Context, input *ContainerLo
 }
 
 // StreamContainerStats streams container resource stats via SSE (~1 event/sec).
-func (h *SSEHandler) StreamContainerStats(ctx context.Context, input *ContainerStatsInput, send sse.Sender) {
+func (h *SSEHandler) StreamContainerStats(ctx context.Context, input *dto.ContainerStatsInput, send sse.Sender) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return
 	}
@@ -339,7 +325,7 @@ func parseDockerStats(containerID string, raw *dockerStats) event.ContainerStats
 }
 
 // StreamPipelineRun streams events for a specific pipeline run via SSE.
-func (h *SSEHandler) StreamPipelineRun(ctx context.Context, input *PipelineRunSSEInput, send sse.Sender) {
+func (h *SSEHandler) StreamPipelineRun(ctx context.Context, input *dto.PipelineRunSSEInput, send sse.Sender) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return
 	}
@@ -390,7 +376,7 @@ func (h *SSEHandler) StreamPipelineRun(ctx context.Context, input *PipelineRunSS
 }
 
 // StreamStackLogs streams aggregated logs from all containers in a stack via SSE.
-func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *StackLogInput, send sse.Sender) {
+func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *dto.StackLogInput, send sse.Sender) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return
 	}

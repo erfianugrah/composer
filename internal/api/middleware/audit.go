@@ -35,10 +35,13 @@ func Audit(repo *store.AuditRepo) func(http.Handler) http.Handler {
 			go func() {
 				userID := UserIDFromContext(r.Context())
 				action := deriveAction(r.Method, r.URL.Path)
-				ip := r.RemoteAddr
+				// Use bare IP (no port) so audit rows key consistently by client.
+				// RealIP middleware (when trusted proxy is configured) already
+				// normalizes RemoteAddr to the real client IP.
+				ip := ClientIP(r.RemoteAddr)
 				if os.Getenv("COMPOSER_TRUSTED_PROXIES") != "" {
 					if fwd := r.Header.Get("X-Real-IP"); fwd != "" {
-						ip = fwd
+						ip = ClientIP(fwd)
 					}
 				}
 

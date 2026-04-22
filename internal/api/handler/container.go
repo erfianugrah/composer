@@ -28,32 +28,56 @@ func NewContainerHandler(docker *docker.Client) *ContainerHandler {
 func (h *ContainerHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listContainers", Method: http.MethodGet,
-		Path: "/api/v1/containers", Summary: "List all containers", Tags: []string{"containers"},
+		Path:        "/api/v1/containers",
+		Summary:     "List all containers",
+		Description: "Returns every container visible to the Docker daemon, including non-compose ones. For stack-scoped views call `getStack` instead.",
+		Tags:        []string{"containers"},
+		Errors:      errsViewer,
 	}, h.List)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getContainer", Method: http.MethodGet,
-		Path: "/api/v1/containers/{id}", Summary: "Get container detail", Tags: []string{"containers"},
+		Path:        "/api/v1/containers/{id}",
+		Summary:     "Get container detail",
+		Description: "Returns a single container's state, image, service, health, and restart policy.",
+		Tags:        []string{"containers"},
+		Errors:      errsViewerNotFound,
 	}, h.Get)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "containerLogs", Method: http.MethodGet,
-		Path: "/api/v1/containers/{id}/logs", Summary: "Get container logs (snapshot, not streaming)", Tags: []string{"containers"},
+		Path:        "/api/v1/containers/{id}/logs",
+		Summary:     "Get container logs (snapshot)",
+		Description: "Returns a one-shot log snapshot. For live streaming use the SSE endpoint at `/api/v1/sse/containers/{id}/logs`. Output is capped at 1MB.",
+		Tags:        []string{"containers"},
+		Errors:      errsViewerNotFound,
 	}, h.Logs)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "startContainer", Method: http.MethodPost,
-		Path: "/api/v1/containers/{id}/start", Summary: "Start container", Tags: []string{"containers"},
+		Path:        "/api/v1/containers/{id}/start",
+		Summary:     "Start container",
+		Description: "Starts a stopped container. Restricted to compose-managed containers (has `com.docker.compose.project` label) to avoid operating on infrastructure containers.",
+		Tags:        []string{"containers"},
+		Errors:      errsOperatorMutation,
 	}, h.Start)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "stopContainer", Method: http.MethodPost,
-		Path: "/api/v1/containers/{id}/stop", Summary: "Stop container", Tags: []string{"containers"},
+		Path:        "/api/v1/containers/{id}/stop",
+		Summary:     "Stop container",
+		Description: "Gracefully stops a running container (SIGTERM then SIGKILL after 10s). Compose-managed only.",
+		Tags:        []string{"containers"},
+		Errors:      errsOperatorMutation,
 	}, h.Stop)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "restartContainer", Method: http.MethodPost,
-		Path: "/api/v1/containers/{id}/restart", Summary: "Restart container", Tags: []string{"containers"},
+		Path:        "/api/v1/containers/{id}/restart",
+		Summary:     "Restart container",
+		Description: "Stops then starts a container in one call. Compose-managed only.",
+		Tags:        []string{"containers"},
+		Errors:      errsOperatorMutation,
 	}, h.Restart)
 }
 
@@ -64,7 +88,7 @@ func (h *ContainerHandler) List(ctx context.Context, input *struct{}) (*dto.Cont
 
 	containers, err := h.docker.ListContainers(ctx, "")
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.ContainerListOutput{}
@@ -85,7 +109,7 @@ func (h *ContainerHandler) Get(ctx context.Context, input *dto.ContainerIDInput)
 
 	c, err := h.docker.InspectContainer(ctx, input.ID)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.ContainerDetailOutput{}
@@ -118,7 +142,7 @@ func (h *ContainerHandler) Start(ctx context.Context, input *dto.ContainerIDInpu
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.StartContainer(ctx, input.ID); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return nil, nil
 }
@@ -131,7 +155,7 @@ func (h *ContainerHandler) Stop(ctx context.Context, input *dto.ContainerIDInput
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.StopContainer(ctx, input.ID); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return nil, nil
 }
@@ -144,32 +168,19 @@ func (h *ContainerHandler) Restart(ctx context.Context, input *dto.ContainerIDIn
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.RestartContainer(ctx, input.ID); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return nil, nil
 }
 
-// ContainerLogsInput adds tail/since query params to the container ID.
-type ContainerLogsInput struct {
-	ID    string `path:"id" doc:"Container ID"`
-	Tail  string `query:"tail" default:"100" doc:"Number of lines from the end"`
-	Since string `query:"since" default:"" doc:"Show logs since (e.g. 5m, 2h, or RFC3339 timestamp)"`
-}
-
-type ContainerLogsOutput struct {
-	Body struct {
-		Lines []string `json:"lines"`
-	}
-}
-
-func (h *ContainerHandler) Logs(ctx context.Context, input *ContainerLogsInput) (*ContainerLogsOutput, error) {
+func (h *ContainerHandler) Logs(ctx context.Context, input *dto.ContainerLogsInput) (*dto.ContainerLogsOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
 
 	reader, err := h.docker.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	defer reader.Close()
 
@@ -183,7 +194,7 @@ func (h *ContainerHandler) Logs(ctx context.Context, input *ContainerLogsInput) 
 		// Re-read as raw text.
 		reader2, err2 := h.docker.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
 		if err2 != nil {
-			return nil, serverError(err)
+			return nil, serverError(ctx, err)
 		}
 		defer reader2.Close()
 		raw, _ := io.ReadAll(io.LimitReader(reader2, 1<<20))
@@ -198,7 +209,7 @@ func (h *ContainerHandler) Logs(ctx context.Context, input *ContainerLogsInput) 
 		}
 	}
 
-	out := &ContainerLogsOutput{}
+	out := &dto.ContainerLogsOutput{}
 	out.Body.Lines = lines
 	return out, nil
 }

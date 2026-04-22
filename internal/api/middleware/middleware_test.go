@@ -22,7 +22,24 @@ func TestStoreRemoteIP(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, "192.168.1.100:54321", gotIP)
+	// Port is stripped so downstream consumers (rate limiter, audit log)
+	// key by IP alone — not IP+port (which would split per TCP connection).
+	assert.Equal(t, "192.168.1.100", gotIP)
+}
+
+func TestStoreRemoteIP_IPv6(t *testing.T) {
+	var gotIP string
+	handler := middleware.StoreRemoteIP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotIP = middleware.RemoteIPFromContext(r.Context())
+		w.WriteHeader(200)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.RemoteAddr = "[2001:db8::1]:54321"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, "2001:db8::1", gotIP)
 }
 
 func TestRemoteIPFromContext_Empty(t *testing.T) {

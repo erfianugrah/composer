@@ -29,32 +29,56 @@ func (h *UserHandler) SetSessionRepo(sessions auth.SessionRepository) {
 func (h *UserHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listUsers", Method: http.MethodGet,
-		Path: "/api/v1/users", Summary: "List all users", Tags: []string{"users"},
+		Path:        "/api/v1/users",
+		Summary:     "List all users",
+		Description: "Returns every user account with role and last-login timestamp. Admin only.",
+		Tags:        []string{"users"},
+		Errors:      errsAdminMutation,
 	}, h.List)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "createUser", Method: http.MethodPost,
-		Path: "/api/v1/users", Summary: "Create a new user", Tags: []string{"users"},
+		Path:        "/api/v1/users",
+		Summary:     "Create a new user",
+		Description: "Creates a local user with email + bcrypt-hashed password and assigns a role (admin / operator / viewer). Admin only.",
+		Tags:        []string{"users"},
+		Errors:      errsAdminMutation,
 	}, h.Create)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getUser", Method: http.MethodGet,
-		Path: "/api/v1/users/{id}", Summary: "Get user by ID", Tags: []string{"users"},
+		Path:        "/api/v1/users/{id}",
+		Summary:     "Get user by ID",
+		Description: "Returns a user's public profile. Admin only.",
+		Tags:        []string{"users"},
+		Errors:      errsAdminMutation,
 	}, h.Get)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateUser", Method: http.MethodPut,
-		Path: "/api/v1/users/{id}", Summary: "Update user", Tags: []string{"users"},
+		Path:        "/api/v1/users/{id}",
+		Summary:     "Update user",
+		Description: "Updates a user's email and/or role. Changing role revokes all existing sessions so the new role takes effect on next login. Admin only.",
+		Tags:        []string{"users"},
+		Errors:      errsAdminMutation,
 	}, h.Update)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteUser", Method: http.MethodDelete,
-		Path: "/api/v1/users/{id}", Summary: "Delete user", Tags: []string{"users"},
+		Path:        "/api/v1/users/{id}",
+		Summary:     "Delete user",
+		Description: "Deletes the user and cascades their sessions and API keys. Admin only.",
+		Tags:        []string{"users"},
+		Errors:      errsAdminMutation,
 	}, h.Delete)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "changePassword", Method: http.MethodPut,
-		Path: "/api/v1/users/{id}/password", Summary: "Change password", Tags: []string{"users"},
+		Path:        "/api/v1/users/{id}/password",
+		Summary:     "Change password",
+		Description: "Admins can change any user's password; non-admins can only change their own (and must supply the old password). Successful rotation invalidates all active sessions for the user.",
+		Tags:        []string{"users"},
+		Errors:      errsAdminMutation,
 	}, h.ChangePassword)
 }
 
@@ -65,7 +89,7 @@ func (h *UserHandler) List(ctx context.Context, input *struct{}) (*dto.UserListO
 
 	users, err := h.users.List(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.UserListOutput{}
@@ -95,7 +119,7 @@ func (h *UserHandler) Create(ctx context.Context, input *dto.CreateUserInput) (*
 	}
 
 	if err := h.users.Create(ctx, user); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	return userToOutput(user), nil
@@ -108,7 +132,7 @@ func (h *UserHandler) Get(ctx context.Context, input *dto.UserIDInput) (*dto.Use
 
 	user, err := h.users.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	if user == nil {
 		return nil, huma.Error404NotFound("user not found")
@@ -123,7 +147,7 @@ func (h *UserHandler) Update(ctx context.Context, input *dto.UpdateUserInput) (*
 
 	user, err := h.users.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	if user == nil {
 		return nil, huma.Error404NotFound("user not found")
@@ -145,7 +169,7 @@ func (h *UserHandler) Update(ctx context.Context, input *dto.UpdateUserInput) (*
 	}
 
 	if err := h.users.Update(ctx, user); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	// Invalidate sessions when role changes so they pick up the new role
@@ -165,7 +189,7 @@ func (h *UserHandler) Delete(ctx context.Context, input *dto.UserIDInput) (*stru
 		_ = h.sessions.DeleteByUserID(ctx, input.ID)
 	}
 	if err := h.users.Delete(ctx, input.ID); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return nil, nil
 }
@@ -188,7 +212,7 @@ func (h *UserHandler) ChangePassword(ctx context.Context, input *dto.ChangePassw
 	}
 
 	if err := h.users.Update(ctx, user); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	// Invalidate all sessions so compromised tokens are revoked (S8)

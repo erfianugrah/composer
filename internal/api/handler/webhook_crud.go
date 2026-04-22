@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -28,32 +27,56 @@ func NewWebhookCRUDHandler(webhooks *store.WebhookRepo) *WebhookCRUDHandler {
 func (h *WebhookCRUDHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listWebhooks", Method: http.MethodGet,
-		Path: "/api/v1/webhooks", Summary: "List all webhooks", Tags: []string{"webhooks"},
+		Path:        "/api/v1/webhooks",
+		Summary:     "List all webhooks",
+		Description: "Returns every configured webhook (secret redacted). Operator+.",
+		Tags:        []string{"webhooks"},
+		Errors:      errsViewer,
 	}, h.List)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "createWebhook", Method: http.MethodPost,
-		Path: "/api/v1/webhooks", Summary: "Create a webhook for a stack", Tags: []string{"webhooks"},
+		Path:        "/api/v1/webhooks",
+		Summary:     "Create a webhook for a stack",
+		Description: "Creates a webhook receiver URL and HMAC secret for a stack. The plaintext secret is returned ONCE and must be configured in your git provider; subsequent reads return the redacted form.",
+		Tags:        []string{"webhooks"},
+		Errors:      errsOperatorMutation,
 	}, h.Create)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getWebhook", Method: http.MethodGet,
-		Path: "/api/v1/webhooks/{id}", Summary: "Get webhook details", Tags: []string{"webhooks"},
+		Path:        "/api/v1/webhooks/{id}",
+		Summary:     "Get webhook details",
+		Description: "Returns webhook metadata with a redacted secret (last 4 chars only).",
+		Tags:        []string{"webhooks"},
+		Errors:      errsViewerNotFound,
 	}, h.Get)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateWebhook", Method: http.MethodPut,
-		Path: "/api/v1/webhooks/{id}", Summary: "Update webhook settings", Tags: []string{"webhooks"},
+		Path:        "/api/v1/webhooks/{id}",
+		Summary:     "Update webhook settings",
+		Description: "Updates branch filter, auto-redeploy flag, and/or provider. Use pointer fields to distinguish 'keep current' (omit) from 'clear' (empty string).",
+		Tags:        []string{"webhooks"},
+		Errors:      errsOperatorMutation,
 	}, h.Update)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteWebhook", Method: http.MethodDelete,
-		Path: "/api/v1/webhooks/{id}", Summary: "Delete a webhook", Tags: []string{"webhooks"},
+		Path:        "/api/v1/webhooks/{id}",
+		Summary:     "Delete a webhook",
+		Description: "Removes the webhook. Subsequent deliveries to its URL will 404.",
+		Tags:        []string{"webhooks"},
+		Errors:      errsOperatorMutation,
 	}, h.Delete)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "listWebhookDeliveries", Method: http.MethodGet,
-		Path: "/api/v1/webhooks/{id}/deliveries", Summary: "List webhook delivery history", Tags: []string{"webhooks"},
+		Path:        "/api/v1/webhooks/{id}/deliveries",
+		Summary:     "List webhook delivery history",
+		Description: "Returns up to 50 recent deliveries for this webhook (status, event, branch, commit, action taken). Older entries are pruned after 30 days.",
+		Tags:        []string{"webhooks"},
+		Errors:      errsViewerNotFound,
 	}, h.ListDeliveries)
 }
 
@@ -66,7 +89,7 @@ func (h *WebhookCRUDHandler) List(ctx context.Context, input *struct{}) (*dto.We
 	// For now, return all -- could add stack filter query param later
 	all, err := h.webhooks.ListAll(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.WebhookListOutput{}
@@ -81,7 +104,7 @@ func (h *WebhookCRUDHandler) List(ctx context.Context, input *struct{}) (*dto.We
 	return out, nil
 }
 
-func (h *WebhookCRUDHandler) Create(ctx context.Context, input *dto.CreateWebhookInput) (*dto.WebhookOutput, error) {
+func (h *WebhookCRUDHandler) Create(ctx context.Context, input *dto.CreateWebhookInput) (*dto.WebhookCreatedOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
@@ -102,14 +125,14 @@ func (h *WebhookCRUDHandler) Create(ctx context.Context, input *dto.CreateWebhoo
 	}
 
 	if err := h.webhooks.Create(ctx, webhook); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
-	out := &dto.WebhookOutput{}
+	out := &dto.WebhookCreatedOutput{}
 	out.Body.ID = id
 	out.Body.StackName = webhook.StackName
 	out.Body.Provider = webhook.Provider
-	out.Body.Secret = secret
+	out.Body.Secret = secret // plaintext — shown only on creation
 	out.Body.URL = fmt.Sprintf("/api/v1/hooks/%s", id)
 	out.Body.BranchFilter = webhook.BranchFilter
 	out.Body.AutoRedeploy = webhook.AutoRedeploy
@@ -123,7 +146,7 @@ func (h *WebhookCRUDHandler) Get(ctx context.Context, input *dto.WebhookIDInput)
 
 	w, err := h.webhooks.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	if w == nil {
 		return nil, huma.Error404NotFound("webhook not found")
@@ -144,40 +167,32 @@ func (h *WebhookCRUDHandler) Get(ctx context.Context, input *dto.WebhookIDInput)
 	return out, nil
 }
 
-type UpdateWebhookInput struct {
-	ID   string `path:"id" doc:"Webhook ID"`
-	Body struct {
-		BranchFilter string `json:"branch_filter,omitempty" doc:"Branch filter"`
-		AutoRedeploy *bool  `json:"auto_redeploy,omitempty" doc:"Auto-redeploy on push"`
-		Provider     string `json:"provider,omitempty" doc:"Webhook provider"`
-	}
-}
-
-func (h *WebhookCRUDHandler) Update(ctx context.Context, input *UpdateWebhookInput) (*dto.WebhookOutput, error) {
+func (h *WebhookCRUDHandler) Update(ctx context.Context, input *dto.UpdateWebhookInput) (*dto.WebhookOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
 
 	w, err := h.webhooks.GetByID(ctx, input.ID)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	if w == nil {
 		return nil, huma.Error404NotFound("webhook not found")
 	}
 
-	if input.Body.BranchFilter != "" {
-		w.BranchFilter = input.Body.BranchFilter
+	// Pointer semantics: nil = keep existing, non-nil = replace (including "" to clear)
+	if input.Body.BranchFilter != nil {
+		w.BranchFilter = *input.Body.BranchFilter
 	}
 	if input.Body.AutoRedeploy != nil {
 		w.AutoRedeploy = *input.Body.AutoRedeploy
 	}
-	if input.Body.Provider != "" {
-		w.Provider = input.Body.Provider
+	if input.Body.Provider != nil {
+		w.Provider = *input.Body.Provider
 	}
 
 	if err := h.webhooks.Update(ctx, w); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.WebhookOutput{}
@@ -201,42 +216,25 @@ func (h *WebhookCRUDHandler) Delete(ctx context.Context, input *dto.WebhookIDInp
 	}
 
 	if err := h.webhooks.Delete(ctx, input.ID); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	return nil, nil
 }
 
-type DeliveryListOutput struct {
-	Body struct {
-		Deliveries []DeliverySummary `json:"deliveries"`
-	}
-}
-
-type DeliverySummary struct {
-	ID        string `json:"id"`
-	Event     string `json:"event"`
-	Branch    string `json:"branch"`
-	CommitSHA string `json:"commit_sha"`
-	Status    string `json:"status"`
-	Action    string `json:"action"`
-	Error     string `json:"error,omitempty"`
-	CreatedAt string `json:"created_at"`
-}
-
-func (h *WebhookCRUDHandler) ListDeliveries(ctx context.Context, input *dto.WebhookIDInput) (*DeliveryListOutput, error) {
+func (h *WebhookCRUDHandler) ListDeliveries(ctx context.Context, input *dto.WebhookIDInput) (*dto.DeliveryListOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
 
 	deliveries, err := h.webhooks.ListDeliveries(ctx, input.ID, 50)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
-	out := &DeliveryListOutput{}
-	out.Body.Deliveries = make([]DeliverySummary, 0, len(deliveries))
+	out := &dto.DeliveryListOutput{}
+	out.Body.Deliveries = make([]dto.DeliverySummary, 0, len(deliveries))
 	for _, d := range deliveries {
-		out.Body.Deliveries = append(out.Body.Deliveries, DeliverySummary{
+		out.Body.Deliveries = append(out.Body.Deliveries, dto.DeliverySummary{
 			ID: d.ID, Event: d.Event, Branch: d.Branch, CommitSHA: d.CommitSHA,
 			Status: d.Status, Action: d.Action, Error: d.Error, CreatedAt: d.CreatedAt,
 		})
@@ -255,6 +253,3 @@ func generateWebhookSecret() string {
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
-
-// Ensure time import is used (for future audit log timestamps)
-var _ = time.Now

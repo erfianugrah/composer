@@ -122,15 +122,15 @@ func (rl *RateLimiter) cleanup() {
 }
 
 // RateLimit returns middleware that limits requests per IP.
-// Uses RemoteAddr directly -- X-Real-IP/X-Forwarded-For are set by the
-// Chi RealIP middleware which should only be used behind a trusted reverse proxy.
+// Uses RemoteAddr with the port stripped so buckets key by IP alone — without
+// this, each fresh TCP connection would create a new bucket. Chi's RealIP
+// middleware (applied before this one when COMPOSER_TRUSTED_PROXIES is set)
+// replaces RemoteAddr with a bare IP from X-Real-IP/X-Forwarded-For, so
+// ClientIP handles both `ip:port` and bare `ip` forms.
 func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Use RemoteAddr as-is. Chi's RealIP middleware (applied before this)
-			// replaces RemoteAddr with X-Real-IP when configured. This prevents
-			// direct clients from spoofing IPs via headers.
-			ip := r.RemoteAddr
+			ip := ClientIP(r.RemoteAddr)
 
 			if !limiter.Allow(ip) {
 				http.Error(w, `{"status":429,"title":"Too Many Requests","detail":"Rate limit exceeded"}`, http.StatusTooManyRequests)

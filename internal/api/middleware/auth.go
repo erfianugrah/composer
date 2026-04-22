@@ -36,11 +36,12 @@ func ExtendWriteDeadline(next http.Handler) http.Handler {
 	})
 }
 
-// StoreRemoteIP is middleware that stores r.RemoteAddr in the context
-// so Huma handlers (which don't receive http.Request) can access client IP.
+// StoreRemoteIP is middleware that stores the client's bare IP (no port) in the
+// context so Huma handlers (which don't receive http.Request) can access it.
+// Ports are stripped so downstream rate-limiter / audit lookups key by IP alone.
 func StoreRemoteIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), ctxRemoteIP, r.RemoteAddr)
+		ctx := context.WithValue(r.Context(), ctxRemoteIP, ClientIP(r.RemoteAddr))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

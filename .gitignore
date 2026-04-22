@@ -1,5 +1,6 @@
-# Go
-composerd
+# Go binaries (at repo root only — NOT cmd/composerd/ or cmd/dumpopenapi/)
+/composerd
+/dumpopenapi
 *.exe
 *.test
 *.out

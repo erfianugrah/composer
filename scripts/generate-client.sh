@@ -1,34 +1,34 @@
 #!/bin/bash
-# Generate TypeScript API client from the OpenAPI spec.
+# Generate TypeScript API client from the Composer OpenAPI spec.
+#
+# Unlike the old flow, this does NOT need a running server — the spec is
+# produced offline via cmd/dumpopenapi, which registers every handler with
+# nil deps for schema generation only.
 #
 # Prerequisites:
-#   - composerd running on localhost:8080 (or set COMPOSER_URL)
+#   - Go toolchain
 #   - bun installed
 #
 # Usage:
 #   ./scripts/generate-client.sh
-#   COMPOSER_URL=http://localhost:9999 ./scripts/generate-client.sh
 
 set -euo pipefail
 
-COMPOSER_URL="${COMPOSER_URL:-http://localhost:8080}"
-SPEC_URL="${COMPOSER_URL}/openapi.json"
-OUTPUT_DIR="web/src/lib/api"
-TYPES_FILE="${OUTPUT_DIR}/types.ts"
+cd "$(dirname "$0")/.."
 
-echo "Fetching OpenAPI spec from ${SPEC_URL}..."
-if ! curl -sf "${SPEC_URL}" > /dev/null 2>&1; then
-  echo "ERROR: Cannot reach ${SPEC_URL}"
-  echo "Start the server first:"
-  echo "  COMPOSER_PORT=8080 COMPOSER_DB_URL=... go run ./cmd/composerd/"
-  exit 1
-fi
+SPEC_FILE="web/src/lib/api/openapi.json"
+TYPES_FILE="web/src/lib/api/types.ts"
+
+echo "Dumping OpenAPI spec offline via cmd/dumpopenapi..."
+go run ./cmd/dumpopenapi/ > "${SPEC_FILE}"
 
 echo "Generating TypeScript types..."
-cd "$(dirname "$0")/.."
-bunx openapi-typescript "${SPEC_URL}" -o "${TYPES_FILE}"
+cd web && bunx openapi-typescript "src/lib/api/openapi.json" -o "src/lib/api/types.ts"
 
-echo "Generated: ${TYPES_FILE}"
+echo ""
+echo "Generated:"
+echo "  ${SPEC_FILE}"
+echo "  ${TYPES_FILE}"
 echo ""
 echo "Usage in frontend:"
 echo '  import type { paths } from "@/lib/api/types";'

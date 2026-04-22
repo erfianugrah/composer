@@ -26,39 +26,75 @@ func NewPipelineHandler(svc *app.PipelineService) *PipelineHandler {
 func (h *PipelineHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listPipelines", Method: http.MethodGet,
-		Path: "/api/v1/pipelines", Summary: "List pipelines", Tags: []string{"pipelines"},
+		Path:        "/api/v1/pipelines",
+		Summary:     "List pipelines",
+		Description: "Returns every pipeline with step count and creation metadata. Operator+.",
+		Tags:        []string{"pipelines"},
+		Errors:      errsViewer,
 	}, h.List)
 	huma.Register(api, huma.Operation{
 		OperationID: "createPipeline", Method: http.MethodPost,
-		Path: "/api/v1/pipelines", Summary: "Create pipeline", Tags: []string{"pipelines"},
+		Path:        "/api/v1/pipelines",
+		Summary:     "Create pipeline",
+		Description: "Creates a new pipeline with steps and triggers. Admin only — pipelines can execute shell commands and docker operations on the host.",
+		Tags:        []string{"pipelines"},
+		Errors:      errsAdminMutation,
 	}, h.Create)
 	huma.Register(api, huma.Operation{
 		OperationID: "getPipeline", Method: http.MethodGet,
-		Path: "/api/v1/pipelines/{id}", Summary: "Get pipeline detail", Tags: []string{"pipelines"},
+		Path:        "/api/v1/pipelines/{id}",
+		Summary:     "Get pipeline detail",
+		Description: "Returns the full pipeline definition including steps, triggers, and timestamps. Operator+.",
+		Tags:        []string{"pipelines"},
+		Errors:      errsViewerNotFound,
 	}, h.Get)
 	huma.Register(api, huma.Operation{
 		OperationID: "deletePipeline", Method: http.MethodDelete,
-		Path: "/api/v1/pipelines/{id}", Summary: "Delete pipeline", Tags: []string{"pipelines"},
+		Path:        "/api/v1/pipelines/{id}",
+		Summary:     "Delete pipeline",
+		Description: "Deletes a pipeline and its run history. Active runs continue until they finish. Operator+.",
+		Tags:        []string{"pipelines"},
+		Errors:      errsOperatorMutation,
 	}, h.Delete)
 	huma.Register(api, huma.Operation{
 		OperationID: "runPipeline", Method: http.MethodPost,
-		Path: "/api/v1/pipelines/{id}/run", Summary: "Trigger pipeline run", Tags: []string{"pipelines"},
+		Path:        "/api/v1/pipelines/{id}/run",
+		Summary:     "Trigger pipeline run",
+		Description: "Starts a new pipeline run asynchronously. Returns the run ID immediately; poll `getPipelineRun` or stream `/api/v1/sse/pipelines/{id}/runs/{runId}` for status.",
+		Tags:        []string{"pipelines"},
+		Errors:      errsOperatorMutation,
 	}, h.Run)
 	huma.Register(api, huma.Operation{
 		OperationID: "listPipelineRuns", Method: http.MethodGet,
-		Path: "/api/v1/pipelines/{id}/runs", Summary: "List runs for pipeline", Tags: []string{"pipelines"},
+		Path:        "/api/v1/pipelines/{id}/runs",
+		Summary:     "List runs for pipeline",
+		Description: "Returns a pipeline's run history, newest first. Operator+.",
+		Tags:        []string{"pipelines"},
+		Errors:      errsViewer,
 	}, h.ListRuns)
 	huma.Register(api, huma.Operation{
 		OperationID: "getPipelineRun", Method: http.MethodGet,
-		Path: "/api/v1/pipelines/{id}/runs/{runId}", Summary: "Get run detail", Tags: []string{"pipelines"},
+		Path:        "/api/v1/pipelines/{id}/runs/{runId}",
+		Summary:     "Get run detail",
+		Description: "Returns the run status plus step-by-step results (output, duration, error).",
+		Tags:        []string{"pipelines"},
+		Errors:      errsViewerNotFound,
 	}, h.GetRun)
 	huma.Register(api, huma.Operation{
 		OperationID: "updatePipeline", Method: http.MethodPut,
-		Path: "/api/v1/pipelines/{id}", Summary: "Update pipeline", Tags: []string{"pipelines"},
+		Path:        "/api/v1/pipelines/{id}",
+		Summary:     "Update pipeline",
+		Description: "Replaces the pipeline definition. When the updated steps include `shell_command` or `docker_exec` types the caller must be admin (prevents privilege escalation via pipeline edit).",
+		Tags:        []string{"pipelines"},
+		Errors:      errsOperatorMutation,
 	}, h.Update)
 	huma.Register(api, huma.Operation{
 		OperationID: "cancelPipelineRun", Method: http.MethodPost,
-		Path: "/api/v1/pipelines/{id}/cancel", Summary: "Cancel running pipeline", Tags: []string{"pipelines"},
+		Path:        "/api/v1/pipelines/{id}/cancel",
+		Summary:     "Cancel running pipeline",
+		Description: "Cancels the most recent pending or running run of this pipeline by cancelling its executor context. Completed runs are left untouched.",
+		Tags:        []string{"pipelines"},
+		Errors:      errsOperatorMutation,
 	}, h.Cancel)
 }
 
@@ -69,7 +105,7 @@ func (h *PipelineHandler) List(ctx context.Context, input *struct{}) (*dto.Pipel
 
 	pipelines, err := h.svc.List(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.PipelineListOutput{}
@@ -137,7 +173,7 @@ func (h *PipelineHandler) Get(ctx context.Context, input *dto.PipelineIDInput) (
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("pipeline not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.PipelineDetailOutput{}
@@ -171,7 +207,13 @@ func (h *PipelineHandler) Delete(ctx context.Context, input *dto.PipelineIDInput
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	return nil, h.svc.Delete(ctx, input.ID)
+	if err := h.svc.Delete(ctx, input.ID); err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("pipeline not found")
+		}
+		return nil, serverError(ctx, err)
+	}
+	return nil, nil
 }
 
 func (h *PipelineHandler) Run(ctx context.Context, input *dto.RunPipelineInput) (*dto.RunOutput, error) {
@@ -185,7 +227,7 @@ func (h *PipelineHandler) Run(ctx context.Context, input *dto.RunPipelineInput) 
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("pipeline not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	return runToOutput(run), nil
@@ -198,7 +240,7 @@ func (h *PipelineHandler) ListRuns(ctx context.Context, input *dto.PipelineIDInp
 
 	runs, err := h.svc.ListRuns(ctx, input.ID)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.RunListOutput{}
@@ -222,24 +264,13 @@ func (h *PipelineHandler) GetRun(ctx context.Context, input *dto.RunIDInput) (*d
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("run not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	return runToOutput(run), nil
 }
 
-// UpdatePipelineInput combines the path ID with the create body fields.
-type UpdatePipelineInput struct {
-	ID   string `path:"id" doc:"Pipeline ID"`
-	Body struct {
-		Name        string                `json:"name" minLength:"1" doc:"Pipeline name"`
-		Description string                `json:"description,omitempty" doc:"Pipeline description"`
-		Steps       []dto.PipelineStepDTO `json:"steps" minItems:"1" doc:"Pipeline steps"`
-		Triggers    []dto.TriggerDTO      `json:"triggers,omitempty" doc:"Pipeline triggers"`
-	}
-}
-
-func (h *PipelineHandler) Update(ctx context.Context, input *UpdatePipelineInput) (*dto.PipelineCreatedOutput, error) {
+func (h *PipelineHandler) Update(ctx context.Context, input *dto.UpdatePipelineInput) (*dto.PipelineCreatedOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
@@ -259,7 +290,7 @@ func (h *PipelineHandler) Update(ctx context.Context, input *UpdatePipelineInput
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("pipeline not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	// Update fields from the request body
@@ -291,7 +322,7 @@ func (h *PipelineHandler) Update(ctx context.Context, input *UpdatePipelineInput
 	}
 
 	if err := h.svc.Update(ctx, existing); err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.PipelineCreatedOutput{}
@@ -308,14 +339,14 @@ func (h *PipelineHandler) Cancel(ctx context.Context, input *dto.PipelineIDInput
 	// Get the latest running run for this pipeline and cancel it
 	runs, err := h.svc.ListRuns(ctx, input.ID)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	for _, run := range runs {
 		if run.Status == pipeline.RunRunning || run.Status == pipeline.RunPending {
 			// Cancel the goroutine's context + persist status
 			if err := h.svc.CancelRun(ctx, run); err != nil {
-				return nil, serverError(err)
+				return nil, serverError(ctx, err)
 			}
 			return nil, nil
 		}

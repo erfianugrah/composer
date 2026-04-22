@@ -8,12 +8,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/erfianugrah/composer/internal/api/dto"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/infra/docker"
-
-	dockernetwork "github.com/docker/docker/api/types/network"
-	dockervolume "github.com/docker/docker/api/types/volume"
 )
 
 // ResourceHandler manages Docker networks, volumes, and images.
@@ -29,124 +27,179 @@ func (h *ResourceHandler) Register(api huma.API) {
 	// Networks
 	huma.Register(api, huma.Operation{
 		OperationID: "listNetworks", Method: http.MethodGet,
-		Path: "/api/v1/networks", Summary: "List Docker networks", Tags: []string{"networks"},
+		Path:        "/api/v1/networks",
+		Summary:     "List Docker networks",
+		Description: "Returns all Docker networks visible to the daemon including the default bridge and compose-created networks.",
+		Tags:        []string{"networks"},
+		Errors:      errsViewer,
 	}, h.ListNetworks)
 	huma.Register(api, huma.Operation{
 		OperationID: "createNetwork", Method: http.MethodPost,
-		Path: "/api/v1/networks", Summary: "Create a Docker network", Tags: []string{"networks"},
+		Path:        "/api/v1/networks",
+		Summary:     "Create a Docker network",
+		Description: "Creates a new network with the specified driver. Defaults to `bridge` driver when omitted.",
+		Tags:        []string{"networks"},
+		Errors:      errsOperatorMutation,
 	}, h.CreateNetwork)
 	huma.Register(api, huma.Operation{
 		OperationID: "inspectNetwork", Method: http.MethodGet,
-		Path: "/api/v1/networks/{id}", Summary: "Inspect a Docker network (full JSON)", Tags: []string{"networks"},
+		Path:        "/api/v1/networks/{id}",
+		Summary:     "Inspect a Docker network",
+		Description: "Returns detailed network configuration (IPAM, attached containers, options, labels).",
+		Tags:        []string{"networks"},
+		Errors:      errsViewerNotFound,
 	}, h.InspectNetwork)
 	huma.Register(api, huma.Operation{
 		OperationID: "removeNetwork", Method: http.MethodDelete,
-		Path: "/api/v1/networks/{id}", Summary: "Remove a Docker network", Tags: []string{"networks"},
+		Path:        "/api/v1/networks/{id}",
+		Summary:     "Remove a Docker network",
+		Description: "Deletes the network. Fails if the network has active endpoints (detach containers first).",
+		Tags:        []string{"networks"},
+		Errors:      errsOperatorMutation,
 	}, h.RemoveNetwork)
 
 	// Volumes
 	huma.Register(api, huma.Operation{
 		OperationID: "listVolumes", Method: http.MethodGet,
-		Path: "/api/v1/volumes", Summary: "List Docker volumes", Tags: []string{"volumes"},
+		Path:        "/api/v1/volumes",
+		Summary:     "List Docker volumes",
+		Description: "Returns all named Docker volumes on the daemon.",
+		Tags:        []string{"volumes"},
+		Errors:      errsViewer,
 	}, h.ListVolumes)
 	huma.Register(api, huma.Operation{
 		OperationID: "createVolume", Method: http.MethodPost,
-		Path: "/api/v1/volumes", Summary: "Create a Docker volume", Tags: []string{"volumes"},
+		Path:        "/api/v1/volumes",
+		Summary:     "Create a Docker volume",
+		Description: "Creates a new named volume. Defaults to `local` driver.",
+		Tags:        []string{"volumes"},
+		Errors:      errsOperatorMutation,
 	}, h.CreateVolume)
 	huma.Register(api, huma.Operation{
 		OperationID: "inspectVolume", Method: http.MethodGet,
-		Path: "/api/v1/volumes/{name}", Summary: "Inspect a Docker volume (full JSON)", Tags: []string{"volumes"},
+		Path:        "/api/v1/volumes/{name}",
+		Summary:     "Inspect a Docker volume",
+		Description: "Returns full volume metadata (driver, mountpoint, options, labels, creation time).",
+		Tags:        []string{"volumes"},
+		Errors:      errsViewerNotFound,
 	}, h.InspectVolume)
 	huma.Register(api, huma.Operation{
 		OperationID: "removeVolume", Method: http.MethodDelete,
-		Path: "/api/v1/volumes/{name}", Summary: "Remove a Docker volume", Tags: []string{"volumes"},
+		Path:        "/api/v1/volumes/{name}",
+		Summary:     "Remove a Docker volume",
+		Description: "Deletes the volume and all its data. Fails if any container still references the volume.",
+		Tags:        []string{"volumes"},
+		Errors:      errsOperatorMutation,
 	}, h.RemoveVolume)
 	huma.Register(api, huma.Operation{
 		OperationID: "pruneVolumes", Method: http.MethodPost,
-		Path: "/api/v1/volumes/prune", Summary: "Remove unused Docker volumes", Tags: []string{"volumes"},
+		Path:        "/api/v1/volumes/prune",
+		Summary:     "Remove unused Docker volumes",
+		Description: "Deletes all volumes not referenced by any container. Destructive: data in unused volumes is permanently lost. Admin only.",
+		Tags:        []string{"volumes"},
+		Errors:      errsAdminMutation,
 	}, h.PruneVolumes)
 
 	// Images
 	huma.Register(api, huma.Operation{
 		OperationID: "listImages", Method: http.MethodGet,
-		Path: "/api/v1/images", Summary: "List Docker images", Tags: []string{"images"},
+		Path:        "/api/v1/images",
+		Summary:     "List Docker images",
+		Description: "Returns all local Docker images with tags, sizes, and creation timestamps.",
+		Tags:        []string{"images"},
+		Errors:      errsViewer,
 	}, h.ListImages)
 	huma.Register(api, huma.Operation{
 		OperationID: "pullImage", Method: http.MethodPost,
-		Path: "/api/v1/images/pull", Summary: "Pull a Docker image", Tags: []string{"images"},
+		Path:        "/api/v1/images/pull",
+		Summary:     "Pull a Docker image",
+		Description: "Pulls an image from its registry. Accepts any valid image ref (nginx, nginx:alpine, ghcr.io/owner/repo:tag).",
+		Tags:        []string{"images"},
+		Errors:      errsOperatorMutation,
 	}, h.PullImage)
 	huma.Register(api, huma.Operation{
 		OperationID: "removeImage", Method: http.MethodDelete,
-		Path: "/api/v1/images/{id}", Summary: "Remove a Docker image", Tags: []string{"images"},
+		Path:        "/api/v1/images/{id}",
+		Summary:     "Remove a Docker image",
+		Description: "Deletes the image. Fails if any container (including stopped) uses it.",
+		Tags:        []string{"images"},
+		Errors:      errsOperatorMutation,
 	}, h.RemoveImage)
 	huma.Register(api, huma.Operation{
 		OperationID: "recentDockerEvents", Method: http.MethodGet,
-		Path: "/api/v1/docker/events", Summary: "Recent Docker events (last 5 minutes)", Tags: []string{"docker"},
+		Path:        "/api/v1/docker/events",
+		Summary:     "Recent Docker events",
+		Description: "Returns Docker daemon events from the last `since` duration (default 5 minutes). Caps at 100 events to avoid unbounded responses.",
+		Tags:        []string{"docker"},
+		Errors:      errsViewer,
 	}, h.RecentEvents)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "pruneImages", Method: http.MethodPost,
-		Path: "/api/v1/images/prune", Summary: "Remove unused Docker images", Tags: []string{"images"},
+		Path:        "/api/v1/images/prune",
+		Summary:     "Remove unused Docker images",
+		Description: "Deletes dangling images. Pass `?all=true` to also delete unused tagged images. Admin only.",
+		Tags:        []string{"images"},
+		Errors:      errsAdminMutation,
 	}, h.PruneImages)
 
 	// System-wide cleanup
 	huma.Register(api, huma.Operation{
 		OperationID: "pruneContainers", Method: http.MethodPost,
-		Path:    "/api/v1/containers/prune",
-		Summary: "Remove stopped containers", Tags: []string{"docker"},
+		Path:        "/api/v1/containers/prune",
+		Summary:     "Remove stopped containers",
+		Description: "Deletes all stopped containers on the daemon. Admin only.",
+		Tags:        []string{"docker"},
+		Errors:      errsAdminMutation,
 	}, h.PruneContainers)
 	huma.Register(api, huma.Operation{
 		OperationID: "pruneNetworks", Method: http.MethodPost,
-		Path:    "/api/v1/networks/prune",
-		Summary: "Remove unused Docker networks", Tags: []string{"docker"},
+		Path:        "/api/v1/networks/prune",
+		Summary:     "Remove unused Docker networks",
+		Description: "Deletes networks with no active endpoints. Admin only.",
+		Tags:        []string{"docker"},
+		Errors:      errsAdminMutation,
 	}, h.PruneNetworks)
 	huma.Register(api, huma.Operation{
 		OperationID: "pruneBuildCache", Method: http.MethodPost,
-		Path:    "/api/v1/builder/prune",
-		Summary: "Remove Docker build cache", Tags: []string{"docker"},
+		Path:        "/api/v1/builder/prune",
+		Summary:     "Remove Docker build cache",
+		Description: "Deletes BuildKit cache. Admin only.",
+		Tags:        []string{"docker"},
+		Errors:      errsAdminMutation,
 	}, h.PruneBuildCache)
 	huma.Register(api, huma.Operation{
 		OperationID: "systemPrune", Method: http.MethodPost,
 		Path:        "/api/v1/docker/prune",
-		Summary:     "System prune: containers + images + networks + build cache + volumes (optional)",
-		Description: "Equivalent to `docker system prune`. Removes stopped containers, unused networks, dangling images, and build cache. Pass ?all=true for all unused images, ?volumes=true to also prune volumes.",
+		Summary:     "System prune",
+		Description: "Equivalent to `docker system prune`. Removes stopped containers, unused networks, dangling images, and build cache. Pass `?all=true` for all unused images, `?volumes=true` to also prune volumes. Admin only.",
 		Tags:        []string{"docker"},
+		Errors:      errsAdminMutation,
 	}, h.SystemPrune)
 }
 
 // --- Networks ---
 
-type NetworkListOutput struct {
-	Body struct {
-		Networks []docker.NetworkInfo `json:"networks"`
-	}
-}
-
-type CreateNetworkInput struct {
-	Body struct {
-		Name   string `json:"name" minLength:"1" doc:"Network name"`
-		Driver string `json:"driver,omitempty" doc:"Network driver (default: bridge)"`
-	}
-}
-
-type NetworkIDInput struct {
-	ID string `path:"id" doc:"Network ID or name"`
-}
-
-func (h *ResourceHandler) ListNetworks(ctx context.Context, input *struct{}) (*NetworkListOutput, error) {
+func (h *ResourceHandler) ListNetworks(ctx context.Context, input *struct{}) (*dto.NetworkListOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
 	nets, err := h.docker.ListNetworks(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
-	out := &NetworkListOutput{}
-	out.Body.Networks = nets
+	out := &dto.NetworkListOutput{}
+	out.Body.Networks = make([]dto.NetworkInfo, 0, len(nets))
+	for _, n := range nets {
+		out.Body.Networks = append(out.Body.Networks, dto.NetworkInfo{
+			ID: n.ID, Name: n.Name, Driver: n.Driver, Scope: n.Scope,
+			Internal: n.Internal, Containers: n.Containers, Labels: n.Labels,
+		})
+	}
 	return out, nil
 }
 
-func (h *ResourceHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*struct{}, error) {
+func (h *ResourceHandler) CreateNetwork(ctx context.Context, input *dto.CreateNetworkInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
@@ -160,7 +213,7 @@ func (h *ResourceHandler) CreateNetwork(ctx context.Context, input *CreateNetwor
 	return nil, nil
 }
 
-func (h *ResourceHandler) RemoveNetwork(ctx context.Context, input *NetworkIDInput) (*struct{}, error) {
+func (h *ResourceHandler) RemoveNetwork(ctx context.Context, input *dto.NetworkIDInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
@@ -170,11 +223,7 @@ func (h *ResourceHandler) RemoveNetwork(ctx context.Context, input *NetworkIDInp
 	return nil, nil
 }
 
-type NetworkInspectOutput struct {
-	Body dockernetwork.Inspect
-}
-
-func (h *ResourceHandler) InspectNetwork(ctx context.Context, input *NetworkIDInput) (*NetworkInspectOutput, error) {
+func (h *ResourceHandler) InspectNetwork(ctx context.Context, input *dto.NetworkIDInput) (*dto.NetworkInspectOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
@@ -182,48 +231,61 @@ func (h *ResourceHandler) InspectNetwork(ctx context.Context, input *NetworkIDIn
 	if err != nil {
 		return nil, huma.Error404NotFound("network not found: " + err.Error())
 	}
-	return &NetworkInspectOutput{Body: data}, nil
+	out := &dto.NetworkInspectOutput{}
+	out.Body.ID = data.ID
+	out.Body.Name = data.Name
+	out.Body.Driver = data.Driver
+	out.Body.Scope = data.Scope
+	out.Body.EnableIPv6 = data.EnableIPv6
+	out.Body.Internal = data.Internal
+	out.Body.Attachable = data.Attachable
+	out.Body.Ingress = data.Ingress
+	out.Body.IPAM.Driver = data.IPAM.Driver
+	out.Body.IPAM.Options = data.IPAM.Options
+	for _, cfg := range data.IPAM.Config {
+		out.Body.IPAM.Config = append(out.Body.IPAM.Config, map[string]string{
+			"subnet":     cfg.Subnet,
+			"gateway":    cfg.Gateway,
+			"ip_range":   cfg.IPRange,
+			"aux_addrs":  fmt.Sprintf("%v", cfg.AuxAddress),
+		})
+	}
+	out.Body.Options = data.Options
+	out.Body.Labels = data.Labels
+	if len(data.Containers) > 0 {
+		out.Body.Containers = make(map[string]string, len(data.Containers))
+		for id, c := range data.Containers {
+			out.Body.Containers[id] = c.Name
+		}
+	}
+	if !data.Created.IsZero() {
+		out.Body.Created = data.Created.Format(time.RFC3339)
+	}
+	return out, nil
 }
 
 // --- Volumes ---
 
-type VolumeListOutput struct {
-	Body struct {
-		Volumes []docker.VolumeInfo `json:"volumes"`
-	}
-}
-
-type CreateVolumeInput struct {
-	Body struct {
-		Name   string `json:"name" minLength:"1" doc:"Volume name"`
-		Driver string `json:"driver,omitempty" doc:"Volume driver (default: local)"`
-	}
-}
-
-type VolumeNameInput struct {
-	Name string `path:"name" doc:"Volume name"`
-}
-
-type PruneOutput struct {
-	Body struct {
-		SpaceReclaimed string `json:"space_reclaimed"`
-	}
-}
-
-func (h *ResourceHandler) ListVolumes(ctx context.Context, input *struct{}) (*VolumeListOutput, error) {
+func (h *ResourceHandler) ListVolumes(ctx context.Context, input *struct{}) (*dto.VolumeListOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
 	vols, err := h.docker.ListVolumes(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
-	out := &VolumeListOutput{}
-	out.Body.Volumes = vols
+	out := &dto.VolumeListOutput{}
+	out.Body.Volumes = make([]dto.VolumeInfo, 0, len(vols))
+	for _, v := range vols {
+		out.Body.Volumes = append(out.Body.Volumes, dto.VolumeInfo{
+			Name: v.Name, Driver: v.Driver, Mountpoint: v.Mountpoint,
+			CreatedAt: v.CreatedAt, Labels: v.Labels,
+		})
+	}
 	return out, nil
 }
 
-func (h *ResourceHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*struct{}, error) {
+func (h *ResourceHandler) CreateVolume(ctx context.Context, input *dto.CreateVolumeInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
@@ -237,7 +299,7 @@ func (h *ResourceHandler) CreateVolume(ctx context.Context, input *CreateVolumeI
 	return nil, nil
 }
 
-func (h *ResourceHandler) RemoveVolume(ctx context.Context, input *VolumeNameInput) (*struct{}, error) {
+func (h *ResourceHandler) RemoveVolume(ctx context.Context, input *dto.VolumeNameInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
@@ -247,11 +309,7 @@ func (h *ResourceHandler) RemoveVolume(ctx context.Context, input *VolumeNameInp
 	return nil, nil
 }
 
-type VolumeInspectOutput struct {
-	Body dockervolume.Volume
-}
-
-func (h *ResourceHandler) InspectVolume(ctx context.Context, input *VolumeNameInput) (*VolumeInspectOutput, error) {
+func (h *ResourceHandler) InspectVolume(ctx context.Context, input *dto.VolumeNameInput) (*dto.VolumeInspectOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
@@ -259,54 +317,55 @@ func (h *ResourceHandler) InspectVolume(ctx context.Context, input *VolumeNameIn
 	if err != nil {
 		return nil, huma.Error404NotFound("volume not found: " + err.Error())
 	}
-	return &VolumeInspectOutput{Body: data}, nil
+	out := &dto.VolumeInspectOutput{}
+	out.Body.Name = data.Name
+	out.Body.Driver = data.Driver
+	out.Body.Mountpoint = data.Mountpoint
+	out.Body.Scope = data.Scope
+	out.Body.CreatedAt = data.CreatedAt
+	out.Body.Options = data.Options
+	out.Body.Labels = data.Labels
+	return out, nil
 }
 
-func (h *ResourceHandler) PruneVolumes(ctx context.Context, input *struct{}) (*PruneOutput, error) {
+func (h *ResourceHandler) PruneVolumes(ctx context.Context, input *struct{}) (*dto.PruneOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 	reclaimed, err := h.docker.PruneVolumes(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
-	out := &PruneOutput{}
+	out := &dto.PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
 	return out, nil
 }
 
 // --- Images ---
 
-type ImageListOutput struct {
-	Body struct {
-		Images []docker.ImageInfo `json:"images"`
-	}
-}
-
-type PullImageInput struct {
-	Body struct {
-		Ref string `json:"ref" minLength:"1" doc:"Image reference (e.g. nginx:alpine, ghcr.io/user/image:tag)"`
-	}
-}
-
-type ImageIDInput struct {
-	ID string `path:"id" doc:"Image ID or tag"`
-}
-
-func (h *ResourceHandler) ListImages(ctx context.Context, input *struct{}) (*ImageListOutput, error) {
+func (h *ResourceHandler) ListImages(ctx context.Context, input *struct{}) (*dto.ImageListOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
 	imgs, err := h.docker.ListImages(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
-	out := &ImageListOutput{}
-	out.Body.Images = imgs
+	out := &dto.ImageListOutput{}
+	out.Body.Images = make([]dto.ImageInfo, 0, len(imgs))
+	for _, img := range imgs {
+		tags := img.Tags
+		if tags == nil {
+			tags = []string{}
+		}
+		out.Body.Images = append(out.Body.Images, dto.ImageInfo{
+			ID: img.ID, Tags: tags, Size: img.Size, Created: img.Created,
+		})
+	}
 	return out, nil
 }
 
-func (h *ResourceHandler) PullImage(ctx context.Context, input *PullImageInput) (*struct{}, error) {
+func (h *ResourceHandler) PullImage(ctx context.Context, input *dto.PullImageInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
@@ -316,7 +375,7 @@ func (h *ResourceHandler) PullImage(ctx context.Context, input *PullImageInput) 
 	return nil, nil
 }
 
-func (h *ResourceHandler) RemoveImage(ctx context.Context, input *ImageIDInput) (*struct{}, error) {
+func (h *ResourceHandler) RemoveImage(ctx context.Context, input *dto.ImageIDInput) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
@@ -326,11 +385,7 @@ func (h *ResourceHandler) RemoveImage(ctx context.Context, input *ImageIDInput) 
 	return nil, nil
 }
 
-type PruneImagesInput struct {
-	All bool `query:"all" default:"false" doc:"Remove all unused images, not just dangling/untagged"`
-}
-
-func (h *ResourceHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*PruneOutput, error) {
+func (h *ResourceHandler) PruneImages(ctx context.Context, input *dto.PruneImagesInput) (*dto.PruneOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
@@ -341,7 +396,7 @@ func (h *ResourceHandler) PruneImages(ctx context.Context, input *PruneImagesInp
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
-	out := &PruneOutput{}
+	out := &dto.PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
 	return out, nil
 }
@@ -361,25 +416,7 @@ func formatBytes(b uint64) string {
 
 // --- Recent Docker Events ---
 
-type DockerEventItem struct {
-	Type   string `json:"type"`   // container, network, volume, image
-	Action string `json:"action"` // create, start, stop, die, destroy, etc.
-	Actor  string `json:"actor"`  // container name, image ref, network name
-	ID     string `json:"id"`     // short ID
-	Time   string `json:"time"`   // ISO timestamp
-}
-
-type RecentEventsInput struct {
-	Since string `query:"since" default:"5m" doc:"How far back to look (e.g. 5m, 1h, 30m)"`
-}
-
-type RecentEventsOutput struct {
-	Body struct {
-		Events []DockerEventItem `json:"events"`
-	}
-}
-
-func (h *ResourceHandler) RecentEvents(ctx context.Context, input *RecentEventsInput) (*RecentEventsOutput, error) {
+func (h *ResourceHandler) RecentEvents(ctx context.Context, input *dto.RecentEventsInput) (*dto.RecentEventsOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
@@ -397,8 +434,8 @@ func (h *ResourceHandler) RecentEvents(ctx context.Context, input *RecentEventsI
 
 	msgCh, errCh := h.docker.EventsSince(evtCtx, sinceUnix)
 
-	out := &RecentEventsOutput{}
-	out.Body.Events = []DockerEventItem{}
+	out := &dto.RecentEventsOutput{}
+	out.Body.Events = []dto.DockerEventItem{}
 
 	for {
 		select {
@@ -414,7 +451,7 @@ func (h *ResourceHandler) RecentEvents(ctx context.Context, input *RecentEventsI
 			if len(id) > 12 {
 				id = id[:12]
 			}
-			out.Body.Events = append(out.Body.Events, DockerEventItem{
+			out.Body.Events = append(out.Body.Events, dto.DockerEventItem{
 				Type:   string(msg.Type),
 				Action: string(msg.Action),
 				Actor:  actor,
@@ -435,68 +472,46 @@ func (h *ResourceHandler) RecentEvents(ctx context.Context, input *RecentEventsI
 
 // --- Prune handlers ---
 
-func (h *ResourceHandler) PruneContainers(ctx context.Context, input *struct{}) (*PruneOutput, error) {
+func (h *ResourceHandler) PruneContainers(ctx context.Context, input *struct{}) (*dto.PruneOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 	reclaimed, err := h.docker.PruneContainers(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
-	out := &PruneOutput{}
+	out := &dto.PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
 	return out, nil
 }
 
-type PruneNetworksOutput struct {
-	Body struct {
-		NetworksDeleted []string `json:"networks_deleted"`
-	}
-}
-
-func (h *ResourceHandler) PruneNetworks(ctx context.Context, input *struct{}) (*PruneNetworksOutput, error) {
+func (h *ResourceHandler) PruneNetworks(ctx context.Context, input *struct{}) (*dto.PruneNetworksOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 	deleted, err := h.docker.PruneNetworks(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
-	out := &PruneNetworksOutput{}
+	out := &dto.PruneNetworksOutput{}
 	out.Body.NetworksDeleted = deleted
 	return out, nil
 }
 
-func (h *ResourceHandler) PruneBuildCache(ctx context.Context, input *struct{}) (*PruneOutput, error) {
+func (h *ResourceHandler) PruneBuildCache(ctx context.Context, input *struct{}) (*dto.PruneOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 	reclaimed, err := h.docker.PruneBuildCache(ctx)
 	if err != nil {
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
-	out := &PruneOutput{}
+	out := &dto.PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
 	return out, nil
 }
 
-type SystemPruneInput struct {
-	All     bool `query:"all" default:"true" doc:"Remove all unused images (not just dangling)"`
-	Volumes bool `query:"volumes" default:"false" doc:"Also prune unused volumes"`
-}
-
-type SystemPruneOutput struct {
-	Body struct {
-		ContainersReclaimed string   `json:"containers_reclaimed"`
-		ImagesReclaimed     string   `json:"images_reclaimed"`
-		NetworksDeleted     []string `json:"networks_deleted"`
-		BuildCacheReclaimed string   `json:"build_cache_reclaimed"`
-		VolumesReclaimed    string   `json:"volumes_reclaimed,omitempty"`
-		TotalReclaimed      string   `json:"total_reclaimed"`
-	}
-}
-
-func (h *ResourceHandler) SystemPrune(ctx context.Context, input *SystemPruneInput) (*SystemPruneOutput, error) {
+func (h *ResourceHandler) SystemPrune(ctx context.Context, input *dto.SystemPruneInput) (*dto.SystemPruneOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
@@ -506,7 +521,7 @@ func (h *ResourceHandler) SystemPrune(ctx context.Context, input *SystemPruneInp
 	defer cancel()
 
 	var total uint64
-	out := &SystemPruneOutput{}
+	out := &dto.SystemPruneOutput{}
 
 	// 1. Containers
 	cr, _ := h.docker.PruneContainers(opCtx)

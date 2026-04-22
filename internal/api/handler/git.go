@@ -29,40 +29,65 @@ func NewGitHandler(git *app.GitService, jobs *app.JobManager) *GitHandler {
 func (h *GitHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "createGitStack", Method: http.MethodPost,
-		Path: "/api/v1/stacks/git", Summary: "Clone a git repo and create a git-backed stack", Tags: []string{"git", "stacks"},
+		Path:        "/api/v1/stacks/git",
+		Summary:     "Clone a git repo and create a git-backed stack",
+		Description: "Clones the given repo (HTTPS or SSH) into a new stack directory and registers it as git-backed. Credentials may be passed inline or resolved from global settings. The stack is created but not deployed.",
+		Tags:        []string{"git", "stacks"},
+		Errors:      errsOperatorMutation,
 	}, h.CreateGitStack)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "syncStack", Method: http.MethodPost,
-		Path: "/api/v1/stacks/{name}/sync", Summary: "Git pull + detect changes", Tags: []string{"git"},
+		Path:        "/api/v1/stacks/{name}/sync",
+		Summary:     "Git pull + detect changes",
+		Description: "Fast-forwards the stack to the latest commit on its tracked branch and reports whether the compose file changed. Clears the dirty flag on success.",
+		Tags:        []string{"git"},
+		Errors:      errsOperatorMutation,
 	}, h.Sync)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "gitLog", Method: http.MethodGet,
-		Path: "/api/v1/stacks/{name}/git/log", Summary: "Commit history for compose file", Tags: []string{"git"},
+		Path:        "/api/v1/stacks/{name}/git/log",
+		Summary:     "Commit history for compose file",
+		Description: "Returns commits on the tracked branch with a flag indicating whether each commit touched the compose file. Use `?limit=N` to cap (default 20, max 100).",
+		Tags:        []string{"git"},
+		Errors:      errsViewerNotFound,
 	}, h.Log)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "gitStatus", Method: http.MethodGet,
-		Path: "/api/v1/stacks/{name}/git/status", Summary: "Git sync status", Tags: []string{"git"},
+		Path:        "/api/v1/stacks/{name}/git/status",
+		Summary:     "Git sync status",
+		Description: "Returns repo URL, tracked branch, last sync timestamp, last-synced commit SHA, and the sync status (synced/behind/diverged/dirty/error/syncing).",
+		Tags:        []string{"git"},
+		Errors:      errsViewerNotFound,
 	}, h.Status)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "rollbackStack", Method: http.MethodPost,
-		Path: "/api/v1/stacks/{name}/rollback", Summary: "Checkout a specific commit", Tags: []string{"git"},
+		Path:        "/api/v1/stacks/{name}/rollback",
+		Summary:     "Checkout a specific commit",
+		Description: "Resets the working tree to the given commit SHA. Equivalent to `git checkout <sha>`. Does not redeploy — call deploy after to apply.",
+		Tags:        []string{"git"},
+		Errors:      errsOperatorMutation,
 	}, h.Rollback)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "gitDiff", Method: http.MethodGet,
-		Path: "/api/v1/stacks/{name}/git/diff", Summary: "Diff current vs last synced", Tags: []string{"git"},
+		Path:        "/api/v1/stacks/{name}/git/diff",
+		Summary:     "Diff current vs last synced",
+		Description: "Returns a line-by-line diff of the working tree against git HEAD. Useful to see local edits before syncing.",
+		Tags:        []string{"git"},
+		Errors:      errsViewerNotFound,
 	}, h.GitDiff)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deploySyncStack", Method: http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/deploy",
 		Summary:     "Sync git, pull images, and redeploy",
-		Description: "Full deploy pipeline: git pull → SOPS decrypt → docker compose pull → docker compose up -d. Designed for CI to call after image push. Use ?async=true for background execution.",
+		Description: "Full GitOps pipeline: `git pull` → SOPS decrypt `.env` → `docker compose pull` → `docker compose up -d` → re-encrypt. Designed for CI to call after image push. Use `?async=true` for background execution.",
 		Tags:        []string{"git"},
+		Errors:      errsOperatorMutation,
 	}, h.Deploy)
 }
 
@@ -76,7 +101,7 @@ func (h *GitHandler) Sync(ctx context.Context, input *dto.GitSyncInput) (*dto.Gi
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.GitSyncOutput{}
@@ -95,7 +120,7 @@ func (h *GitHandler) Log(ctx context.Context, input *dto.GitLogInput) (*dto.GitL
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.GitLogOutput{}
@@ -119,7 +144,7 @@ func (h *GitHandler) Status(ctx context.Context, input *dto.GitStatusInput) (*dt
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found or not git-backed")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	out := &dto.GitStatusOutput{}
@@ -142,7 +167,7 @@ func (h *GitHandler) Rollback(ctx context.Context, input *dto.GitRollbackInput) 
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found or not git-backed")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 
 	return nil, nil
@@ -220,7 +245,7 @@ func (h *GitHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*dt
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(err)
+		return nil, serverError(ctx, err)
 	}
 	out := &dto.GitDeployOutput{}
 	out.Body.Action = action
