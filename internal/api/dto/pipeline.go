@@ -24,7 +24,7 @@ type PipelineBody struct {
 type PipelineStepDTO struct {
 	ID              string         `json:"id" minLength:"1" maxLength:"64" doc:"Step ID (unique within pipeline)"`
 	Name            string         `json:"name" minLength:"1" maxLength:"128" doc:"Step name"`
-	Type            string         `json:"type" enum:"compose_up,compose_down,compose_pull,compose_restart,shell_command,http_request,wait,notify" doc:"Step kind"`
+	Type            string         `json:"type" enum:"compose_up,compose_down,compose_pull,compose_restart,shell_command,docker_exec,http_request,wait,notify" doc:"Step kind. docker_exec runs a command inside an existing container (admin only)."`
 	Config          map[string]any `json:"config,omitempty" doc:"Step config (shape varies by type)"`
 	Timeout         string         `json:"timeout,omitempty" doc:"Step timeout as Go duration (e.g. 5m, 30s). Empty uses the step type's default."`
 	ContinueOnError bool           `json:"continue_on_error,omitempty" doc:"Continue pipeline on step failure"`
@@ -32,8 +32,8 @@ type PipelineStepDTO struct {
 }
 
 type TriggerDTO struct {
-	Type   string         `json:"type" enum:"manual,webhook,schedule" doc:"Trigger kind"`
-	Config map[string]any `json:"config,omitempty" doc:"Trigger config (shape varies by type)"`
+	Type   string         `json:"type" enum:"manual,webhook,schedule,event" doc:"Trigger kind. event subscribes to domain events on the bus (e.g. stack.deployed for post-deploy hooks)."`
+	Config map[string]any `json:"config,omitempty" doc:"Trigger config (shape varies by type). Event triggers take {event: 'stack.deployed', stack?: 'name'}."`
 }
 
 type PipelineIDInput struct {

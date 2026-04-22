@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
+	domevent "github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/domain/pipeline"
 )
 
@@ -169,6 +170,96 @@ func (s *PipelineService) CancelRun(ctx context.Context, run *pipeline.Run) erro
 
 	run.Cancel()
 	return s.runs.Update(ctx, run)
+}
+
+// SubscribeBus registers the pipeline service as an event bus subscriber so
+// pipelines with `event` triggers fire in response to domain events.
+// Call once at startup after wiring the bus.
+//
+// This is additive — pipelines with `webhook`, `manual`, or `schedule` triggers
+// are unaffected. Event triggers fire AFTER the publishing operation completes,
+// making them the right choice for post-deploy hooks. Webhook triggers fire
+// immediately on receipt (pre-sync) — use them for pre-deploy workflows.
+//
+// A pipeline with both webhook and event triggers will fire twice per push.
+// Users who want either pre-sync or post-deploy pick one.
+func (s *PipelineService) SubscribeBus(bus domevent.Bus) {
+	if bus == nil {
+		return
+	}
+	bus.Subscribe(func(evt domevent.Event) bool {
+		// Only dispatch on events that carry a stack name. Extend the type
+		// switch as additional stack-scoped events need to trigger pipelines.
+		var stackName string
+		switch e := evt.(type) {
+		case domevent.StackCreated:
+			stackName = e.Name
+		case domevent.StackDeployed:
+			stackName = e.Name
+		case domevent.StackStopped:
+			stackName = e.Name
+		case domevent.StackUpdated:
+			stackName = e.Name
+		case domevent.StackDeleted:
+			stackName = e.Name
+		case domevent.StackError:
+			stackName = e.Name
+		default:
+			return true // keep subscription, ignore non-stack events
+		}
+		s.runByEventTrigger(evt.EventType(), stackName)
+		return true
+	})
+}
+
+// runByEventTrigger finds pipelines with `event` triggers matching the given
+// event type and stack name, then spawns runs.
+//
+// Dispatch happens in the bus callback's goroutine; Run() is internally async
+// via its own goroutine so this function does not block the publisher.
+//
+// Uses context.Background() because the bus publisher's ctx may be short-lived
+// (e.g. SyncAndRedeploy's timeout ctx closes after Publish). Our pipeline
+// run lifetime is independent of the publisher.
+func (s *PipelineService) runByEventTrigger(eventType, stackName string) {
+	ctx := context.Background()
+	all, err := s.pipelines.List(ctx)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("listing pipelines for event trigger", zap.Error(err))
+		}
+		return
+	}
+	for _, p := range all {
+		for _, t := range p.Triggers {
+			if t.Type != pipeline.TriggerEvent {
+				continue
+			}
+			triggerEvent, _ := t.Config["event"].(string)
+			triggerStack, _ := t.Config["stack"].(string)
+			if triggerEvent != eventType {
+				continue
+			}
+			// Empty stack filter matches any stack
+			if triggerStack != "" && triggerStack != stackName {
+				continue
+			}
+			if s.logger != nil {
+				s.logger.Info("event triggered pipeline",
+					zap.String("pipeline", p.Name),
+					zap.String("event", eventType),
+					zap.String("stack", stackName))
+			}
+			triggeredBy := fmt.Sprintf("event:%s:%s", eventType, stackName)
+			if _, err := s.Run(ctx, p.ID, triggeredBy); err != nil {
+				if s.logger != nil {
+					s.logger.Error("failed to run event-triggered pipeline",
+						zap.String("pipeline", p.Name),
+						zap.Error(err))
+				}
+			}
+		}
+	}
 }
 
 // RunByWebhookTrigger finds pipelines with webhook triggers matching the

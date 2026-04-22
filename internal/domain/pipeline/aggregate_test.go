@@ -152,12 +152,28 @@ func TestPipeline_ExecutionOrder_Diamond(t *testing.T) {
 }
 
 func TestStepType_Valid(t *testing.T) {
-	assert.True(t, pipeline.StepComposeUp.Valid())
-	assert.True(t, pipeline.StepShellCommand.Valid())
-	assert.True(t, pipeline.StepHTTPRequest.Valid())
-	assert.True(t, pipeline.StepNotify.Valid())
+	// Every defined step type must validate. This guards against adding a
+	// new constant but forgetting to include it in the Valid() switch —
+	// which would silently reject the new type at pipeline creation time.
+	valid := []pipeline.StepType{
+		pipeline.StepComposeUp,
+		pipeline.StepComposeDown,
+		pipeline.StepComposePull,
+		pipeline.StepComposeRestart,
+		pipeline.StepShellCommand,
+		pipeline.StepDockerExec,
+		pipeline.StepHTTPRequest,
+		pipeline.StepWait,
+		pipeline.StepNotify,
+	}
+	for _, st := range valid {
+		assert.True(t, st.Valid(), "%q should be valid", st)
+	}
+
+	// Unknown and empty types must be rejected
 	assert.False(t, pipeline.StepType("invalid").Valid())
 	assert.False(t, pipeline.StepType("").Valid())
+	assert.False(t, pipeline.StepType("DOCKER_EXEC").Valid()) // case-sensitive
 }
 
 func TestRun_Lifecycle(t *testing.T) {

@@ -2686,10 +2686,10 @@ export interface components {
             /** @description Step timeout as Go duration (e.g. 5m, 30s). Empty uses the step type's default. */
             timeout?: string;
             /**
-             * @description Step kind
+             * @description Step kind. docker_exec runs a command inside an existing container (admin only).
              * @enum {string}
              */
-            type: "compose_up" | "compose_down" | "compose_pull" | "compose_restart" | "shell_command" | "http_request" | "wait" | "notify";
+            type: "compose_up" | "compose_down" | "compose_pull" | "compose_restart" | "shell_command" | "docker_exec" | "http_request" | "wait" | "notify";
         };
         PipelineStepFinished: {
             duration: string;
@@ -3011,15 +3011,15 @@ export interface components {
             name: string;
         };
         TriggerDTO: {
-            /** @description Trigger config (shape varies by type) */
+            /** @description Trigger config (shape varies by type). Event triggers take {event: 'stack.deployed', stack?: 'name'}. */
             config?: {
                 [key: string]: unknown;
             };
             /**
-             * @description Trigger kind
+             * @description Trigger kind. event subscribes to domain events on the bus (e.g. stack.deployed for post-deploy hooks).
              * @enum {string}
              */
-            type: "manual" | "webhook" | "schedule";
+            type: "manual" | "webhook" | "schedule" | "event";
         };
         UpdateAgeKeyInputBody: {
             /**

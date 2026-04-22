@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func TestPipelineExecutor_SimpleShellSteps(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "", app.NewStackLocks()) // no compose needed for shell steps
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks()) // no compose needed for shell steps
 
 	p, _ := pipeline.NewPipeline("test", "Shell test", "user1")
 	p.AddStep(pipeline.Step{
@@ -46,7 +47,7 @@ func TestPipelineExecutor_ParallelSteps(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
 
 	p, _ := pipeline.NewPipeline("test", "Parallel test", "user1")
 	// Two independent steps should run concurrently
@@ -80,7 +81,7 @@ func TestPipelineExecutor_StepFailure(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
 
 	p, _ := pipeline.NewPipeline("test", "Failure test", "user1")
 	p.AddStep(pipeline.Step{
@@ -106,7 +107,7 @@ func TestPipelineExecutor_ContinueOnError(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
 
 	p, _ := pipeline.NewPipeline("test", "Continue on error", "user1")
 	p.AddStep(pipeline.Step{
@@ -135,7 +136,7 @@ func TestPipelineExecutor_ContextCancellation(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
 
 	p, _ := pipeline.NewPipeline("test", "Cancellation", "user1")
 	p.AddStep(pipeline.Step{
@@ -153,6 +154,57 @@ func TestPipelineExecutor_ContextCancellation(t *testing.T) {
 	assert.NotEqual(t, pipeline.RunSuccess, result.Status)
 }
 
+func TestPipelineExecutor_DockerExec_NilClient(t *testing.T) {
+	// docker_exec step must fail gracefully (not panic) when the executor
+	// was constructed without a Docker client — tests and rebuild-from-scratch
+	// scenarios exercise this path.
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+
+	p, _ := pipeline.NewPipeline("test", "docker_exec missing client", "user1")
+	require.NoError(t, p.AddStep(pipeline.Step{
+		ID: "poke", Name: "Poke sidecar", Type: pipeline.StepDockerExec,
+		Config: map[string]any{"container": "wafctl", "command": "true"},
+	}))
+
+	run := pipeline.NewRun(p.ID, "test")
+	result := executor.Execute(context.Background(), p, run)
+
+	assert.Equal(t, pipeline.RunFailed, result.Status)
+	require.Len(t, result.StepResults, 1)
+	assert.Equal(t, pipeline.RunFailed, result.StepResults[0].Status)
+	assert.Contains(t, result.StepResults[0].Error, "docker client not available")
+}
+
+func TestPipelineExecutor_DockerExec_MissingContainer(t *testing.T) {
+	// Missing `container` config should fail with a clear error before we
+	// even reach Docker — guards against config typos / UI bugs.
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+
+	p, _ := pipeline.NewPipeline("test", "docker_exec missing container", "user1")
+	require.NoError(t, p.AddStep(pipeline.Step{
+		ID: "poke", Name: "Poke", Type: pipeline.StepDockerExec,
+		Config: map[string]any{"command": "true"},
+	}))
+
+	run := pipeline.NewRun(p.ID, "test")
+	result := executor.Execute(context.Background(), p, run)
+
+	assert.Equal(t, pipeline.RunFailed, result.Status)
+	require.Len(t, result.StepResults, 1)
+	// Either "docker client not available" (hit first) or "missing 'container'"
+	// is acceptable — both are pre-dispatch guards.
+	errMsg := result.StepResults[0].Error
+	assert.True(t,
+		strings.Contains(errMsg, "docker client not available") || strings.Contains(errMsg, "missing 'container'"),
+		"expected pre-dispatch guard error, got: %s", errMsg)
+}
+
 func TestPipelineExecutor_Events(t *testing.T) {
 	bus := eventbus.NewMemoryBus(64)
 	defer bus.Close()
@@ -166,7 +218,7 @@ func TestPipelineExecutor_Events(t *testing.T) {
 		return true
 	})
 
-	executor := app.NewPipelineExecutor(nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
 
 	p, _ := pipeline.NewPipeline("test", "Events", "user1")
 	p.AddStep(pipeline.Step{

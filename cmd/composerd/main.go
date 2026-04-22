@@ -250,9 +250,13 @@ func main() {
 	var pipelineExecutor *app.PipelineExecutor
 	var pipelineSvc *app.PipelineService
 	if compose != nil {
-		pipelineExecutor = app.NewPipelineExecutor(compose, bus, stackRepo, gitConfigRepo, cfg.StacksDir, stackLocks)
+		pipelineExecutor = app.NewPipelineExecutor(compose, dockerClient, bus, stackRepo, gitConfigRepo, cfg.StacksDir, stackLocks)
 		pipelineSvc = app.NewPipelineService(pipelineRepo, runRepo, pipelineExecutor)
 		pipelineSvc.SetLogger(logger)
+		// Subscribe to the event bus so pipelines with `event` triggers fire
+		// on domain events (stack.deployed, stack.stopped, etc.). This enables
+		// post-deploy hooks without the webhook race — see PIPELINE_EVENT_TRIGGER_PLAN.md.
+		pipelineSvc.SubscribeBus(bus)
 	}
 
 	// --- Cron Scheduler (for pipeline schedule triggers) ---

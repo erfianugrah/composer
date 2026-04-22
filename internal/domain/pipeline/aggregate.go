@@ -39,6 +39,7 @@ const (
 	StepComposePull    StepType = "compose_pull"
 	StepComposeRestart StepType = "compose_restart"
 	StepShellCommand   StepType = "shell_command"
+	StepDockerExec     StepType = "docker_exec"
 	StepHTTPRequest    StepType = "http_request"
 	StepWait           StepType = "wait"
 	StepNotify         StepType = "notify"
@@ -47,7 +48,7 @@ const (
 func (t StepType) Valid() bool {
 	switch t {
 	case StepComposeUp, StepComposeDown, StepComposePull, StepComposeRestart,
-		StepShellCommand, StepHTTPRequest, StepWait, StepNotify:
+		StepShellCommand, StepDockerExec, StepHTTPRequest, StepWait, StepNotify:
 		return true
 	}
 	return false
@@ -65,6 +66,19 @@ const (
 	TriggerManual  TriggerType = "manual"
 	TriggerWebhook TriggerType = "webhook"
 	TriggerCron    TriggerType = "schedule"
+	// TriggerEvent fires after a domain event is published on the event bus.
+	// Unlike TriggerWebhook (which fires immediately on webhook receipt, in
+	// parallel with SyncAndRedeploy), event triggers fire after the
+	// publishing operation completes — making them the right choice for
+	// post-deploy hooks like "reload caddy after the stack is up".
+	//
+	// Config shape:
+	//   {"event": "stack.deployed", "stack": "caddy"}
+	//
+	// `event` is matched exactly against domain event types (stack.deployed,
+	// stack.stopped, stack.error, …). `stack` is an optional filter — omit
+	// to match all stacks for that event type.
+	TriggerEvent TriggerType = "event"
 )
 
 // NewPipeline creates a new pipeline.

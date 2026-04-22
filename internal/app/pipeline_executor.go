@@ -26,6 +26,7 @@ type StepExecutor func(ctx context.Context, step pipeline.Step) (output string, 
 // PipelineExecutor runs pipeline steps in DAG order with concurrency.
 type PipelineExecutor struct {
 	compose   *docker.Compose
+	docker    *docker.Client            // required for docker_exec steps; may be nil in tests
 	bus       domevent.Bus
 	stacks    stack.StackRepository     // resolve stack name → path
 	gitCfgs   stack.GitConfigRepository // per-stack SOPS age key
@@ -33,8 +34,14 @@ type PipelineExecutor struct {
 	locks     *StackLocks               // shared with StackService — prevents concurrent compose ops
 }
 
+// NewPipelineExecutor constructs the executor.
+//
+// dockerClient is optional — pass nil in tests that don't exercise docker_exec
+// steps. When a pipeline tries to run a docker_exec step without a wired
+// client, the step fails with a clear error instead of panicking.
 func NewPipelineExecutor(
 	compose *docker.Compose,
+	dockerClient *docker.Client,
 	bus domevent.Bus,
 	stacks stack.StackRepository,
 	gitCfgs stack.GitConfigRepository,
@@ -43,6 +50,7 @@ func NewPipelineExecutor(
 ) *PipelineExecutor {
 	return &PipelineExecutor{
 		compose:   compose,
+		docker:    dockerClient,
 		bus:       bus,
 		stacks:    stacks,
 		gitCfgs:   gitCfgs,
@@ -189,6 +197,9 @@ func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) 
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 
+	case pipeline.StepDockerExec:
+		return e.executeDockerExec(ctx, step)
+
 	case pipeline.StepWait:
 		durationStr, _ := step.Config["duration"].(string)
 		if durationStr == "" {
@@ -299,6 +310,81 @@ func (e *PipelineExecutor) executeComposeStep(ctx context.Context, step pipeline
 		return "", fmt.Errorf("unknown compose op %q", op)
 	}
 	return composeOutput(result, err)
+}
+
+// executeDockerExec runs a command inside an existing container and returns
+// its stdout (and stderr folded in on non-zero exit). Intended for post-deploy
+// hooks that poke sidecar containers' admin APIs — wafctl reload, caddy
+// admin API load, etc.
+//
+// Admin-only at the API layer: the pipeline Create handler is admin-only
+// blanket, and the Update handler enforces admin for steps of this type
+// (see internal/api/handler/pipeline.go).
+//
+// Config shape (one of):
+//
+//	{"container": "wafctl", "cmd": ["wget", "-qO-", "http://localhost/deploy"]}
+//	{"container": "wafctl", "command": "wget -qO- http://localhost/deploy"}
+//
+// `cmd` is preferred — it's already tokenised so quoted arguments survive.
+// `command` is wrapped in `sh -c` for shell-operator convenience; requires
+// the container to actually have a shell.
+func (e *PipelineExecutor) executeDockerExec(ctx context.Context, step pipeline.Step) (string, error) {
+	if e.docker == nil {
+		return "", fmt.Errorf("docker_exec: docker client not available")
+	}
+
+	containerName, _ := step.Config["container"].(string)
+	if containerName == "" {
+		return "", fmt.Errorf("docker_exec: missing 'container' config")
+	}
+
+	argv, err := dockerExecArgv(step.Config)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := e.docker.ExecRun(ctx, containerName, argv)
+	if err != nil {
+		return "", fmt.Errorf("docker_exec: %w", err)
+	}
+
+	output := result.Stdout
+	if result.ExitCode != 0 {
+		// Combine for visibility; stderr often has the useful diagnostic.
+		combined := strings.TrimRight(output+result.Stderr, "\n")
+		trunc := ""
+		if result.Truncated {
+			trunc = " (output truncated at " + fmt.Sprintf("%d", docker.ExecMaxOutput) + " bytes/stream)"
+		}
+		return combined, fmt.Errorf("docker_exec: %q exited %d%s", containerName, result.ExitCode, trunc)
+	}
+	return output, nil
+}
+
+// dockerExecArgv extracts the argv for a docker_exec step. Prefers `cmd`
+// (slice form, quote-safe); falls back to `command` (string wrapped in
+// `sh -c`). Returns an error if neither is present/valid.
+func dockerExecArgv(config map[string]any) ([]string, error) {
+	if raw, ok := config["cmd"].([]any); ok && len(raw) > 0 {
+		argv := make([]string, 0, len(raw))
+		for _, a := range raw {
+			s, ok := a.(string)
+			if !ok {
+				return nil, fmt.Errorf("docker_exec: 'cmd' entries must be strings")
+			}
+			argv = append(argv, s)
+		}
+		return argv, nil
+	}
+	// Accept []string directly too (repos that round-trip via Go structs)
+	if argv, ok := config["cmd"].([]string); ok && len(argv) > 0 {
+		return argv, nil
+	}
+	if commandStr, _ := config["command"].(string); commandStr != "" {
+		return []string{"sh", "-c", commandStr}, nil
+	}
+	return nil, fmt.Errorf("docker_exec: need either 'cmd' []string or 'command' string")
 }
 
 // composeOutput safely extracts output from a compose result, guarding against nil.

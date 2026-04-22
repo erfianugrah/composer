@@ -2638,13 +2638,14 @@
             "type": "string"
           },
           "type": {
-            "description": "Step kind",
+            "description": "Step kind. docker_exec runs a command inside an existing container (admin only).",
             "enum": [
               "compose_up",
               "compose_down",
               "compose_pull",
               "compose_restart",
               "shell_command",
+              "docker_exec",
               "http_request",
               "wait",
               "notify"
@@ -3616,15 +3617,16 @@
         "properties": {
           "config": {
             "additionalProperties": {},
-            "description": "Trigger config (shape varies by type)",
+            "description": "Trigger config (shape varies by type). Event triggers take {event: 'stack.deployed', stack?: 'name'}.",
             "type": "object"
           },
           "type": {
-            "description": "Trigger kind",
+            "description": "Trigger kind. event subscribes to domain events on the bus (e.g. stack.deployed for post-deploy hooks).",
             "enum": [
               "manual",
               "webhook",
-              "schedule"
+              "schedule",
+              "event"
             ],
             "type": "string"
           }
@@ -4301,7 +4303,7 @@
       "name": "MIT"
     },
     "title": "Composer",
-    "version": "0.8.0"
+    "version": "0.8.1"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -126,14 +126,34 @@ Git status returns `sync_status` which can be: `synced`, `behind`, `diverged`, `
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/pipelines` | List pipelines |
-| `POST` | `/api/v1/pipelines` | Create pipeline (steps + triggers) |
+| `POST` | `/api/v1/pipelines` | Create pipeline (steps + triggers) — admin only |
 | `GET` | `/api/v1/pipelines/{id}` | Get pipeline detail |
 | `DELETE` | `/api/v1/pipelines/{id}` | Delete pipeline |
 | `POST` | `/api/v1/pipelines/{id}/run` | Trigger pipeline run (async) |
 | `GET` | `/api/v1/pipelines/{id}/runs` | List runs for pipeline |
 | `GET` | `/api/v1/pipelines/{id}/runs/{runId}` | Get run detail |
-| `PUT` | `/api/v1/pipelines/{id}` | Update pipeline |
+| `PUT` | `/api/v1/pipelines/{id}` | Update pipeline — shell_command / docker_exec edits require admin |
 | `POST` | `/api/v1/pipelines/{id}/cancel` | Cancel running pipeline |
+
+**Step types** (enum on `PipelineStepDTO.type`): `compose_up`, `compose_down`, `compose_pull`, `compose_restart`, `shell_command`, `docker_exec`, `http_request`, `wait`, `notify`.
+
+`docker_exec` runs a command inside an existing container via the Docker socket — intended for post-deploy hooks (e.g. caddy hot-reload, wafctl policy refresh). Config shape:
+
+```json
+{"container": "wafctl", "cmd": ["wget", "-qO-", "http://localhost/deploy"]}
+```
+
+`cmd` ([]string) is preferred for quoted-arg safety. `command` (string) is accepted as a fallback — it's wrapped in `sh -c` so requires a shell in the container. Captured output capped at 1 MB per stream; truncation flagged via `result.truncated` in the captured output metadata.
+
+**Trigger types** (enum on `TriggerDTO.type`): `manual`, `webhook`, `schedule`, `event`.
+
+`event` subscribes the pipeline to the domain event bus and fires after a matching event is published. Unlike `webhook` (fires immediately on HTTP receipt, in parallel with sync), `event` triggers fire AFTER the publishing operation completes — the right choice for post-deploy hooks without the webhook race. Config shape:
+
+```json
+{"event": "stack.deployed", "stack": "caddy"}
+```
+
+Supported `event` values: `stack.created`, `stack.deployed`, `stack.stopped`, `stack.updated`, `stack.deleted`, `stack.error`. Omit `stack` to match every stack for that event type. A pipeline with both webhook and event triggers will fire twice per push — pick one.
 
 ### Webhooks (6 endpoints, operator+)
 
