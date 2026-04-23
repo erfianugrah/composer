@@ -1,10 +1,17 @@
 # Deploy Endpoint + Webhook-Triggered Pipelines
 
+> **Archived plan.** All sections shipped. Kept as a historical record of the
+> design reasoning behind `POST /api/v1/stacks/{name}/deploy`,
+> `PipelineService.RunByWebhookTrigger`, and SOPS support in pipeline compose
+> steps. For the shipped implementation see `internal/api/handler/git.go` and
+> `internal/app/pipeline_service.go`. For API usage see
+> `docs/api-reference.md`.
+
 ## Status
 
-- [x] Section 1: `POST /api/v1/stacks/{name}/deploy` endpoint
-- [x] Section 2: Wire webhook triggers to pipeline runs
-- [x] Section 3: SOPS support in pipeline compose steps
+- [x] Section 1: `POST /api/v1/stacks/{name}/deploy` endpoint (shipped pre-v0.8.0)
+- [x] Section 2: Wire webhook triggers to pipeline runs (shipped pre-v0.8.0)
+- [x] Section 3: SOPS support in pipeline compose steps (shipped pre-v0.8.0)
 - [x] Tests
 
 ## Problem
