@@ -1,7 +1,13 @@
 package middleware
 
 import (
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/erfianugrah/composer/internal/infra/store"
 )
 
 func TestDeriveAction(t *testing.T) {
@@ -59,4 +65,48 @@ func TestDeriveAction(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAuditWorkerPool_DropsWhenFull guards against regression of the
+// unbounded goroutine-per-mutation pattern. Filling the jobs channel past
+// its capacity must result in drops (dropped counter increments, submit
+// never blocks) rather than spawning unlimited goroutines or blocking
+// the HTTP request.
+func TestAuditWorkerPool_DropsWhenFull(t *testing.T) {
+	// Construct a pool WITHOUT calling start() — we want to test the
+	// submit-side overflow behavior in isolation, without real worker
+	// goroutines that would drain the queue or panic on a nil repo.
+	pool := &auditWorkerPool{
+		jobs: make(chan auditJob, 4), // tiny capacity to force overflow
+	}
+
+	submitted := atomic.Int32{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Submit 20 entries to a 4-slot queue. None are consumed (no workers).
+		// Expect the first 4 to be buffered and the remaining 16 to be dropped.
+		for i := 0; i < 20; i++ {
+			pool.submit(store.AuditEntry{ID: "test", Action: "test.action"})
+			submitted.Add(1)
+		}
+	}()
+
+	// Submit loop must complete promptly — if submit() ever blocks on a full
+	// channel, the test hangs past this deadline.
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("submit() blocked on full queue; expected drop-if-full semantics")
+	}
+
+	assert.Equal(t, int32(20), submitted.Load(), "all submits returned")
+
+	pool.mu.Lock()
+	dropped := pool.dropped
+	pool.mu.Unlock()
+
+	assert.Equal(t, uint64(16), dropped,
+		"expected 20 submits - 4 buffered = 16 drops, got %d", dropped)
+	assert.Equal(t, 4, len(pool.jobs), "buffered count")
 }

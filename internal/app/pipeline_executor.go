@@ -194,8 +194,19 @@ func (e *PipelineExecutor) executeStep(ctx context.Context, step pipeline.Step) 
 			"HISTFILE=/dev/null",
 			"TERM=xterm",
 		}
-		out, err := cmd.CombinedOutput()
-		return string(out), err
+		// Cap combined output at docker.ExecMaxOutput (1 MB) per stream so a
+		// runaway command can't balloon composer memory. Matches the
+		// docker_exec step's bound introduced in v0.8.1.
+		stdout := &docker.CappedBuffer{Limit: docker.ExecMaxOutput}
+		stderr := &docker.CappedBuffer{Limit: docker.ExecMaxOutput}
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		err := cmd.Run()
+		out := stdout.String() + stderr.String()
+		if stdout.Truncated || stderr.Truncated {
+			out += fmt.Sprintf("\n[output truncated at %d bytes/stream]", docker.ExecMaxOutput)
+		}
+		return out, err
 
 	case pipeline.StepDockerExec:
 		return e.executeDockerExec(ctx, step)

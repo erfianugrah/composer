@@ -97,7 +97,15 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: true
+          # provenance=false so single-platform tags (e.g. :0.8.2-amd64,
+          # :latest-amd64) push as classic OCI/Docker image manifests instead
+          # of OCI indexes. buildx wraps provenance-attested builds in an index
+          # even for single-platform; older clients (Unraid's update checker,
+          # classic docker pull with default Accept) then get 404 with
+          # "OCI index found, but Accept header does not support OCI indexes".
+          # Attestation still attached to the push-by-digest step below, which
+          # feeds the multi-arch manifest list created in docker-merge.
+          provenance: false
           sbom: true
           cache-from: type=gha,scope=build-${{ matrix.suffix }}
           cache-to: type=gha,scope=build-${{ matrix.suffix }},mode=max

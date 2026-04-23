@@ -102,8 +102,8 @@ func (c *Client) ExecRun(ctx context.Context, containerID string, cmd []string) 
 	}
 	defer attach.Close()
 
-	stdoutBuf := &cappedBuffer{limit: ExecMaxOutput}
-	stderrBuf := &cappedBuffer{limit: ExecMaxOutput}
+	stdoutBuf := &CappedBuffer{Limit: ExecMaxOutput}
+	stderrBuf := &CappedBuffer{Limit: ExecMaxOutput}
 
 	done := make(chan error, 1)
 	go func() {
@@ -134,32 +134,45 @@ func (c *Client) ExecRun(ctx context.Context, containerID string, cmd []string) 
 		ExitCode:  exitCode,
 		Stdout:    stdoutBuf.String(),
 		Stderr:    stderrBuf.String(),
-		Truncated: stdoutBuf.truncated || stderrBuf.truncated,
+		Truncated: stdoutBuf.Truncated || stderrBuf.Truncated,
 	}, nil
 }
 
-// cappedBuffer is an io.Writer that accepts at most `limit` bytes and discards
-// the rest, flagging truncation. Used to bound exec-stream memory usage.
-type cappedBuffer struct {
+// CappedBuffer is an io.Writer that accepts at most `Limit` bytes and
+// discards the rest, setting Truncated=true. It pretends to accept the
+// discarded bytes (returns len(p) with nil error) so upstream copy loops
+// drain the source reader instead of blocking.
+//
+// Originally used for Docker exec stream capping; exported so other
+// packages (notably internal/app pipeline executor's shell_command step)
+// can share the same bounded-write pattern.
+type CappedBuffer struct {
 	buf       bytes.Buffer
-	limit     int
-	truncated bool
+	Limit     int
+	Truncated bool
 }
 
-func (c *cappedBuffer) Write(p []byte) (int, error) {
-	if c.buf.Len() >= c.limit {
-		c.truncated = true
-		return len(p), nil // pretend to accept so stdcopy keeps draining
+func (c *CappedBuffer) Write(p []byte) (int, error) {
+	if c.buf.Len() >= c.Limit {
+		c.Truncated = true
+		return len(p), nil
 	}
-	remaining := c.limit - c.buf.Len()
+	remaining := c.Limit - c.buf.Len()
 	if len(p) <= remaining {
 		return c.buf.Write(p)
 	}
-	c.truncated = true
+	c.Truncated = true
 	if _, err := c.buf.Write(p[:remaining]); err != nil {
 		return 0, err
 	}
 	return len(p), nil
 }
 
-func (c *cappedBuffer) String() string { return c.buf.String() }
+// String returns the captured bytes.
+func (c *CappedBuffer) String() string { return c.buf.String() }
+
+// Bytes returns a copy of the captured bytes.
+func (c *CappedBuffer) Bytes() []byte { return c.buf.Bytes() }
+
+// Len returns the number of captured bytes.
+func (c *CappedBuffer) Len() int { return c.buf.Len() }

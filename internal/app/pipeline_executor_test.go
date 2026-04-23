@@ -154,6 +154,37 @@ func TestPipelineExecutor_ContextCancellation(t *testing.T) {
 	assert.NotEqual(t, pipeline.RunSuccess, result.Status)
 }
 
+// TestPipelineExecutor_ShellCommand_OutputCap guards against unbounded stdout
+// capture: a shell_command that prints more than 1 MB must be truncated with
+// a visible marker rather than growing the composer process unboundedly.
+// Matches the cap policy applied to docker_exec in v0.8.1.
+func TestPipelineExecutor_ShellCommand_OutputCap(t *testing.T) {
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+
+	p, err := pipeline.NewPipeline("test", "shell output cap", "user1")
+	require.NoError(t, err)
+	// Print 2 MB of 'A's — twice the 1 MB cap. `yes | head -c 2097152`
+	// is simpler + POSIX-portable than dd.
+	require.NoError(t, p.AddStep(pipeline.Step{
+		ID: "spew", Name: "Print 2MB", Type: pipeline.StepShellCommand,
+		Config: map[string]any{"command": "yes A | head -c 2097152"},
+	}))
+
+	run := pipeline.NewRun(p.ID, "test")
+	result := executor.Execute(context.Background(), p, run)
+
+	require.Equal(t, pipeline.RunSuccess, result.Status)
+	require.Len(t, result.StepResults, 1)
+	out := result.StepResults[0].Output
+	// Captured output must not exceed the cap plus a small truncation marker.
+	// 1 MB cap + marker text ≈ 1 MB + ~50 bytes.
+	assert.Less(t, len(out), 1<<20+200, "output should be capped near 1 MB, got %d bytes", len(out))
+	assert.Contains(t, out, "output truncated at", "truncation marker must be present")
+}
+
 func TestPipelineExecutor_DockerExec_NilClient(t *testing.T) {
 	// docker_exec step must fail gracefully (not panic) when the executor
 	// was constructed without a Docker client — tests and rebuild-from-scratch

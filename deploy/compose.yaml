@@ -15,7 +15,10 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: ghcr.io/erfianugrah/composer:latest-amd64
+    # Multi-arch manifest list — resolves to the right platform (amd64/arm64).
+    # Use :latest-amd64 or :latest-arm64 if you want to pin a platform (e.g.
+    # to update before the slower QEMU arm64 build finishes).
+    image: ghcr.io/erfianugrah/composer:latest
     ports:
       - "${COMPOSER_PORT:-8080}:8080"
     volumes:

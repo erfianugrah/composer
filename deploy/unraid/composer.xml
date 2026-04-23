@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>composer</Name>
-  <Repository>ghcr.io/erfianugrah/composer:latest-amd64</Repository>
+  <Repository>ghcr.io/erfianugrah/composer:latest</Repository>
   <Registry>https://github.com/erfianugrah/composer/pkgs/container/composer</Registry>
   <Network>composer</Network>
   <Shell>sh</Shell>
