@@ -15,10 +15,12 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    # Multi-arch manifest list — resolves to the right platform (amd64/arm64).
-    # Use :latest-amd64 or :latest-arm64 if you want to pin a platform (e.g.
-    # to update before the slower QEMU arm64 build finishes).
-    image: ghcr.io/erfianugrah/composer:latest
+    # Platform-pinned so amd64 hosts (the common self-host case) pull the
+    # moment the amd64 build finishes, without waiting on the slower QEMU
+    # arm64 step. arm64 operators override this line with :latest-arm64 or
+    # :latest (multi-arch manifest list). The Unraid template uses :latest
+    # because Unraid's update-checker handles multi-arch manifests best.
+    image: ghcr.io/erfianugrah/composer:latest-amd64
     ports:
       - "${COMPOSER_PORT:-8080}:8080"
     volumes:
