@@ -75,11 +75,6 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
     term.loadAddon(new WebLinksAddon());
     term.open(termRef.current);
 
-    const xtermEl = termRef.current.querySelector('.xterm') as HTMLElement;
-    if (xtermEl) {
-      xtermEl.style.padding = '12px';
-    }
-
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         fitAddon.fit();
@@ -206,6 +201,7 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
       </div>
       <div
         ref={termRef}
+        className="p-3"
         style={{ height: "350px" }}
         data-testid="action-terminal-output"
       />

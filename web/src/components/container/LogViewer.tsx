@@ -89,8 +89,20 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
     setPaused(!atBottom);
   }, []);
 
+  const [copied, setCopied] = useState(false);
+
   function clearLogs() {
     setLines([]);
+  }
+
+  function copyLogs() {
+    const text = lines
+      .map((l) => `${new Date(l.ts).toISOString().slice(11, 19)} ${l.message}`)
+      .join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
   }
 
   return (
@@ -103,6 +115,9 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
           <span className="text-cp-peach">Scroll paused</span>
         )}
         <div className="ml-auto flex gap-1">
+          <Button size="xs" variant="ghost" onClick={copyLogs} disabled={lines.length === 0}>
+            {copied ? "Copied!" : "Copy"}
+          </Button>
           <Button size="xs" variant="ghost" onClick={clearLogs}>Clear</Button>
           {paused && (
             <Button size="xs" variant="ghost" onClick={() => setPaused(false)}>
