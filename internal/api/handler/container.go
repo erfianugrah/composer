@@ -142,7 +142,7 @@ func (h *ContainerHandler) Start(ctx context.Context, input *dto.ContainerIDInpu
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.StartContainer(ctx, input.ID); err != nil {
-		return nil, serverError(ctx, err)
+		return nil, dockerError(ctx, err)
 	}
 	return nil, nil
 }
@@ -155,7 +155,7 @@ func (h *ContainerHandler) Stop(ctx context.Context, input *dto.ContainerIDInput
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.StopContainer(ctx, input.ID); err != nil {
-		return nil, serverError(ctx, err)
+		return nil, dockerError(ctx, err)
 	}
 	return nil, nil
 }
@@ -168,7 +168,7 @@ func (h *ContainerHandler) Restart(ctx context.Context, input *dto.ContainerIDIn
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.RestartContainer(ctx, input.ID); err != nil {
-		return nil, serverError(ctx, err)
+		return nil, dockerError(ctx, err)
 	}
 	return nil, nil
 }

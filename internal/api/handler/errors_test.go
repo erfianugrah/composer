@@ -47,3 +47,25 @@ func TestServerError_IncludesRequestID(t *testing.T) {
 	// But never leaks the underlying error
 	assert.NotContains(t, err.Error(), "disk I/O")
 }
+
+func TestDockerError_SurfacesOperationalMessage(t *testing.T) {
+	err := dockerError(context.Background(), errors.New(
+		`Error response from daemon: could not select device driver "nvidia" with capabilities: [[gpu compute video]]`,
+	))
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), `could not select device driver "nvidia"`)
+	assert.NotContains(t, err.Error(), "Error response from daemon:")
+}
+
+func TestDockerError_PortConflict(t *testing.T) {
+	err := dockerError(context.Background(), errors.New(
+		"Error response from daemon: driver failed programming external connectivity: Bind for 0.0.0.0:8080 failed: port is already allocated",
+	))
+	assert.Contains(t, err.Error(), "port is already allocated")
+}
+
+func TestDockerError_NoPrefix(t *testing.T) {
+	// Non-daemon errors pass through as-is
+	err := dockerError(context.Background(), errors.New("container is not running"))
+	assert.Contains(t, err.Error(), "container is not running")
+}
