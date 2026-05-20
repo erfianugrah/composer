@@ -233,12 +233,16 @@ func (h *PipelineHandler) Run(ctx context.Context, input *dto.RunPipelineInput) 
 	return runToOutput(run), nil
 }
 
-func (h *PipelineHandler) ListRuns(ctx context.Context, input *dto.PipelineIDInput) (*dto.RunListOutput, error) {
+func (h *PipelineHandler) ListRuns(ctx context.Context, input *dto.ListRunsInput) (*dto.RunListOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
 
-	runs, err := h.svc.ListRuns(ctx, input.ID)
+	runs, err := h.svc.ListRuns(ctx, input.ID, pipeline.ListRunsOptions{
+		Limit:  input.Limit,
+		Offset: input.Offset,
+		Order:  input.Order,
+	})
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -251,6 +255,11 @@ func (h *PipelineHandler) ListRuns(ctx context.Context, input *dto.PipelineIDInp
 			StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, CreatedAt: r.CreatedAt,
 		})
 	}
+	// HasMore is a cheap "is there at least one more page" signal — derived
+	// from the page being full rather than a separate COUNT(*) query. Saves
+	// a round-trip; the worst case is the client clicks Next on an exactly-
+	// filled last page and sees an empty result, which the UI handles.
+	out.Body.HasMore = len(runs) > 0 && len(runs) == input.Limit
 	return out, nil
 }
 
@@ -336,8 +345,9 @@ func (h *PipelineHandler) Cancel(ctx context.Context, input *dto.PipelineIDInput
 		return nil, err
 	}
 
-	// Get the latest running run for this pipeline and cancel it
-	runs, err := h.svc.ListRuns(ctx, input.ID)
+	// Get the latest running run for this pipeline and cancel it. Only need
+	// recent rows — pending/running will be among the newest.
+	runs, err := h.svc.ListRuns(ctx, input.ID, pipeline.ListRunsOptions{Limit: 10})
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}

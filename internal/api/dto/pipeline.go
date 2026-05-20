@@ -40,6 +40,16 @@ type PipelineIDInput struct {
 	ID string `path:"id" maxLength:"128" doc:"Pipeline ID"`
 }
 
+// ListRunsInput is the query for the run-history endpoint. Limit + offset
+// drive pagination; order flips between newest-first (desc, default) and
+// oldest-first (asc). Limit is clamped to [1, 100] in the repository.
+type ListRunsInput struct {
+	ID     string `path:"id" maxLength:"128" doc:"Pipeline ID"`
+	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"25" doc:"Page size (1-100)"`
+	Offset int    `query:"offset" minimum:"0" default:"0" doc:"Skip this many rows before returning"`
+	Order  string `query:"order" enum:"desc,asc" default:"desc" doc:"Sort by created_at — desc (newest first) or asc (oldest first)"`
+}
+
 type RunPipelineInput struct {
 	ID string `path:"id" maxLength:"128" doc:"Pipeline ID"`
 }
@@ -109,7 +119,8 @@ type RunOutput struct {
 
 type RunListOutput struct {
 	Body struct {
-		Runs []RunSummary `json:"runs"`
+		Runs    []RunSummary `json:"runs"`
+		HasMore bool         `json:"has_more" doc:"True when the next page is likely to contain rows (i.e. this page was full)."`
 	}
 }
 

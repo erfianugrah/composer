@@ -2769,6 +2769,8 @@ export interface components {
              * @example //schemas/RunListOutputBody.json
              */
             readonly $schema?: string;
+            /** @description True when the next page is likely to contain rows (i.e. this page was full). */
+            has_more: boolean;
             runs: components["schemas"]["RunSummary"][] | null;
         };
         RunOutputBody: {
@@ -5759,7 +5761,14 @@ export interface operations {
     };
     listPipelineRuns: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Page size (1-100) */
+                limit?: number;
+                /** @description Skip this many rows before returning */
+                offset?: number;
+                /** @description Sort by created_at — desc (newest first) or asc (oldest first) */
+                order?: "desc" | "asc";
+            };
             header?: never;
             path: {
                 /** @description Pipeline ID */

@@ -152,8 +152,11 @@ func (s *PipelineService) GetRun(ctx context.Context, runID string) (*pipeline.R
 	return run, nil
 }
 
-func (s *PipelineService) ListRuns(ctx context.Context, pipelineID string) ([]*pipeline.Run, error) {
-	return s.runs.ListByPipeline(ctx, pipelineID)
+// ListRuns returns recent runs for a pipeline. Pass a zero ListRunsOptions for
+// the historical default (50 most-recent, DESC). Callers that just need to
+// peek at active runs can pass {Limit: 10}.
+func (s *PipelineService) ListRuns(ctx context.Context, pipelineID string, opts pipeline.ListRunsOptions) ([]*pipeline.Run, error) {
+	return s.runs.ListByPipeline(ctx, pipelineID, opts)
 }
 
 // UpdateRun persists a run's current state (e.g. after cancellation).

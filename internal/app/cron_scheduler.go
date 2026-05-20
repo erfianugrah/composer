@@ -88,8 +88,11 @@ func (s *CronScheduler) checkSchedules(ctx context.Context) {
 			}
 
 			if shouldRunCron(cronExpr, now) {
-				// Skip if a run is already in progress for this pipeline
-				runs, _ := s.pipelineSvc.ListRuns(ctx, p.ID)
+				// Skip if a run is already in progress for this pipeline.
+				// We only need to see the most recent handful — pending/running
+				// runs will be among the newest. Limit=10 keeps this cheap
+				// even with thousands of historical runs in the table.
+				runs, _ := s.pipelineSvc.ListRuns(ctx, p.ID, pipeline.ListRunsOptions{Limit: 10})
 				hasActive := false
 				for _, r := range runs {
 					if r.Status == pipeline.RunPending || r.Status == pipeline.RunRunning {

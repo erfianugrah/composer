@@ -78,7 +78,7 @@ func (r *mockRunRepo) GetByID(_ context.Context, id string) (*pipeline.Run, erro
 	}
 	return nil, nil
 }
-func (r *mockRunRepo) ListByPipeline(_ context.Context, _ string) ([]*pipeline.Run, error) {
+func (r *mockRunRepo) ListByPipeline(_ context.Context, _ string, _ pipeline.ListRunsOptions) ([]*pipeline.Run, error) {
 	return nil, nil
 }
 func (r *mockRunRepo) Update(_ context.Context, run *pipeline.Run) error {

@@ -141,10 +141,29 @@ func (r *RunRepo) GetByID(ctx context.Context, id string) (*pipeline.Run, error)
 	return run, nil
 }
 
-func (r *RunRepo) ListByPipeline(ctx context.Context, pipelineID string) ([]*pipeline.Run, error) {
+func (r *RunRepo) ListByPipeline(ctx context.Context, pipelineID string, opts pipeline.ListRunsOptions) ([]*pipeline.Run, error) {
+	// Clamp limit to a bounded range so a hostile or buggy caller can't ask
+	// for the entire run table. 50 is the long-standing default; 100 is the
+	// ceiling so a single page stays under ~10 KB in transit.
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	} else if limit > 100 {
+		limit = 100
+	}
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	// Whitelist the direction — never interpolate user strings into SQL.
+	order := "DESC"
+	if opts.Order == "asc" {
+		order = "ASC"
+	}
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, pipeline_id, status, triggered_by, started_at, finished_at, created_at
-		 FROM pipeline_runs WHERE pipeline_id = $1 ORDER BY created_at DESC LIMIT 50`, pipelineID,
+		 FROM pipeline_runs WHERE pipeline_id = $1 ORDER BY created_at `+order+` LIMIT $2 OFFSET $3`,
+		pipelineID, limit, offset,
 	)
 	if err != nil {
 		return nil, err
