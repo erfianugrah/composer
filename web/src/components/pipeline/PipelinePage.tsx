@@ -279,7 +279,11 @@ export function PipelinePage() {
                       ? "border-cp-purple bg-cp-purple/5"
                       : "border-border hover:bg-accent/50"
                   }`}
-                  onClick={() => setSelectedPipeline(pl.id)}
+                  // Click toggles selection — clicking the already-selected
+                  // pipeline collapses the Run History panel. Previously only
+                  // ever set the selection so the panel could never be hidden
+                  // again without picking another pipeline.
+                  onClick={() => setSelectedPipeline((cur) => (cur === pl.id ? null : pl.id))}
                   data-testid={`pipeline-${pl.id}`}
                 >
                   <div>

@@ -138,6 +138,45 @@ func (r *RunRepo) GetByID(ctx context.Context, id string) (*pipeline.Run, error)
 		return nil, err
 	}
 	run.Status = pipeline.RunStatus(status)
+
+	// Hydrate step results. Ordered by started_at so the UI shows them in
+	// execution order; rows where started_at is NULL (step never ran)
+	// land last via the IS NULL tiebreaker. CASCADE on the FK means
+	// orphan rows are impossible.
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT step_id, step_name, status, output, error, duration_ms, started_at, finished_at
+		FROM pipeline_step_results
+		WHERE run_id = $1
+		ORDER BY started_at IS NULL, started_at ASC`, id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sr pipeline.StepResult
+		var srStatus string
+		var output, errStr sql.NullString
+		var durationMs sql.NullInt64
+		if err := rows.Scan(
+			&sr.StepID, &sr.StepName, &srStatus,
+			&output, &errStr, &durationMs,
+			&sr.StartedAt, &sr.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		sr.Status = pipeline.RunStatus(srStatus)
+		sr.Output = output.String
+		sr.Error = errStr.String
+		if durationMs.Valid {
+			sr.Duration = time.Duration(durationMs.Int64) * time.Millisecond
+		}
+		run.StepResults = append(run.StepResults, sr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return run, nil
 }
 
@@ -184,17 +223,69 @@ func (r *RunRepo) ListByPipeline(ctx context.Context, pipelineID string, opts pi
 }
 
 func (r *RunRepo) Update(ctx context.Context, run *pipeline.Run) error {
-	result, err := r.db.ExecContext(ctx,
+	// Run + step results are persisted in a single transaction so a partial
+	// failure can't leave a "success" run row with no step rows (or vice
+	// versa). Delete-then-insert is the simplest match for the executor's
+	// "accumulate StepResults in-memory, persist once at end" model — there
+	// are no partial-step persists today, so DELETE+INSERT touches at most
+	// len(steps) rows (typically <10 per pipeline).
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx,
 		`UPDATE pipeline_runs SET status=$2, started_at=$3, finished_at=$4 WHERE id=$1`,
 		run.ID, string(run.Status), run.StartedAt, run.FinishedAt,
 	)
 	if err != nil {
 		return err
 	}
-	if n, _ := result.RowsAffected(); n == 0 {
+	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotUpdated
 	}
-	return nil
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM pipeline_step_results WHERE run_id = $1`, run.ID,
+	); err != nil {
+		return err
+	}
+
+	if len(run.StepResults) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO pipeline_step_results
+			(id, run_id, step_id, step_name, status, output, error, duration_ms, started_at, finished_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+
+		for _, sr := range run.StepResults {
+			// Composite ID: globally-unique run ID + step ID (unique within
+			// pipeline) → unique row. Stable across persist calls because
+			// inputs are stable, but DELETE-above wipes any prior row anyway.
+			rowID := run.ID + "_" + sr.StepID
+			// The pipeline_step_results CHECK constraint only accepts
+			// pending/running/success/failed/skipped. The executor only
+			// ever emits success or failed today; defensive coerce if a
+			// future code path sets cancelled to keep the INSERT alive.
+			status := string(sr.Status)
+			if status == string(pipeline.RunCancelled) {
+				status = string(pipeline.RunFailed)
+			}
+			if _, err := stmt.ExecContext(ctx,
+				rowID, run.ID, sr.StepID, sr.StepName, status,
+				sr.Output, sr.Error, sr.Duration.Milliseconds(),
+				sr.StartedAt, sr.FinishedAt,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
 }
 
 // pipelineConfig is the JSON structure stored in the pipelines.config column.
