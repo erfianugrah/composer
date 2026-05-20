@@ -772,6 +772,8 @@ Think GitHub Actions for your compose stacks.
 
 ### 8.2 Example Pipeline YAML
 
+> **Historical note:** the YAML below is the original design sketch. The shipped implementation accepts a subset — see `docs/api-reference.md` for the authoritative per-step / per-trigger config shapes. Notably: `services`, `force_recreate`, `method`, `expect_status`, `retries`, `retry_delay`, and webhook `path` / `secret` fields are **not** implemented; webhook triggers use `{stack, branch?}` instead.
+
 ```yaml
 name: deploy-web-stack
 description: Pull latest images and deploy with zero-downtime

@@ -135,25 +135,124 @@ Git status returns `sync_status` which can be: `synced`, `behind`, `diverged`, `
 | `PUT` | `/api/v1/pipelines/{id}` | Update pipeline — shell_command / docker_exec edits require admin |
 | `POST` | `/api/v1/pipelines/{id}/cancel` | Cancel running pipeline |
 
-**Step types** (enum on `PipelineStepDTO.type`): `compose_up`, `compose_down`, `compose_pull`, `compose_restart`, `shell_command`, `docker_exec`, `http_request`, `wait`, `notify`.
+#### Step types
 
-`docker_exec` runs a command inside an existing container via the Docker socket — intended for post-deploy hooks (e.g. caddy hot-reload, wafctl policy refresh). Config shape:
+Enum on `PipelineStepDTO.type`: `compose_up`, `compose_down`, `compose_pull`, `compose_restart`, `shell_command`, `docker_exec`, `http_request`, `wait`, `notify`.
+
+Step output is captured (stdout + stderr folded together on non-zero exit) and persisted in the run record. `shell_command` and `docker_exec` cap each stream at **1 MB** and flag truncation — `compose_*` does not (output is bounded only by what docker emits). All step `config` blocks are `map[string]any` — extra fields are ignored, not rejected.
+
+##### `compose_up` / `compose_down` / `compose_pull` / `compose_restart`
+
+```json
+{"stack": "servarr"}
+```
+
+`stack` is the **stack name** (as registered in Composer), not a filesystem path. Composer resolves the path, holds the per-stack lock, decrypts SOPS-encrypted `.env` and inline secrets if present, runs the compose operation, then re-encrypts. No other config fields are honoured today — `services`, `force_recreate`, `build`, etc. from older design drafts are not implemented (`internal/app/pipeline_executor.go:268`).
+
+##### `shell_command` (admin-only)
+
+```json
+{"command": "docker compose -f /stacks/servarr/compose.yaml run --rm recyclarr sync"}
+```
+
+Runs `sh -c <command>` on the Composer host. **Environment is scrubbed** to `PATH`, `HOME=/tmp`, `HISTFILE=/dev/null`, `TERM=xterm` — DB URLs, API tokens, and OAuth secrets are not inherited. Creating or editing this step type requires the admin role.
+
+##### `docker_exec` (admin-only)
 
 ```json
 {"container": "wafctl", "cmd": ["wget", "-qO-", "http://localhost/deploy"]}
 ```
 
-`cmd` ([]string) is preferred for quoted-arg safety. `command` (string) is accepted as a fallback — it's wrapped in `sh -c` so requires a shell in the container. Captured output capped at 1 MB per stream; truncation flagged via `result.truncated` in the captured output metadata.
+Runs an exec inside an **already-running** container. `cmd` (`[]string`) is preferred — quoted args survive. `command` (string) is wrapped in `sh -c` so the container must have a shell. Intended for post-deploy hooks (caddy reload, wafctl refresh). Container must be up — for "spin up just to run this" use `shell_command` with `docker compose run --rm`.
 
-**Trigger types** (enum on `TriggerDTO.type`): `manual`, `webhook`, `schedule`, `event`.
+##### `http_request`
 
-`event` subscribes the pipeline to the domain event bus and fires after a matching event is published. Unlike `webhook` (fires immediately on HTTP receipt, in parallel with sync), `event` triggers fire AFTER the publishing operation completes — the right choice for post-deploy hooks without the webhook race. Config shape:
+```json
+{"url": "http://api:8080/health"}
+```
+
+GET only, 30 s fixed timeout, `http://` and `https://` schemes only. SSRF-protected: private/link-local IPs are blocked unless explicitly allowed by host config. Returns the response status code as the step output (`"200"`, `"503"`, …) — body is not captured. `method`, `expect_status`, `retries`, `retry_delay`, headers, and body from older design drafts are not implemented.
+
+##### `wait`
+
+```json
+{"duration": "30s"}
+```
+
+Go-duration string (`5s`, `2m`, `1h30m`). Defaults to `5s` if omitted. Honours pipeline cancellation.
+
+##### `notify`
+
+```json
+{"target": "https://hooks.slack.com/..."}
+```
+
+Currently a stub — logs `"notification sent to <target>"` and returns success. No webhook POST is actually performed. Treat as a placeholder until real delivery lands.
+
+#### Trigger types
+
+Enum on `TriggerDTO.type`: `manual`, `webhook`, `schedule`, `event`. A pipeline can have multiple triggers.
+
+##### `manual`
+
+No config. Pipeline only runs via `POST /api/v1/pipelines/{id}/run`.
+
+##### `webhook`
+
+```json
+{"stack": "servarr", "branch": "main"}
+```
+
+Fires when an external git webhook (registered via `/api/v1/webhooks`) is received for the matching `stack`. `stack` is **required** — a missing or empty value never fires (`internal/app/pipeline_service.go:285`). `branch` is optional — omit to match every branch. Fires **immediately on HTTP receipt, in parallel with the sync**, so don't use this for post-deploy hooks (use `event` instead). Note: this is the **per-pipeline trigger filter**, not the webhook registration itself; webhooks are CRUD'd separately via the Webhooks API below.
+
+##### `schedule`
+
+```json
+{"cron": "0 */6 * * *"}
+```
+
+Standard 5-field cron: `minute hour day month weekday`. Supported syntax:
+
+| Form | Example | Meaning |
+|------|---------|---------|
+| Wildcard | `*` | every value |
+| Exact | `30` | only this value |
+| Step | `*/15` | every 15 (from 0) |
+| Range | `9-17` | inclusive range |
+| Range + step | `9-17/2` | every 2 within range |
+| List | `0,15,30,45` | union of values |
+
+**Macros (`@daily`, `@hourly`, `@every 5m`, etc.) are NOT supported** — they parse as one field and silently never fire (`internal/app/cron_scheduler.go:127`). Always write the 5-field form.
+
+The scheduler ticks every minute. If a previous run is still `pending` or `running`, the next tick is skipped (no overlap, no queueing).
+
+##### `event`
 
 ```json
 {"event": "stack.deployed", "stack": "caddy"}
 ```
 
-Supported `event` values: `stack.created`, `stack.deployed`, `stack.stopped`, `stack.updated`, `stack.deleted`, `stack.error`. Omit `stack` to match every stack for that event type. A pipeline with both webhook and event triggers will fire twice per push — pick one.
+Subscribes to the in-process domain event bus and fires **after** the publishing operation completes — the right choice for post-deploy hooks without the webhook race. Supported `event` values: `stack.created`, `stack.deployed`, `stack.stopped`, `stack.updated`, `stack.deleted`, `stack.error`. Omit `stack` to match every stack for that event type. A pipeline with both webhook and event triggers will fire twice per push — pick one.
+
+#### Worked example: scheduled recyclarr sync
+
+```json
+{
+  "name": "recyclarr-sync",
+  "triggers": [{"type": "schedule", "config": {"cron": "0 */6 * * *"}}],
+  "steps": [
+    {
+      "id": "sync",
+      "name": "recyclarr sync",
+      "type": "shell_command",
+      "config": {"command": "docker compose -f /stacks/servarr/compose.yaml run --rm recyclarr sync"},
+      "timeout": "5m"
+    }
+  ]
+}
+```
+
+Replaces a host crontab entry + custom cron-wrapper image. Output is captured per run and visible at `/api/v1/pipelines/{id}/runs/{runId}` and streamed live via `/api/v1/sse/pipelines/{id}/runs/{runId}`.
 
 ### Webhooks (6 endpoints, operator+)
 
