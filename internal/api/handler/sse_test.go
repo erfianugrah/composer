@@ -2,9 +2,81 @@ package handler
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestSplitDockerTimestamp(t *testing.T) {
+	cases := []struct {
+		name      string
+		in        string
+		wantOK    bool
+		wantMsg   string
+		wantTSStr string // RFC3339Nano form for compare
+	}{
+		{
+			name:      "rfc3339nano utc",
+			in:        "2026-05-20T08:35:09.850421Z 2026-05-20 08:35:09.850 UTC [113] LOG: checkpoint starting: time",
+			wantOK:    true,
+			wantMsg:   "2026-05-20 08:35:09.850 UTC [113] LOG: checkpoint starting: time",
+			wantTSStr: "2026-05-20T08:35:09.850421Z",
+		},
+		{
+			name:      "rfc3339 second precision",
+			in:        "2026-05-20T08:35:09Z hello",
+			wantOK:    true,
+			wantMsg:   "hello",
+			wantTSStr: "2026-05-20T08:35:09Z",
+		},
+		{
+			name:      "rfc3339 with offset",
+			in:        "2026-05-20T10:35:09.123+02:00 oslo morning",
+			wantOK:    true,
+			wantMsg:   "oslo morning",
+			wantTSStr: "2026-05-20T10:35:09.123+02:00",
+		},
+		{
+			name:   "no space — single token",
+			in:     "noseparatorhere",
+			wantOK: false,
+		},
+		{
+			name:   "leading space — empty prefix",
+			in:    " message starts with space",
+			wantOK: false,
+		},
+		{
+			name:   "non-timestamp prefix",
+			in:    "INFO startup complete",
+			wantOK: false,
+		},
+		{
+			name:   "empty message after timestamp",
+			in:     "2026-05-20T08:35:09Z ",
+			wantOK: true,
+			wantMsg: "",
+			wantTSStr: "2026-05-20T08:35:09Z",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, msg, ok := splitDockerTimestamp(tc.in)
+			assert.Equal(t, tc.wantOK, ok)
+			if !tc.wantOK {
+				// Fallback contract: message preserved as-is so caller can still send it.
+				assert.Equal(t, tc.in, msg)
+				assert.True(t, ts.IsZero())
+				return
+			}
+			assert.Equal(t, tc.wantMsg, msg)
+			want, perr := time.Parse(time.RFC3339Nano, tc.wantTSStr)
+			assert.NoError(t, perr)
+			assert.True(t, ts.Equal(want), "ts=%s want=%s", ts.Format(time.RFC3339Nano), want.Format(time.RFC3339Nano))
+		})
+	}
+}
 
 func TestParseDockerStats_CPUCalculation(t *testing.T) {
 	raw := &dockerStats{}

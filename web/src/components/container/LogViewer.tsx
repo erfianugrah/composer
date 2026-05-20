@@ -163,7 +163,7 @@ function VirtualizedLogView({ lines, connected, paused, containerRef, onScroll }
     <div
       ref={containerRef}
       onScroll={onScroll}
-      className="rounded-lg border border-border bg-cp-950 overflow-y-auto font-data text-xs leading-5"
+      className="rounded-lg border border-border bg-cp-950 overflow-auto font-data text-xs leading-5"
       style={{ height: "400px" }}
       data-testid="log-viewer"
     >
@@ -175,12 +175,19 @@ function VirtualizedLogView({ lines, connected, paused, containerRef, onScroll }
         <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
           {virtualizer.getVirtualItems().map((virtualItem) => {
             const line = lines[virtualItem.index];
+            // whitespace-pre + overflow on the parent gives us terminal-style
+            // single-line rows with horizontal scroll. Wrapping (pre-wrap +
+            // break-all) made each row a variable-height block, which fought
+            // tanstack-virtual's absolute positioning during streaming inserts
+            // — measureElement settled after paint, so the next row drew on
+            // top of the wrapped portion of the previous row. One row = one
+            // visual line = 20px = estimateSize is always exact.
             return (
               <div
                 key={line.id}
                 ref={virtualizer.measureElement}
                 data-index={virtualItem.index}
-                className={`absolute left-0 w-full px-3 whitespace-pre-wrap break-all ${line.stream === "stderr" ? "text-cp-red/90" : ""}`}
+                className={`absolute left-0 px-3 whitespace-pre ${line.stream === "stderr" ? "text-cp-red/90" : ""}`}
                 style={{ top: `${virtualItem.start}px` }}
               >
                 <span className="text-muted-foreground select-none">

@@ -29,6 +29,25 @@ func stripANSI(s string) string {
 	return ansiRe.ReplaceAllString(s, "")
 }
 
+// splitDockerTimestamp parses the RFC3339Nano timestamp prefix that the Docker
+// daemon prepends to log lines when the LogsOptions.Timestamps flag is on.
+// Format is `<rfc3339nano> <message>` — single space separator.
+//
+// On success returns (parsedTime, message-without-prefix, true).
+// On failure (no recognisable prefix) returns (zero, original line, false) so
+// callers can fall back to their wall clock without losing the message.
+func splitDockerTimestamp(line string) (time.Time, string, bool) {
+	sp := strings.IndexByte(line, ' ')
+	if sp <= 0 {
+		return time.Time{}, line, false
+	}
+	ts, err := time.Parse(time.RFC3339Nano, line[:sp])
+	if err != nil {
+		return time.Time{}, line, false
+	}
+	return ts, line[sp+1:], true
+}
+
 // SSEHandler registers Server-Sent Events streaming endpoints.
 type SSEHandler struct {
 	bus          event.Bus
@@ -198,11 +217,21 @@ func (h *SSEHandler) StreamContainerLogs(ctx context.Context, input *dto.Contain
 			if line == "" {
 				continue
 			}
+			// Docker prepends an RFC3339Nano timestamp to each line because we
+			// set LogsOptions.Timestamps. Use it as the SSE event timestamp so
+			// historical (tail) lines display their real time, not the moment
+			// we replayed them. Strip from the message to avoid the duplicate
+			// timestamp the frontend was rendering on top of its own clock.
+			ts, msg, ok := splitDockerTimestamp(line)
+			if !ok {
+				ts = time.Now()
+				msg = line
+			}
 			if sendErr := send.Data(event.LogEntry{
 				ContainerID: input.ID,
 				Stream:      stream,
-				Message:     line,
-				Timestamp:   time.Now(),
+				Message:     msg,
+				Timestamp:   ts,
 			}); sendErr != nil {
 				return
 			}
@@ -430,12 +459,20 @@ func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *dto.StackLogInp
 					if line == "" {
 						continue
 					}
+					// Parse Docker's RFC3339Nano prefix off the message and
+					// surface it as the event timestamp. See the matching
+					// comment in StreamContainerLogs.
+					ts, msg, ok := splitDockerTimestamp(line)
+					if !ok {
+						ts = time.Now()
+						msg = line
+					}
 					mu.Lock()
 					sendErr := send.Data(event.LogEntry{
 						ContainerID: containerID,
 						Stream:      stream,
-						Message:     "[" + containerName + "] " + line,
-						Timestamp:   time.Now(),
+						Message:     "[" + containerName + "] " + msg,
+						Timestamp:   ts,
 					})
 					mu.Unlock()
 					if sendErr != nil {
