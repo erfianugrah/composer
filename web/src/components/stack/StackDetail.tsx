@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -96,7 +96,6 @@ export function StackDetail({ stackName }: { stackName: string }) {
     };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
   const [streamingAction, setStreamingAction] = useState<string | null>(null);
