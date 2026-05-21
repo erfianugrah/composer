@@ -33,21 +33,21 @@ func (r *RegistryCredentialRepo) Upsert(ctx context.Context, c *registry.Credent
 	}
 	now := time.Now().UTC()
 	if c.ID == 0 {
-		res, err := r.db.ExecContext(ctx,
+		// RETURNING id works on both Postgres and modernc.org/sqlite (>=3.35).
+		// On conflict the existing row's id is returned via the DO UPDATE clause.
+		var id int64
+		err := r.db.QueryRowContext(ctx,
 			`INSERT INTO registry_credentials (registry, username, secret_enc, email, stack_name, created_at, updated_at)
 			 VALUES ($1, $2, $3, $4, $5, $6, $6)
 			 ON CONFLICT(registry, stack_name) DO UPDATE SET
-			   username=$2, secret_enc=$3, email=$4, updated_at=$6`,
+			   username=$2, secret_enc=$3, email=$4, updated_at=$6
+			 RETURNING id`,
 			c.Registry, c.Username, enc, c.Email, c.StackName, now,
-		)
+		).Scan(&id)
 		if err != nil {
 			return fmt.Errorf("inserting registry credential: %w", err)
 		}
-		// Best-effort ID hydration — sqlite returns LastInsertId; on conflict it
-		// returns the conflict-rewrite rowid which is fine.
-		if id, err := res.LastInsertId(); err == nil {
-			c.ID = id
-		}
+		c.ID = id
 		c.CreatedAt = now
 		c.UpdatedAt = now
 		return nil

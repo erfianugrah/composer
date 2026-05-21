@@ -126,7 +126,10 @@ func New(ctx context.Context, dbURL, dataDir string) (*DB, error) {
 		dialect = goose.DialectSQLite3
 	}
 
-	provider, err := goose.NewProvider(dialect, sqlDB, Migrations)
+	provider, err := goose.NewProvider(
+		dialect, sqlDB, Migrations,
+		goose.WithGoMigrations(goMigrations(dbType)...),
+	)
 	if err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("creating goose provider: %w", err)

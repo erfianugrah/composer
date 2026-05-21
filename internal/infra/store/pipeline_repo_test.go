@@ -29,7 +29,10 @@ func newTestDB(t *testing.T) *sql.DB {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
-	provider, err := goose.NewProvider(goose.DialectSQLite3, db, Migrations)
+	provider, err := goose.NewProvider(
+		goose.DialectSQLite3, db, Migrations,
+		goose.WithGoMigrations(goMigrations(DBTypeSQLite)...),
+	)
 	require.NoError(t, err)
 	_, err = provider.Up(context.Background())
 	require.NoError(t, err)
