@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -213,7 +214,6 @@ export function PipelinePage() {
   }
 
   async function handleDelete(pipelineId: string) {
-    if (!confirm("Delete this pipeline?")) return;
     const { error: err } = await apiFetch(`/api/v1/pipelines/${pipelineId}`, { method: "DELETE" });
     if (err) { setError(`Delete failed: ${err}`); return; }
     if (selectedPipeline === pipelineId) setSelectedPipeline(null);
@@ -301,14 +301,16 @@ export function PipelinePage() {
                     >
                       {running === pl.id ? "Running..." : "Run"}
                     </Button>
-                    <Button
+                    <span onClick={(e) => e.stopPropagation()}>
+                    <ConfirmButton
                       size="xs"
-                      variant="destructive"
-                      onClick={(e) => { e.stopPropagation(); handleDelete(pl.id); }}
+                      message="Delete this pipeline?"
+                      onConfirm={() => handleDelete(pl.id)}
                       data-testid={`delete-${pl.id}`}
                     >
                       Delete
-                    </Button>
+                    </ConfirmButton>
+                    </span>
                   </div>
                 </div>
               ))}

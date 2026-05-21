@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { highlightJSON } from "@/lib/json-highlight";
@@ -71,7 +72,15 @@ export function NetworksPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <code className="text-[10px] text-muted-foreground font-data">{n.id.slice(0, 12)}</code>
-                      <Button size="xs" variant="destructive" onClick={async (e) => { e.stopPropagation(); if (!confirm(`Remove network ${n.name}?`)) return; await apiFetch(`/api/v1/networks/${n.id}`, { method: "DELETE" }); fetch_(); }}>Remove</Button>
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <ConfirmButton
+                          size="xs"
+                          message={`Remove ${n.name}?`}
+                          onConfirm={async () => { await apiFetch(`/api/v1/networks/${n.id}`, { method: "DELETE" }); fetch_(); }}
+                        >
+                          Remove
+                        </ConfirmButton>
+                      </span>
                     </div>
                   </div>
                   {inspecting === n.id && (

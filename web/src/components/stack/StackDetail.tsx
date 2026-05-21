@@ -1,7 +1,8 @@
-import { useEffect, useState, lazy, Suspense } from "react";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { apiFetch } from "@/lib/api/errors";
 
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
@@ -51,15 +52,17 @@ interface StackData {
   };
 }
 
+// Color rules: reserve red for genuine alert states (unhealthy).
+// Steady non-running states are neutral — a stopped container is not an error.
 const statusColor: Record<string, string> = {
   running: "bg-cp-green/20 text-cp-green border-cp-green/30",
-  stopped: "bg-cp-red/20 text-cp-red border-cp-red/30",
+  stopped: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
+  exited: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
   partial: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
   unknown: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
   healthy: "bg-cp-green/20 text-cp-green border-cp-green/30",
   unhealthy: "bg-cp-red/20 text-cp-red border-cp-red/30",
   none: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-  exited: "bg-cp-red/20 text-cp-red border-cp-red/30",
 };
 
 export function StackDetail({ stackName }: { stackName: string }) {
@@ -70,7 +73,31 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
   const [attachGitUrl, setAttachGitUrl] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "git">("containers");
+  type TabId = "containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "git";
+  const VALID_TABS: readonly TabId[] = ["containers", "compose", "dockerfiles", "env", "diff", "logs", "console", "terminal", "stats", "webhooks", "credentials", "git"];
+  const [activeTab, setActiveTabState] = useState<TabId>(() => {
+    if (typeof window === "undefined") return "containers";
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return (t && (VALID_TABS as readonly string[]).includes(t)) ? (t as TabId) : "containers";
+  });
+  const setActiveTab = (tab: TabId) => {
+    setActiveTabState(tab);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (tab === "containers") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", tab);
+    window.history.replaceState({}, "", url);
+  };
+  // Sync tab when navigating between stacks (hash changes) or back/forward.
+  useEffect(() => {
+    const sync = () => {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      setActiveTabState((t && (VALID_TABS as readonly string[]).includes(t)) ? (t as TabId) : "containers");
+    };
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
   const [streamingAction, setStreamingAction] = useState<string | null>(null);
 
@@ -108,7 +135,6 @@ export function StackDetail({ stackName }: { stackName: string }) {
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete stack "${stackName}"? This will stop containers and remove all files.`)) return;
     setActionLoading("delete");
     setActionError("");
     const { error } = await apiFetch(`/api/v1/stacks/${stackName}?remove_volumes=true`, { method: "DELETE" });
@@ -116,7 +142,10 @@ export function StackDetail({ stackName }: { stackName: string }) {
       setActionError(`Delete failed: ${error}`);
       setActionLoading("");
     } else {
-      window.location.hash = "";
+      const url = new URL(window.location.href);
+      url.hash = "";
+      url.searchParams.delete("tab");
+      window.location.href = url.toString();
     }
   }
 
@@ -150,12 +179,18 @@ export function StackDetail({ stackName }: { stackName: string }) {
           {stack.source === "git" ? (
             <>
               <Badge variant="outline" className="text-cp-blue border-cp-blue/30">git</Badge>
-              <Button size="xs" variant="ghost" className="text-xs" onClick={async () => {
-                if (!confirm("Detach from git? This removes the .git directory but keeps your compose file.")) return;
-                const { error } = await apiFetch(`/api/v1/stacks/${stackName}/convert/local`, { method: "POST" });
-                if (error) setActionError(error);
-                else fetchStack();
-              }} data-testid="btn-detach-git">Detach Git</Button>
+              <ConfirmButton
+                size="xs"
+                variant="ghost"
+                className="text-xs"
+                message="Detach from git? Keeps compose file, removes .git."
+                onConfirm={async () => {
+                  const { error } = await apiFetch(`/api/v1/stacks/${stackName}/convert/local`, { method: "POST" });
+                  if (error) setActionError(error);
+                  else fetchStack();
+                }}
+                data-testid="btn-detach-git"
+              >Detach Git</ConfirmButton>
             </>
           ) : attachGitUrl === null ? (
             <Button size="xs" variant="ghost" className="text-xs" onClick={() => setAttachGitUrl("")} data-testid="btn-attach-git">Attach Git</Button>
@@ -184,28 +219,31 @@ export function StackDetail({ stackName }: { stackName: string }) {
             </div>
           )}
         </div>
-        <div className="flex flex-wrap gap-2" data-testid="stack-actions">
+        <div className="flex flex-wrap items-center gap-2" data-testid="stack-actions">
+          {/* Primary verbs */}
           <Button size="sm" onClick={() => { setStreamingAction("update"); setActionOutput(""); setActionError(""); }} disabled={!!actionLoading || !!streamingAction} data-testid="btn-update">
             Update
           </Button>
           <Button size="sm" variant="outline" onClick={() => doAction("up")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-deploy">
-            {actionLoading === "up" ? "Deploying..." : "Deploy"}
+            {actionLoading === "up" ? "Deploying…" : "Deploy"}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => doAction("build")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-build">
-            {actionLoading === "build" ? "Building..." : "Build & Deploy"}
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => doAction("restart")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-restart">
-            Restart
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => doAction("pull")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-pull">
-            Pull
-          </Button>
+          {/* Secondary verbs collapsed into an overflow menu */}
+          <MoreActions disabled={!!actionLoading || !!streamingAction} actionLoading={actionLoading} doAction={doAction} />
+          {/* Destructive actions, grouped at the end */}
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
           <Button size="sm" variant="destructive" onClick={() => doAction("down")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-stop">
-            Stop
+            {actionLoading === "down" ? "Stopping…" : "Stop"}
           </Button>
-          <Button size="sm" variant="destructive" onClick={handleDelete} disabled={!!actionLoading || !!streamingAction} data-testid="btn-delete">
-            {actionLoading === "delete" ? "Deleting..." : "Delete"}
-          </Button>
+          <ConfirmButton
+            size="sm"
+            message={`Delete stack "${stackName}"? Stops containers and removes all files.`}
+            confirmLabel="Delete"
+            onConfirm={handleDelete}
+            disabled={!!actionLoading || !!streamingAction}
+            data-testid="btn-delete"
+          >
+            {actionLoading === "delete" ? "Deleting…" : "Delete"}
+          </ConfirmButton>
         </div>
       </div>
 
@@ -260,17 +298,13 @@ export function StackDetail({ stackName }: { stackName: string }) {
         ))}
       </div>
 
-      {/* Tab content */}
+      {/* Tab content — the tab label already names the panel, so no nested Card chrome. */}
       {activeTab === "containers" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Containers</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {stack.containers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No containers running</p>
-            ) : (
-              <div className="space-y-2" data-testid="container-list">
+        <section aria-label="Containers">
+          {stack.containers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No containers running</p>
+          ) : (
+            <div className="space-y-2" data-testid="container-list">
                 {stack.containers.map((c) => (
                   <div key={c.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                     <div>
@@ -317,70 +351,55 @@ export function StackDetail({ stackName }: { stackName: string }) {
                         </>
                       )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {activeTab === "compose" && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm">compose.yaml</CardTitle>
-              <Button size="xs" variant="outline" onClick={async () => {
-                const { data, error } = await apiFetch<{ stdout: string; stderr: string }>(`/api/v1/stacks/${stackName}/validate`, { method: "POST" });
-                if (error) {
-                  setActionError(`Validation failed: ${error}`);
-                } else {
-                  setActionError("");
-                  setActionOutput(data?.stderr || data?.stdout || "Valid");
-                }
-              }} data-testid="btn-validate">
-                Validate
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
-              <ComposeEditor
-                content={stack.compose_content}
-                stackName={stack.name}
-                onSave={handleSaveCompose}
-              />
-            </Suspense>
-          </CardContent>
-        </Card>
+        <section aria-label="compose.yaml" className="space-y-3">
+          <div className="flex items-center justify-end">
+            <Button size="xs" variant="outline" onClick={async () => {
+              const { data, error } = await apiFetch<{ stdout: string; stderr: string }>(`/api/v1/stacks/${stackName}/validate`, { method: "POST" });
+              if (error) {
+                setActionError(`Validation failed: ${error}`);
+              } else {
+                setActionError("");
+                setActionOutput(data?.stderr || data?.stdout || "Valid");
+              }
+            }} data-testid="btn-validate">
+              Validate
+            </Button>
+          </div>
+          <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
+            <ComposeEditor
+              content={stack.compose_content}
+              stackName={stack.name}
+              onSave={handleSaveCompose}
+            />
+          </Suspense>
+        </section>
       )}
 
       {activeTab === "dockerfiles" && stack.dockerfiles && (
-        <div className="space-y-4">
+        <section aria-label="Dockerfiles" className="space-y-4">
           {stack.dockerfiles.map((df) => (
-            <Card key={df.name}>
-              <CardHeader>
-                <CardTitle className="text-sm font-data">{df.name}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <pre className="text-xs font-data bg-cp-950 border border-border rounded p-3 max-h-96 overflow-auto whitespace-pre-wrap">
-                  {highlightDockerfile(df.content)}
-                </pre>
-              </CardContent>
-            </Card>
+            <div key={df.name} className="space-y-1">
+              <div className="text-xs font-data text-muted-foreground">{df.name}</div>
+              <pre className="text-xs font-data bg-cp-950 border border-border rounded p-3 max-h-96 overflow-auto whitespace-pre-wrap">
+                {highlightDockerfile(df.content)}
+              </pre>
+            </div>
           ))}
-        </div>
+        </section>
       )}
 
       {activeTab === "env" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">.env</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <EnvEditor stackName={stackName} initialContent={stack.env_content || ""} sopsEncrypted={stack.env_sops_encrypted} />
-          </CardContent>
-        </Card>
+        <section aria-label=".env">
+          <EnvEditor stackName={stackName} initialContent={stack.env_content || ""} sopsEncrypted={stack.env_sops_encrypted} />
+        </section>
       )}
 
       {activeTab === "diff" && (
@@ -390,53 +409,40 @@ export function StackDetail({ stackName }: { stackName: string }) {
       )}
 
       {activeTab === "logs" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Logs</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
-              <LogViewer stackName={stackName} tail="200" />
-            </Suspense>
-          </CardContent>
-        </Card>
+        <section aria-label="Logs">
+          <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
+            <LogViewer stackName={stackName} tail="200" />
+          </Suspense>
+        </section>
       )}
 
       {activeTab === "console" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Console</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
-              <StackConsole stackName={stackName} />
-            </Suspense>
-          </CardContent>
-        </Card>
+        <section aria-label="Console">
+          <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
+            <StackConsole stackName={stackName} />
+          </Suspense>
+        </section>
       )}
 
       {activeTab === "terminal" && (() => {
         // Auto-select first running container if none selected
         const target = activeTerminal || stack.containers.find(c => c.status === "running")?.id;
         return (
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">Terminal</CardTitle>
-                {stack.containers.filter(c => c.status === "running").length > 1 && (
-                  <select
-                    value={target || ""}
-                    onChange={(e) => setActiveTerminal(e.target.value)}
-                    className="text-xs rounded border border-input bg-transparent px-2 py-1 font-data"
-                  >
-                    {stack.containers.filter(c => c.status === "running").map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                )}
+          <section aria-label="Terminal" className="space-y-2">
+            {stack.containers.filter(c => c.status === "running").length > 1 && (
+              <div className="flex items-center justify-end">
+                <select
+                  value={target || ""}
+                  onChange={(e) => setActiveTerminal(e.target.value)}
+                  className="text-xs rounded border border-input bg-transparent px-2 py-1 font-data"
+                >
+                  {stack.containers.filter(c => c.status === "running").map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
-            </CardHeader>
-            <CardContent>
+            )}
+            <div>
               {target ? (
                 <Suspense fallback={<div className="h-96 animate-pulse bg-muted rounded" />}>
                   <Terminal containerId={target} />
@@ -444,40 +450,35 @@ export function StackDetail({ stackName }: { stackName: string }) {
               ) : (
                 <p className="text-sm text-muted-foreground">No running containers.</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         );
       })()}
       {activeTab === "stats" && (() => {
         const target = statsContainerId || stack.containers.find(c => c.status === "running")?.id;
         return (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">Container Stats</CardTitle>
-                {stack.containers.filter(c => c.status === "running").length > 1 && (
-                  <select
-                    value={target || ""}
-                    onChange={(e) => setStatsContainerId(e.target.value)}
-                    className="text-xs rounded border border-input bg-transparent px-2 py-1 font-data"
-                  >
-                    {stack.containers.filter(c => c.status === "running").map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                )}
+          <section aria-label="Container Stats" className="space-y-2">
+            {stack.containers.filter(c => c.status === "running").length > 1 && (
+              <div className="flex items-center justify-end">
+                <select
+                  value={target || ""}
+                  onChange={(e) => setStatsContainerId(e.target.value)}
+                  className="text-xs rounded border border-input bg-transparent px-2 py-1 font-data"
+                >
+                  {stack.containers.filter(c => c.status === "running").map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
-            </CardHeader>
-            <CardContent>
-              {target ? (
-                <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
-                  <ContainerStats containerId={target} />
-                </Suspense>
-              ) : (
-                <p className="text-sm text-muted-foreground">No running containers.</p>
-              )}
-            </CardContent>
-          </Card>
+            )}
+            {target ? (
+              <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
+                <ContainerStats containerId={target} />
+              </Suspense>
+            ) : (
+              <p className="text-sm text-muted-foreground">No running containers.</p>
+            )}
+          </section>
         );
       })()}
 
@@ -491,6 +492,69 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {activeTab === "git" && stack.source === "git" && (
         <GitStatus stackName={stack.name} />
+      )}
+    </div>
+  );
+}
+
+interface MoreActionsProps {
+  disabled: boolean;
+  actionLoading: string;
+  doAction: (action: string) => void;
+}
+
+function MoreActions({ disabled, actionLoading, doAction }: MoreActionsProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
+  const items: { id: string; label: string; loadingLabel: string }[] = [
+    { id: "build", label: "Build & Deploy", loadingLabel: "Building…" },
+    { id: "restart", label: "Restart", loadingLabel: "Restarting…" },
+    { id: "pull", label: "Pull images", loadingLabel: "Pulling…" },
+  ];
+
+  return (
+    <div className="relative" ref={ref}>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-testid="btn-more-actions"
+      >
+        More ▾
+      </Button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-md">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              role="menuitem"
+              disabled={disabled}
+              onClick={() => { setOpen(false); doAction(item.id); }}
+              className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
+              data-testid={`btn-${item.id}`}
+            >
+              {actionLoading === item.id ? item.loadingLabel : item.label}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

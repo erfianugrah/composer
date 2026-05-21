@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -63,7 +64,6 @@ export function ApiKeyManagement() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Revoke this API key?")) return;
     const { error: err } = await apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" });
     if (err) setError(err);
     else fetchKeys();
@@ -141,9 +141,15 @@ export function ApiKeyManagement() {
                     {k.last_used_at ? `Used: ${new Date(k.last_used_at).toLocaleDateString()}` : "Never used"}
                   </span>
                 </div>
-                <Button size="xs" variant="destructive" onClick={() => handleDelete(k.id)} data-testid={`key-delete-${k.id}`}>
+                <ConfirmButton
+                  size="xs"
+                  message="Revoke this API key?"
+                  confirmLabel="Revoke"
+                  onConfirm={() => handleDelete(k.id)}
+                  data-testid={`key-delete-${k.id}`}
+                >
                   Revoke
-                </Button>
+                </ConfirmButton>
               </div>
             ))}
           </div>

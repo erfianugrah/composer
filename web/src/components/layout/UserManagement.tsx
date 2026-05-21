@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -65,7 +66,6 @@ export function UserManagement() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this user?")) return;
     await apiFetch(`/api/v1/users/${id}`, { method: "DELETE" });
     fetchUsers();
   }
@@ -157,9 +157,14 @@ export function UserManagement() {
                   }} data-testid={`user-pw-${u.id}`}>
                     Password
                   </Button>
-                  <Button size="xs" variant="destructive" onClick={() => handleDelete(u.id)} data-testid={`user-delete-${u.id}`}>
+                  <ConfirmButton
+                    size="xs"
+                    message="Delete this user?"
+                    onConfirm={() => handleDelete(u.id)}
+                    data-testid={`user-delete-${u.id}`}
+                  >
                     Delete
-                  </Button>
+                  </ConfirmButton>
                 </div>
               </div>
             ))}

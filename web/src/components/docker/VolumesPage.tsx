@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { highlightJSON } from "@/lib/json-highlight";
@@ -15,6 +16,7 @@ export function VolumesPage() {
   const [error, setError] = useState("");
   const [inspecting, setInspecting] = useState<string | null>(null);
   const [inspectData, setInspectData] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
 
   function fetch_() {
     apiFetch<{ volumes: VolumeInfo[] }>("/api/v1/volumes").then(({ data, error: e }) => {
@@ -49,13 +51,25 @@ export function VolumesPage() {
           {error && <p className="text-sm text-cp-red mt-2">{error}</p>}
         </CardContent>
       </Card>
-      <div className="flex justify-end">
-        <Button size="sm" variant="destructive" onClick={async () => {
-          if (!confirm("Remove all unused volumes? This cannot be undone.")) return;
-          const { data } = await apiFetch<{ space_reclaimed: string }>("/api/v1/volumes/prune", { method: "POST" });
-          if (data) alert(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
-          fetch_();
-        }}>Prune Unused</Button>
+      <div className="flex flex-col items-end gap-2">
+        <ConfirmButton
+          size="sm"
+          message="Remove all unused volumes? Cannot be undone."
+          onConfirm={async () => {
+            const { data, error } = await apiFetch<{ space_reclaimed: string }>("/api/v1/volumes/prune", { method: "POST" });
+            if (error) setNotice(`Prune failed: ${error}`);
+            else if (data) setNotice(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
+            fetch_();
+          }}
+        >
+          Prune Unused
+        </ConfirmButton>
+        {notice && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="prune-result">
+            <span>{notice}</span>
+            <button className="underline" onClick={() => setNotice("")}>dismiss</button>
+          </div>
+        )}
       </div>
       <Card>
         <CardHeader><div className="flex items-center justify-between"><CardTitle className="text-sm">Volumes ({volumes.length})</CardTitle><Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button></div></CardHeader>
@@ -69,7 +83,15 @@ export function VolumesPage() {
                       <div className="font-medium text-sm">{v.name}</div>
                       <div className="text-[10px] text-muted-foreground font-data">{v.driver} &middot; {v.mountpoint}</div>
                     </div>
-                    <Button size="xs" variant="destructive" onClick={async (e) => { e.stopPropagation(); if (!confirm(`Remove volume ${v.name}?`)) return; await apiFetch(`/api/v1/volumes/${v.name}`, { method: "DELETE" }); fetch_(); }}>Remove</Button>
+                    <span onClick={(e) => e.stopPropagation()}>
+                      <ConfirmButton
+                        size="xs"
+                        message={`Remove ${v.name}?`}
+                        onConfirm={async () => { await apiFetch(`/api/v1/volumes/${v.name}`, { method: "DELETE" }); fetch_(); }}
+                      >
+                        Remove
+                      </ConfirmButton>
+                    </span>
                   </div>
                   {inspecting === v.name && (
                     <pre className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap">

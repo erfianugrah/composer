@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -134,12 +135,15 @@ export function SystemConfig() {
                 <div key={key.path} className="flex items-center gap-3 rounded-lg border border-border p-2">
                   <code className="text-xs font-data flex-1">{key.path}</code>
                   {statusBadge(key.encrypted, key.encrypted ? "Encrypted" : "Plaintext")}
-                  <Button size="xs" variant="destructive" onClick={async () => {
-                    if (!confirm(`Delete ${key.name}?`)) return;
-                    await apiFetch(`/api/v1/system/config/ssh-keys/${key.name}`, { method: "DELETE" });
-                    const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
-                    if (r) setConfig(r);
-                  }}>Delete</Button>
+                  <ConfirmButton
+                    size="xs"
+                    message={`Delete ${key.name}?`}
+                    onConfirm={async () => {
+                      await apiFetch(`/api/v1/system/config/ssh-keys/${key.name}`, { method: "DELETE" });
+                      const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
+                      if (r) setConfig(r);
+                    }}
+                  >Delete</ConfirmButton>
                 </div>
               ))}
             </div>

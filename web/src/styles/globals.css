@@ -83,6 +83,9 @@
   font-family: var(--font-mono);
 }
 
+/* Decorative glow + entrance animation: kept as opt-in for branded surfaces
+ * (login screen wordmark). Stripped from operator-facing chrome so the UI
+ * reads as a tool, not a hero page. */
 .glow-purple {
   text-shadow:
     0 0 7px rgba(197, 116, 221, 0.6),
@@ -110,6 +113,23 @@
 
 .animate-fade-in-up {
   animation: fade-in-up 0.4s ease-out both;
+}
+
+/* Respect user motion preferences — disable all decorative motion,
+ * collapse skeleton pulses to a static state. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .glow-purple,
+  .glow-green {
+    text-shadow: none;
+  }
 }
 
 /* ── Scrollbar ── */

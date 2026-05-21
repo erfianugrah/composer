@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -13,7 +14,7 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
 }
 
-function PruneDropdown({ onPrune }: { onPrune: () => void }) {
+function PruneDropdown({ onPrune, onResult }: { onPrune: () => void; onResult: (msg: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -28,29 +29,29 @@ function PruneDropdown({ onPrune }: { onPrune: () => void }) {
 
   async function prune(all: boolean) {
     setOpen(false);
-    const label = all ? "all unused images (including tagged)" : "dangling (untagged) images only";
-    if (!confirm(`Remove ${label}? This cannot be undone.`)) return;
-    const { data } = await apiFetch<{ space_reclaimed: string }>(
+    const { data, error } = await apiFetch<{ space_reclaimed: string }>(
       `/api/v1/images/prune${all ? "?all=true" : ""}`, { method: "POST" },
     );
-    if (data) alert(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
+    if (error) onResult(`Prune failed: ${error}`);
+    else if (data) onResult(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
     onPrune();
   }
 
+  // Dropdown items already require an explicit choice; each row is its own confirm.
   return (
     <div className="flex justify-end relative" ref={ref}>
       <Button size="sm" variant="destructive" onClick={() => setOpen((v) => !v)}>
         Prune Unused
       </Button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 min-w-[200px] rounded-md border border-border bg-popover p-1 shadow-md">
+        <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] rounded-md border border-border bg-popover p-1 shadow-md">
           <button onClick={() => prune(false)} className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors">
             Dangling only
-            <span className="block text-[10px] text-muted-foreground">Untagged images</span>
+            <span className="block text-[10px] text-muted-foreground">Untagged images — cannot be undone</span>
           </button>
           <button onClick={() => prune(true)} className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors">
             All unused
-            <span className="block text-[10px] text-muted-foreground">Including old tagged versions</span>
+            <span className="block text-[10px] text-muted-foreground">Including old tagged versions — cannot be undone</span>
           </button>
         </div>
       )}
@@ -64,6 +65,7 @@ export function ImagesPage() {
   const [ref, setRef] = useState("");
   const [pulling, setPulling] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   function fetch_() {
     apiFetch<{ images: ImageInfo[] }>("/api/v1/images").then(({ data, error: e }) => {
@@ -96,7 +98,15 @@ export function ImagesPage() {
           {error && <p className="text-sm text-cp-red mt-2">{error}</p>}
         </CardContent>
       </Card>
-      <PruneDropdown onPrune={fetch_} />
+      <div className="space-y-2">
+        <PruneDropdown onPrune={fetch_} onResult={setNotice} />
+        {notice && (
+          <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground" data-testid="prune-result">
+            <span>{notice}</span>
+            <button className="underline" onClick={() => setNotice("")}>dismiss</button>
+          </div>
+        )}
+      </div>
       <Card>
         <CardHeader><div className="flex items-center justify-between"><CardTitle className="text-sm">Images</CardTitle><Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button></div></CardHeader>
         <CardContent>
@@ -111,10 +121,16 @@ export function ImagesPage() {
                       {img.tags?.length > 1 && ` &middot; +${img.tags.length - 1} tags`}
                     </div>
                   </div>
-                  <Button size="xs" variant="destructive" onClick={async () => {
-                    if (!confirm(`Remove image ${img.tags?.[0] || img.id}?`)) return;
-                    await apiFetch(`/api/v1/images/${img.id}`, { method: "DELETE" }); fetch_();
-                  }}>Remove</Button>
+                  <ConfirmButton
+                    size="xs"
+                    message={`Remove ${img.tags?.[0] || img.id.slice(0, 12)}?`}
+                    onConfirm={async () => {
+                      await apiFetch(`/api/v1/images/${img.id}`, { method: "DELETE" });
+                      fetch_();
+                    }}
+                  >
+                    Remove
+                  </ConfirmButton>
                 </div>
               ))}
             </div>

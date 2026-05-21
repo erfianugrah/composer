@@ -31,7 +31,10 @@ export function StacksPage() {
 
   function handleCreated(name: string) {
     setCreateMode(null);
-    window.location.hash = name;
+    const url = new URL(window.location.href);
+    url.hash = name;
+    url.searchParams.delete("tab");
+    window.history.pushState({}, "", url);
     setSelectedStack(name);
   }
 
@@ -51,7 +54,13 @@ export function StacksPage() {
         <div className="mb-4">
           <Button
             variant="ghost" size="sm"
-            onClick={() => { window.location.hash = ""; setSelectedStack(null); }}
+            onClick={() => {
+              const url = new URL(window.location.href);
+              url.hash = "";
+              url.searchParams.delete("tab");
+              window.history.pushState({}, "", url);
+              setSelectedStack(null);
+            }}
             data-testid="back-to-stacks"
           >
             &larr; Back to Stacks

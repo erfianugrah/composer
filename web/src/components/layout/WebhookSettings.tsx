@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -88,7 +89,6 @@ export function WebhookSettings() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this webhook?")) return;
     const { error: err } = await apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" });
     if (err) setError(err);
     else fetchWebhooks();
@@ -222,14 +222,14 @@ export function WebhookSettings() {
                     >
                       {deliveriesFor === wh.id ? "Hide" : "History"}
                     </Button>
-                    <Button
+                    <ConfirmButton
                       size="xs"
-                      variant="destructive"
-                      onClick={() => handleDelete(wh.id)}
+                      message="Delete this webhook?"
+                      onConfirm={() => handleDelete(wh.id)}
                       data-testid={`webhook-delete-${wh.id}`}
                     >
                       Delete
-                    </Button>
+                    </ConfirmButton>
                   </div>
                   {/* Delivery history for this webhook */}
                   {deliveriesFor === wh.id && (
