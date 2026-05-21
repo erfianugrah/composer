@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/data-table";
+import { clickableRow } from "@/lib/row-interactions";
 import { apiFetch } from "@/lib/api/errors";
 
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
@@ -100,6 +101,12 @@ export function StackDetail({ stackName }: { stackName: string }) {
   }, []);
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
   const [streamingAction, setStreamingAction] = useState<string | null>(null);
+
+  // Master/detail state for the Containers tab. When set, the inspector
+  // panel below the table reveals Logs / Stats / Terminal for that container.
+  type InspectPane = "logs" | "stats" | "terminal";
+  const [inspectContainerId, setInspectContainerId] = useState<string | null>(null);
+  const [inspectPane, setInspectPane] = useState<InspectPane>("logs");
 
   const fetchStack = async () => {
     const { data, error } = await apiFetch<StackData>(`/api/v1/stacks/${stackName}`);
@@ -316,8 +323,23 @@ export function StackDetail({ stackName }: { stackName: string }) {
               </THead>
               <TBody>
                 {stack.containers.map((c) => (
-                  <TR key={c.id}>
-                    <TD className="font-medium truncate max-w-[260px]" title={c.name}>{c.name}</TD>
+                  <TR
+                    key={c.id}
+                    className={`cursor-pointer ${inspectContainerId === c.id ? "bg-cp-purple/5" : ""}`}
+                    aria-expanded={inspectContainerId === c.id}
+                    {...clickableRow(
+                      () => setInspectContainerId((cur) => (cur === c.id ? null : c.id)),
+                      inspectContainerId === c.id ? `Hide inspector for ${c.name}` : `Inspect ${c.name}`,
+                    )}
+                  >
+                    <TD className="font-medium truncate max-w-[260px]" title={c.name}>
+                      <span className="flex items-center gap-2">
+                        <span className="text-muted-foreground text-xs select-none" aria-hidden="true">
+                          {inspectContainerId === c.id ? "▾" : "▸"}
+                        </span>
+                        {c.name}
+                      </span>
+                    </TD>
                     <TD>
                       <div className="flex items-center gap-1">
                         {c.completed_one_off ? (
@@ -331,7 +353,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
                       </div>
                     </TD>
                     <TD className="font-data text-muted-foreground truncate max-w-[280px]" title={c.image}>{c.image}</TD>
-                    <TD>
+                    <TD onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1 justify-end">
                         {c.status !== "running" && !c.completed_one_off && (
                           <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
@@ -348,14 +370,14 @@ export function StackDetail({ stackName }: { stackName: string }) {
                             </Button>
                             <Button
                               size="xs" variant="ghost"
-                              onClick={() => { setActiveTerminal(c.id); setActiveTab("terminal"); }}
+                              onClick={() => { setInspectContainerId(c.id); setInspectPane("terminal"); }}
                               data-testid={`terminal-btn-${c.id}`}
                             >
                               Terminal
                             </Button>
                             <Button
                               size="xs" variant="ghost"
-                              onClick={() => { setStatsContainerId(c.id); setActiveTab("stats"); }}
+                              onClick={() => { setInspectContainerId(c.id); setInspectPane("stats"); }}
                               data-testid={`stats-btn-${c.id}`}
                             >
                               Stats
@@ -369,6 +391,83 @@ export function StackDetail({ stackName }: { stackName: string }) {
               </TBody>
             </Table>
           )}
+          {/* Master/detail inspector — reveals when a row is selected. */}
+          {inspectContainerId && (() => {
+            const c = stack.containers.find((x) => x.id === inspectContainerId);
+            if (!c) return null;
+            const isRunning = c.status === "running";
+            const panes: { id: InspectPane; label: string; enabled: boolean }[] = [
+              { id: "logs", label: "Logs", enabled: true },
+              { id: "stats", label: "Stats", enabled: isRunning },
+              { id: "terminal", label: "Terminal", enabled: isRunning },
+            ];
+            return (
+              <section
+                aria-label={`Inspector for ${c.name}`}
+                className="mt-4 rounded-md border border-border"
+                data-testid={`inspector-${c.id}`}
+              >
+                <header className="flex items-center justify-between border-b border-border bg-cp-purple/5 px-3 py-2 text-xs">
+                  <span className="font-medium">
+                    {c.name}
+                    <span className="text-muted-foreground ml-2 font-data">{c.id.slice(0, 12)}</span>
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {panes.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => p.enabled && setInspectPane(p.id)}
+                        disabled={!p.enabled}
+                        aria-selected={inspectPane === p.id}
+                        className={`px-2 py-1 rounded text-xs transition-colors ${
+                          inspectPane === p.id
+                            ? "bg-cp-purple/20 text-cp-purple"
+                            : p.enabled
+                              ? "text-muted-foreground hover:text-foreground hover:bg-accent/30"
+                              : "text-muted-foreground/50 cursor-not-allowed"
+                        }`}
+                        data-testid={`inspector-pane-${p.id}`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setInspectContainerId(null)}
+                      aria-label="Close inspector"
+                      className="ml-2 px-2 py-1 rounded text-xs text-muted-foreground hover:text-cp-red hover:bg-accent/30"
+                      data-testid="inspector-close"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </header>
+                <div className="p-3">
+                  {inspectPane === "logs" && (
+                    <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
+                      <LogViewer containerId={c.id} tail="100" maxLines={300} />
+                    </Suspense>
+                  )}
+                  {inspectPane === "stats" && isRunning && (
+                    <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
+                      <ContainerStats containerId={c.id} />
+                    </Suspense>
+                  )}
+                  {inspectPane === "terminal" && isRunning && (
+                    <Suspense fallback={<div className="h-96 animate-pulse bg-muted rounded" />}>
+                      <Terminal containerId={c.id} />
+                    </Suspense>
+                  )}
+                  {!isRunning && (inspectPane === "stats" || inspectPane === "terminal") && (
+                    <p className="text-sm text-muted-foreground">
+                      Container is not running. Start it to view {inspectPane}.
+                    </p>
+                  )}
+                </div>
+              </section>
+            );
+          })()}
         </section>
       )}
 

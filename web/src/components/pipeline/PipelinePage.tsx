@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
-import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
 import { FilterInput } from "@/components/ui/filter-input";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
