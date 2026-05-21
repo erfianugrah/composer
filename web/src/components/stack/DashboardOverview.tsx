@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { apiFetch } from "@/lib/api/errors";
+import { useSort } from "@/lib/use-sort";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface StackSummary {
@@ -23,6 +25,27 @@ const statusColor: Record<string, string> = {
 };
 
 type StatusFilter = "all" | "running" | "stopped" | "partial";
+type SortKey = "name" | "status" | "containers" | "source" | "updated";
+
+const accessors = {
+  name: (s: StackSummary) => s.name.toLowerCase(),
+  status: (s: StackSummary) => s.status,
+  containers: (s: StackSummary) => s.container_count,
+  source: (s: StackSummary) => s.source,
+  updated: (s: StackSummary) => s.updated_at || "",
+} satisfies Record<SortKey, (s: StackSummary) => string | number>;
+
+function formatRelative(iso: string): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const diff = (Date.now() - then) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
 
 export function DashboardOverview() {
   const [stacks, setStacks] = useState<StackSummary[]>([]);
@@ -63,6 +86,14 @@ export function DashboardOverview() {
     return () => clearInterval(interval);
   }, []);
 
+  const filtered = stacks.filter((s) => {
+    if (statusFilter !== "all" && s.status !== statusFilter) return false;
+    if (filter && !s.name.toLowerCase().includes(filter.toLowerCase())) return false;
+    return true;
+  });
+
+  const { sorted, sortKey, direction, toggle } = useSort<StackSummary, SortKey>(filtered, accessors, "name", "asc");
+
   if (loading) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -90,11 +121,6 @@ export function DashboardOverview() {
 
   const running = stacks.filter((s) => s.status === "running").length;
   const stopped = stacks.filter((s) => s.status === "stopped").length;
-  const filtered = stacks.filter((s) => {
-    if (statusFilter !== "all" && s.status !== statusFilter) return false;
-    if (filter && !s.name.toLowerCase().includes(filter.toLowerCase())) return false;
-    return true;
-  });
 
   return (
     <ErrorBoundary>
@@ -107,11 +133,13 @@ export function DashboardOverview() {
         <StatCard label="Git-backed" value={stacks.filter((s) => s.source === "git").length} color="text-cp-blue" />
       </div>
 
-      {/* Stack list */}
+      {/* Stack table */}
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
-            <CardTitle className="text-sm shrink-0">Stacks</CardTitle>
+            <CardTitle className="text-sm shrink-0">
+              Stacks <span className="text-muted-foreground font-normal">({sorted.length}{sorted.length !== stacks.length ? ` of ${stacks.length}` : ""})</span>
+            </CardTitle>
             {stacks.length > 0 && (
               <>
                 <input
@@ -143,40 +171,46 @@ export function DashboardOverview() {
             <p className="text-sm text-muted-foreground" data-testid="no-stacks">
               No stacks yet. Create your first stack to get started.
             </p>
-          ) : filtered.length === 0 ? (
+          ) : sorted.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="no-stacks-match">
               No stacks match the current filter.
             </p>
           ) : (
-            <div className="space-y-2" data-testid="stack-list">
-              {filtered.map((stack) => (
-                <a
-                  key={stack.name}
-                  href={`/stacks#${stack.name}`}
-                  className="flex items-center justify-between rounded-lg border border-border p-3 hover:bg-accent/50 transition-colors"
-                  data-testid={`stack-${stack.name}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="font-medium text-sm">{stack.name}</span>
-                    {stack.source === "git" && (
-                      <Badge variant="outline" className="text-cp-blue border-cp-blue/30 text-[10px]">
-                        git
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {stack.container_count > 0 && (
-                      <span className="text-[10px] font-data text-muted-foreground">
-                        {stack.running_count}/{stack.container_count} containers
-                      </span>
-                    )}
-                    <Badge className={statusColor[stack.status] || statusColor.unknown}>
-                      {stack.status}
-                    </Badge>
-                  </div>
-                </a>
-              ))}
-            </div>
+            <Table data-testid="stack-list">
+              <THead>
+                <TR>
+                  <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
+                  <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
+                  <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className="text-right">Containers</SortHeader>
+                  <SortHeader active={sortKey === "source"} direction={direction} onSort={() => toggle("source")}>Source</SortHeader>
+                  <SortHeader active={sortKey === "updated"} direction={direction} onSort={() => toggle("updated")}>Updated</SortHeader>
+                </TR>
+              </THead>
+              <TBody>
+                {sorted.map((stack) => (
+                  <TR
+                    key={stack.name}
+                    className="cursor-pointer"
+                    onClick={() => { window.location.href = `/stacks#${stack.name}`; }}
+                    data-testid={`stack-${stack.name}`}
+                  >
+                    <TD className="font-medium">
+                      <a href={`/stacks#${stack.name}`} className="hover:text-cp-purple" onClick={(e) => e.stopPropagation()}>
+                        {stack.name}
+                      </a>
+                    </TD>
+                    <TD>
+                      <Badge className={statusColor[stack.status] || statusColor.unknown}>{stack.status}</Badge>
+                    </TD>
+                    <TD className="text-right font-data tabular-nums text-muted-foreground">
+                      {stack.container_count > 0 ? `${stack.running_count}/${stack.container_count}` : "—"}
+                    </TD>
+                    <TD className="font-data text-muted-foreground">{stack.source}</TD>
+                    <TD className="font-data text-muted-foreground" title={stack.updated_at}>{formatRelative(stack.updated_at)}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
           )}
         </CardContent>
       </Card>

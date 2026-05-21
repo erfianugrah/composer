@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
+import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { useSort } from "@/lib/use-sort";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -59,6 +61,13 @@ function PruneDropdown({ onPrune, onResult }: { onPrune: () => void; onResult: (
   );
 }
 
+type SortKey = "tag" | "size" | "created";
+const accessors = {
+  tag: (i: ImageInfo) => (i.tags?.[0] || "~untagged").toLowerCase(),
+  size: (i: ImageInfo) => i.size,
+  created: (i: ImageInfo) => i.created,
+} satisfies Record<SortKey, (i: ImageInfo) => string | number>;
+
 export function ImagesPage() {
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +75,17 @@ export function ImagesPage() {
   const [pulling, setPulling] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [filter, setFilter] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("q") || "";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (filter) url.searchParams.set("q", filter); else url.searchParams.delete("q");
+    window.history.replaceState({}, "", url);
+  }, [filter]);
 
   function fetch_() {
     apiFetch<{ images: ImageInfo[] }>("/api/v1/images").then(({ data, error: e }) => {
@@ -76,6 +96,12 @@ export function ImagesPage() {
   useEffect(() => { fetch_(); }, []);
 
   const totalSize = images.reduce((sum, img) => sum + img.size, 0);
+  const filtered = images.filter((img) => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return img.tags.some((t) => t.toLowerCase().includes(q)) || img.id.toLowerCase().includes(q);
+  });
+  const { sorted, sortKey, direction, toggle } = useSort<ImageInfo, SortKey>(filtered, accessors, "tag", "asc");
 
   return (
     <ErrorBoundary>
@@ -108,32 +134,66 @@ export function ImagesPage() {
         )}
       </div>
       <Card>
-        <CardHeader><div className="flex items-center justify-between"><CardTitle className="text-sm">Images</CardTitle><Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button></div></CardHeader>
+        <CardHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-sm shrink-0">
+              Images <span className="text-muted-foreground font-normal">({sorted.length}{sorted.length !== images.length ? ` of ${images.length}` : ""})</span>
+            </CardTitle>
+            {images.length > 0 && (
+              <input
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter by tag or ID…"
+                className="ml-auto h-7 w-56 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                data-testid="image-filter"
+              />
+            )}
+            <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
+          </div>
+        </CardHeader>
         <CardContent>
-          {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : images.length === 0 ? <p className="text-sm text-muted-foreground">No images.</p> : (
-            <div className="space-y-1">
-              {images.map((img) => (
-                <div key={img.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div>
-                    <div className="font-medium text-sm font-data">{img.tags?.length > 0 ? img.tags[0] : "<untagged>"}</div>
-                    <div className="text-[10px] text-muted-foreground font-data">
-                      {img.id} &middot; {formatSize(img.size)} &middot; {new Date(img.created * 1000).toLocaleDateString()}
-                      {img.tags?.length > 1 && ` &middot; +${img.tags.length - 1} tags`}
-                    </div>
-                  </div>
-                  <ConfirmButton
-                    size="xs"
-                    message={`Remove ${img.tags?.[0] || img.id.slice(0, 12)}?`}
-                    onConfirm={async () => {
-                      await apiFetch(`/api/v1/images/${img.id}`, { method: "DELETE" });
-                      fetch_();
-                    }}
-                  >
-                    Remove
-                  </ConfirmButton>
-                </div>
-              ))}
-            </div>
+          {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : images.length === 0 ? <p className="text-sm text-muted-foreground">No images.</p> : sorted.length === 0 ? <p className="text-sm text-muted-foreground">No images match the current filter.</p> : (
+            <Table>
+              <THead>
+                <TR>
+                  <SortHeader active={sortKey === "tag"} direction={direction} onSort={() => toggle("tag")}>Tag</SortHeader>
+                  <TH>ID</TH>
+                  <SortHeader active={sortKey === "size"} direction={direction} onSort={() => toggle("size")} className="text-right">Size</SortHeader>
+                  <SortHeader active={sortKey === "created"} direction={direction} onSort={() => toggle("created")}>Created</SortHeader>
+                  <TH className="text-right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {sorted.map((img) => (
+                  <TR key={img.id}>
+                    <TD className="font-data">
+                      <div className="font-medium truncate max-w-[320px]" title={img.tags.join(", ") || "<untagged>"}>
+                        {img.tags?.length > 0 ? img.tags[0] : "<untagged>"}
+                      </div>
+                      {img.tags?.length > 1 && (
+                        <div className="text-[10px] text-muted-foreground">+{img.tags.length - 1} more</div>
+                      )}
+                    </TD>
+                    <TD className="font-data text-muted-foreground"><code className="text-[10px]">{img.id.replace(/^sha256:/, "").slice(0, 12)}</code></TD>
+                    <TD className="text-right font-data tabular-nums">{formatSize(img.size)}</TD>
+                    <TD className="font-data text-muted-foreground">{new Date(img.created * 1000).toLocaleDateString()}</TD>
+                    <TD className="text-right">
+                      <ConfirmButton
+                        size="xs"
+                        message={`Remove ${img.tags?.[0] || img.id.slice(0, 12)}?`}
+                        onConfirm={async () => {
+                          await apiFetch(`/api/v1/images/${img.id}`, { method: "DELETE" });
+                          fetch_();
+                        }}
+                      >
+                        Remove
+                      </ConfirmButton>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
           )}
         </CardContent>
       </Card>

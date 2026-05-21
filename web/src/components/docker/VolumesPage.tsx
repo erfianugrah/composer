@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { useSort } from "@/lib/use-sort";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +11,12 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface VolumeInfo { name: string; driver: string; mountpoint: string; created_at: string; }
 
+type SortKey = "name" | "driver";
+const accessors = {
+  name: (v: VolumeInfo) => v.name.toLowerCase(),
+  driver: (v: VolumeInfo) => v.driver,
+} satisfies Record<SortKey, (v: VolumeInfo) => string>;
+
 export function VolumesPage() {
   const [volumes, setVolumes] = useState<VolumeInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +25,17 @@ export function VolumesPage() {
   const [inspecting, setInspecting] = useState<string | null>(null);
   const [inspectData, setInspectData] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
+  const [filter, setFilter] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("q") || "";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (filter) url.searchParams.set("q", filter); else url.searchParams.delete("q");
+    window.history.replaceState({}, "", url);
+  }, [filter]);
 
   function fetch_() {
     apiFetch<{ volumes: VolumeInfo[] }>("/api/v1/volumes").then(({ data, error: e }) => {
@@ -25,6 +44,13 @@ export function VolumesPage() {
     });
   }
   useEffect(() => { fetch_(); }, []);
+
+  const filtered = volumes.filter((v) => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return v.name.toLowerCase().includes(q) || v.mountpoint.toLowerCase().includes(q) || v.driver.toLowerCase().includes(q);
+  });
+  const { sorted, sortKey, direction, toggle } = useSort<VolumeInfo, SortKey>(filtered, accessors, "name", "asc");
 
   async function handleInspect(volName: string) {
     if (inspecting === volName) { setInspecting(null); return; }
@@ -72,35 +98,65 @@ export function VolumesPage() {
         )}
       </div>
       <Card>
-        <CardHeader><div className="flex items-center justify-between"><CardTitle className="text-sm">Volumes ({volumes.length})</CardTitle><Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button></div></CardHeader>
+        <CardHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-sm shrink-0">
+              Volumes <span className="text-muted-foreground font-normal">({sorted.length}{sorted.length !== volumes.length ? ` of ${volumes.length}` : ""})</span>
+            </CardTitle>
+            {volumes.length > 0 && (
+              <input
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter…"
+                className="ml-auto h-7 w-48 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                data-testid="volume-filter"
+              />
+            )}
+            <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
+          </div>
+        </CardHeader>
         <CardContent>
-          {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : volumes.length === 0 ? <p className="text-sm text-muted-foreground">No volumes.</p> : (
-            <div className="space-y-1">
-              {volumes.map((v) => (
-                <div key={v.name}>
-                  <div className="flex items-center justify-between rounded-lg border border-border p-3 cursor-pointer hover:bg-accent/30 transition-colors" onClick={() => handleInspect(v.name)}>
-                    <div>
-                      <div className="font-medium text-sm">{v.name}</div>
-                      <div className="text-[10px] text-muted-foreground font-data">{v.driver} &middot; {v.mountpoint}</div>
-                    </div>
-                    <span onClick={(e) => e.stopPropagation()}>
-                      <ConfirmButton
-                        size="xs"
-                        message={`Remove ${v.name}?`}
-                        onConfirm={async () => { await apiFetch(`/api/v1/volumes/${v.name}`, { method: "DELETE" }); fetch_(); }}
-                      >
-                        Remove
-                      </ConfirmButton>
-                    </span>
-                  </div>
-                  {inspecting === v.name && (
-                    <pre className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap">
-                      {inspectData[v.name] ? highlightJSON(inspectData[v.name]) : "Loading..."}
-                    </pre>
-                  )}
-                </div>
-              ))}
-            </div>
+          {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : volumes.length === 0 ? <p className="text-sm text-muted-foreground">No volumes.</p> : sorted.length === 0 ? <p className="text-sm text-muted-foreground">No volumes match the current filter.</p> : (
+            <Table>
+              <THead>
+                <TR>
+                  <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
+                  <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")}>Driver</SortHeader>
+                  <TH>Mountpoint</TH>
+                  <TH className="text-right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {sorted.map((v) => (
+                  <Fragment key={v.name}>
+                    <TR className="cursor-pointer" onClick={() => handleInspect(v.name)} aria-expanded={inspecting === v.name}>
+                      <TD className="font-medium">{v.name}</TD>
+                      <TD className="font-data text-muted-foreground">{v.driver}</TD>
+                      <TD className="font-data text-muted-foreground truncate max-w-[420px]" title={v.mountpoint}>{v.mountpoint}</TD>
+                      <TD className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <ConfirmButton
+                          size="xs"
+                          message={`Remove ${v.name}?`}
+                          onConfirm={async () => { await apiFetch(`/api/v1/volumes/${v.name}`, { method: "DELETE" }); fetch_(); }}
+                        >
+                          Remove
+                        </ConfirmButton>
+                      </TD>
+                    </TR>
+                    {inspecting === v.name && (
+                      <tr className="bg-cp-950/50">
+                        <td colSpan={4} className="px-3 py-3 border-b border-border/40">
+                          <pre className="text-xs font-data max-h-96 overflow-auto whitespace-pre-wrap">
+                            {inspectData[v.name] ? highlightJSON(inspectData[v.name]) : "Loading…"}
+                          </pre>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </TBody>
+            </Table>
           )}
         </CardContent>
       </Card>

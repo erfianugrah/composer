@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { useSort } from "@/lib/use-sort";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +12,14 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface NetworkInfo { id: string; name: string; driver: string; scope: string; internal: boolean; containers: number; }
 
+type SortKey = "name" | "driver" | "scope" | "containers";
+const accessors = {
+  name: (n: NetworkInfo) => n.name.toLowerCase(),
+  driver: (n: NetworkInfo) => n.driver,
+  scope: (n: NetworkInfo) => n.scope,
+  containers: (n: NetworkInfo) => n.containers,
+} satisfies Record<SortKey, (n: NetworkInfo) => string | number>;
+
 export function NetworksPage() {
   const [networks, setNetworks] = useState<NetworkInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +28,17 @@ export function NetworksPage() {
   const [error, setError] = useState("");
   const [inspecting, setInspecting] = useState<string | null>(null);
   const [inspectData, setInspectData] = useState<Record<string, string>>({});
+  const [filter, setFilter] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("q") || "";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (filter) url.searchParams.set("q", filter); else url.searchParams.delete("q");
+    window.history.replaceState({}, "", url);
+  }, [filter]);
 
   function fetch_() {
     apiFetch<{ networks: NetworkInfo[] }>("/api/v1/networks").then(({ data, error: e }) => {
@@ -26,6 +47,13 @@ export function NetworksPage() {
     });
   }
   useEffect(() => { fetch_(); }, []);
+
+  const filtered = networks.filter((n) => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return n.name.toLowerCase().includes(q) || n.driver.toLowerCase().includes(q);
+  });
+  const { sorted, sortKey, direction, toggle } = useSort<NetworkInfo, SortKey>(filtered, accessors, "name", "asc");
 
   async function handleInspect(id: string) {
     if (inspecting === id) { setInspecting(null); return; }
@@ -56,23 +84,52 @@ export function NetworksPage() {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><div className="flex items-center justify-between"><CardTitle className="text-sm">Networks ({networks.length})</CardTitle><Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button></div></CardHeader>
+        <CardHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-sm shrink-0">
+              Networks <span className="text-muted-foreground font-normal">({sorted.length}{sorted.length !== networks.length ? ` of ${networks.length}` : ""})</span>
+            </CardTitle>
+            {networks.length > 0 && (
+              <input
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter…"
+                className="ml-auto h-7 w-48 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                data-testid="network-filter"
+              />
+            )}
+            <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
+          </div>
+        </CardHeader>
         <CardContent>
-          {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : networks.length === 0 ? <p className="text-sm text-muted-foreground">No networks.</p> : (
-            <div className="space-y-1">
-              {networks.map((n) => (
-                <div key={n.id}>
-                  <div className="flex items-center justify-between rounded-lg border border-border p-3 cursor-pointer hover:bg-accent/30 transition-colors" onClick={() => handleInspect(n.id)}>
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium text-sm">{n.name}</span>
-                      <Badge variant="outline" className="text-[10px]">{n.driver}</Badge>
-                      <span className="text-[10px] text-muted-foreground font-data">{n.scope}</span>
-                      {n.internal && <Badge variant="outline" className="text-[10px] text-cp-peach border-cp-peach/30">internal</Badge>}
-                      {n.containers > 0 && <span className="text-[10px] text-cp-green font-data">{n.containers} containers</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <code className="text-[10px] text-muted-foreground font-data">{n.id.slice(0, 12)}</code>
-                      <span onClick={(e) => e.stopPropagation()}>
+          {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : networks.length === 0 ? <p className="text-sm text-muted-foreground">No networks.</p> : sorted.length === 0 ? <p className="text-sm text-muted-foreground">No networks match the current filter.</p> : (
+            <Table>
+              <THead>
+                <TR>
+                  <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
+                  <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")}>Driver</SortHeader>
+                  <SortHeader active={sortKey === "scope"} direction={direction} onSort={() => toggle("scope")}>Scope</SortHeader>
+                  <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className="text-right">Containers</SortHeader>
+                  <TH>ID</TH>
+                  <TH className="text-right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {sorted.map((n) => (
+                  <Fragment key={n.id}>
+                    <TR className="cursor-pointer" onClick={() => handleInspect(n.id)} aria-expanded={inspecting === n.id}>
+                      <TD className="font-medium">
+                        <span className="flex items-center gap-2">
+                          {n.name}
+                          {n.internal && <Badge variant="outline" className="text-[10px] text-cp-peach border-cp-peach/30">internal</Badge>}
+                        </span>
+                      </TD>
+                      <TD className="font-data text-muted-foreground">{n.driver}</TD>
+                      <TD className="font-data text-muted-foreground">{n.scope}</TD>
+                      <TD className="text-right font-data tabular-nums">{n.containers > 0 ? n.containers : <span className="text-muted-foreground">—</span>}</TD>
+                      <TD className="font-data text-muted-foreground"><code className="text-[10px]">{n.id.slice(0, 12)}</code></TD>
+                      <TD className="text-right" onClick={(e) => e.stopPropagation()}>
                         <ConfirmButton
                           size="xs"
                           message={`Remove ${n.name}?`}
@@ -80,17 +137,21 @@ export function NetworksPage() {
                         >
                           Remove
                         </ConfirmButton>
-                      </span>
-                    </div>
-                  </div>
-                  {inspecting === n.id && (
-                    <pre className="text-xs font-data bg-cp-950 border border-border border-t-0 rounded-b-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap">
-                      {inspectData[n.id] ? highlightJSON(inspectData[n.id]) : "Loading..."}
-                    </pre>
-                  )}
-                </div>
-              ))}
-            </div>
+                      </TD>
+                    </TR>
+                    {inspecting === n.id && (
+                      <tr className="bg-cp-950/50">
+                        <td colSpan={6} className="px-3 py-3 border-b border-border/40">
+                          <pre className="text-xs font-data max-h-96 overflow-auto whitespace-pre-wrap">
+                            {inspectData[n.id] ? highlightJSON(inspectData[n.id]) : "Loading…"}
+                          </pre>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </TBody>
+            </Table>
           )}
         </CardContent>
       </Card>
