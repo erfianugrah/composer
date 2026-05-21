@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
-import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, hideOnNarrow } from "@/components/ui/data-table";
+import { cn } from "@/lib/utils";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy } from "@/lib/use-busy";
@@ -194,9 +195,9 @@ export function ImagesPage() {
                     />
                   </TH>
                   <SortHeader active={sortKey === "tag"} direction={direction} onSort={() => toggle("tag")}>Tag</SortHeader>
-                  <TH>ID</TH>
+                  <TH className={hideOnNarrow}>ID</TH>
                   <SortHeader active={sortKey === "size"} direction={direction} onSort={() => toggle("size")} className="text-right">Size</SortHeader>
-                  <SortHeader active={sortKey === "created"} direction={direction} onSort={() => toggle("created")}>Created</SortHeader>
+                  <SortHeader active={sortKey === "created"} direction={direction} onSort={() => toggle("created")} className={hideOnNarrow}>Created</SortHeader>
                   <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
@@ -221,9 +222,9 @@ export function ImagesPage() {
                         <div className="text-[10px] text-muted-foreground">+{img.tags.length - 1} more</div>
                       )}
                     </TD>
-                    <TD className="font-data text-muted-foreground"><code className="text-[10px]">{img.id.replace(/^sha256:/, "").slice(0, 12)}</code></TD>
+                    <TD className={cn("font-data text-muted-foreground", hideOnNarrow)}><code className="text-[10px]">{img.id.replace(/^sha256:/, "").slice(0, 12)}</code></TD>
                     <TD className="text-right font-data tabular-nums">{formatSize(img.size)}</TD>
-                    <TD className="font-data text-muted-foreground">{new Date(img.created * 1000).toLocaleDateString()}</TD>
+                    <TD className={cn("font-data text-muted-foreground", hideOnNarrow)}>{new Date(img.created * 1000).toLocaleDateString()}</TD>
                     <TD className="text-right">
                       <ConfirmButton
                         size="xs"

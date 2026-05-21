@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 export type SortDirection = "asc" | "desc";
 
@@ -59,22 +59,23 @@ export function useSort<T, K extends string>(
     return readFromUrl<K>(urlParam, validKeys) ?? { key: initialKey, direction: initialDirection };
   });
 
-  // Persist sort state in URL whenever it changes. Only fires on user-driven
-  // updates because the initial value already reflects the URL.
-  useEffect(() => {
+  // URL writes happen only as a side effect of user-driven sort changes
+  // (see `toggle()`). Mounting must not touch the URL — doing so would
+  // append `?sort=<default>` to every fresh page load, polluting the URL
+  // bar and breaking equality checks that expect a clean base path.
+  function persistToUrl(next: SortState<K>) {
     if (!urlParam || typeof window === "undefined") return;
     const url = new URL(window.location.href);
-    if (state.key) {
-      url.searchParams.set(urlParam, state.key);
-      // Only write direction when non-default to keep URLs tidy.
-      if (state.direction === "desc") url.searchParams.set(`${urlParam}Dir`, "desc");
+    if (next.key) {
+      url.searchParams.set(urlParam, next.key);
+      if (next.direction === "desc") url.searchParams.set(`${urlParam}Dir`, "desc");
       else url.searchParams.delete(`${urlParam}Dir`);
     } else {
       url.searchParams.delete(urlParam);
       url.searchParams.delete(`${urlParam}Dir`);
     }
     window.history.replaceState({}, "", url);
-  }, [state, urlParam]);
+  }
 
   const sorted = useMemo(() => {
     if (!state.key) return rows;
@@ -93,9 +94,12 @@ export function useSort<T, K extends string>(
 
   function toggle(key: K) {
     setState((prev) => {
-      if (prev.key !== key) return { key, direction: "asc" };
-      if (prev.direction === "asc") return { key, direction: "desc" };
-      return { key: null, direction: "asc" };
+      let next: SortState<K>;
+      if (prev.key !== key) next = { key, direction: "asc" };
+      else if (prev.direction === "asc") next = { key, direction: "desc" };
+      else next = { key: null, direction: "asc" };
+      persistToUrl(next);
+      return next;
     });
   }
 

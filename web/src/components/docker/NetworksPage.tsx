@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, hideOnNarrow } from "@/components/ui/data-table";
+import { cn } from "@/lib/utils";
 import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { useSelection } from "@/lib/use-selection";
@@ -144,10 +145,10 @@ export function NetworksPage() {
                     />
                   </TH>
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
-                  <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")}>Driver</SortHeader>
-                  <SortHeader active={sortKey === "scope"} direction={direction} onSort={() => toggle("scope")}>Scope</SortHeader>
-                  <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className="text-right">Containers</SortHeader>
-                  <TH>ID</TH>
+                  <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")} className={hideOnNarrow}>Driver</SortHeader>
+                  <SortHeader active={sortKey === "scope"} direction={direction} onSort={() => toggle("scope")} className={hideOnNarrow}>Scope</SortHeader>
+                  <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className={cn("text-right", hideOnNarrow)}>Containers</SortHeader>
+                  <TH className={hideOnNarrow}>ID</TH>
                   <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
@@ -175,10 +176,10 @@ export function NetworksPage() {
                           {n.internal && <Badge variant="outline" className="text-[10px] text-cp-peach border-cp-peach/30">internal</Badge>}
                         </span>
                       </TD>
-                      <TD className="font-data text-muted-foreground">{n.driver}</TD>
-                      <TD className="font-data text-muted-foreground">{n.scope}</TD>
-                      <TD className="text-right font-data tabular-nums">{n.containers > 0 ? n.containers : <span className="text-muted-foreground">—</span>}</TD>
-                      <TD className="font-data text-muted-foreground"><code className="text-[10px]">{n.id.slice(0, 12)}</code></TD>
+                      <TD className={cn("font-data text-muted-foreground", hideOnNarrow)}>{n.driver}</TD>
+                      <TD className={cn("font-data text-muted-foreground", hideOnNarrow)}>{n.scope}</TD>
+                      <TD className={cn("text-right font-data tabular-nums", hideOnNarrow)}>{n.containers > 0 ? n.containers : <span className="text-muted-foreground">—</span>}</TD>
+                      <TD className={cn("font-data text-muted-foreground", hideOnNarrow)}><code className="text-[10px]">{n.id.slice(0, 12)}</code></TD>
                       <TD className="text-right" onClick={(e) => e.stopPropagation()}>
                         <ConfirmButton
                           size="xs"

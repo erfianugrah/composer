@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, hideOnNarrow } from "@/components/ui/data-table";
+import { cn } from "@/lib/utils";
 import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { useSelection } from "@/lib/use-selection";
@@ -158,8 +159,8 @@ export function VolumesPage() {
                     />
                   </TH>
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
-                  <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")}>Driver</SortHeader>
-                  <TH>Mountpoint</TH>
+                  <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")} className={hideOnNarrow}>Driver</SortHeader>
+                  <TH className={hideOnNarrow}>Mountpoint</TH>
                   <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
@@ -182,8 +183,8 @@ export function VolumesPage() {
                         />
                       </TD>
                       <TD className="font-medium">{v.name}</TD>
-                      <TD className="font-data text-muted-foreground">{v.driver}</TD>
-                      <TD className="font-data text-muted-foreground truncate max-w-[420px]" title={v.mountpoint}>{v.mountpoint}</TD>
+                      <TD className={cn("font-data text-muted-foreground", hideOnNarrow)}>{v.driver}</TD>
+                      <TD className={cn("font-data text-muted-foreground truncate max-w-[420px]", hideOnNarrow)} title={v.mountpoint}>{v.mountpoint}</TD>
                       <TD className="text-right" onClick={(e) => e.stopPropagation()}>
                         <ConfirmButton
                           size="xs"

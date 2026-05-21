@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, hideOnNarrow } from "@/components/ui/data-table";
+import { cn } from "@/lib/utils";
 import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { navigableRow } from "@/lib/row-interactions";
@@ -217,9 +218,9 @@ export function DashboardOverview() {
                   </TH>
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
-                  <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className="text-right">Containers</SortHeader>
-                  <SortHeader active={sortKey === "source"} direction={direction} onSort={() => toggle("source")}>Source</SortHeader>
-                  <SortHeader active={sortKey === "updated"} direction={direction} onSort={() => toggle("updated")}>Updated</SortHeader>
+                  <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className={cn("text-right", hideOnNarrow)}>Containers</SortHeader>
+                  <SortHeader active={sortKey === "source"} direction={direction} onSort={() => toggle("source")} className={hideOnNarrow}>Source</SortHeader>
+                  <SortHeader active={sortKey === "updated"} direction={direction} onSort={() => toggle("updated")} className={hideOnNarrow}>Updated</SortHeader>
                 </TR>
               </THead>
               <TBody>
@@ -248,11 +249,11 @@ export function DashboardOverview() {
                     <TD>
                       <Badge className={statusColor[stack.status] || statusColor.unknown}>{stack.status}</Badge>
                     </TD>
-                    <TD className="text-right font-data tabular-nums text-muted-foreground">
+                    <TD className={cn("text-right font-data tabular-nums text-muted-foreground", hideOnNarrow)}>
                       {stack.container_count > 0 ? `${stack.running_count}/${stack.container_count}` : "—"}
                     </TD>
-                    <TD className="font-data text-muted-foreground">{stack.source}</TD>
-                    <TD className="font-data text-muted-foreground" title={stack.updated_at}>{formatRelative(stack.updated_at)}</TD>
+                    <TD className={cn("font-data text-muted-foreground", hideOnNarrow)}>{stack.source}</TD>
+                    <TD className={cn("font-data text-muted-foreground", hideOnNarrow)} title={stack.updated_at}>{formatRelative(stack.updated_at)}</TD>
                   </TR>
                 ))}
               </TBody>

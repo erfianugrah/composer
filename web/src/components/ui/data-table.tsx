@@ -12,9 +12,17 @@ import type { SortDirection } from "@/lib/use-sort";
  */
 
 export function Table({ className, ...rest }: React.HTMLAttributes<HTMLTableElement>) {
+  // Wrap in a horizontally-scrollable region so narrow viewports get a
+  // scrollbar instead of squashed columns. The min-w-[640px] on the inner
+  // table guarantees we hit the scrollable threshold below the md: breakpoint.
   return (
-    <div className="w-full overflow-x-auto rounded-md border border-border">
-      <table className={cn("w-full text-xs border-collapse", className)} {...rest} />
+    <div
+      className="w-full overflow-x-auto rounded-md border border-border"
+      role="region"
+      aria-label="Scrollable table"
+      tabIndex={0}
+    >
+      <table className={cn("w-full min-w-[640px] text-xs border-collapse", className)} {...rest} />
     </div>
   );
 }
@@ -56,6 +64,18 @@ export function TH({ className, ...rest }: React.ThHTMLAttributes<HTMLTableCellE
 export function TD({ className, ...rest }: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return <td className={cn("px-3 py-2 align-middle", className)} {...rest} />;
 }
+
+/**
+ * Marker classes for responsive column visibility. Apply to TH + matching TD
+ * to hide a column on narrow viewports. Use sparingly — only for columns that
+ * are nice-to-have on mobile.
+ *
+ * Usage:
+ *   <TH className={hideOnNarrow}>ID</TH>
+ *   <TD className={hideOnNarrow}>{id}</TD>
+ */
+export const hideOnNarrow = "hidden md:table-cell";
+export const hideOnVeryNarrow = "hidden sm:table-cell";
 
 export interface SortHeaderProps extends React.ThHTMLAttributes<HTMLTableCellElement> {
   active: boolean;

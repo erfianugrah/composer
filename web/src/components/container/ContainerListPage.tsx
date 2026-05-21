@@ -2,7 +2,8 @@ import { Fragment, useEffect, useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, hideOnNarrow } from "@/components/ui/data-table";
+import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api/errors";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
@@ -201,8 +202,8 @@ export function ContainerListPage() {
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
                   <SortHeader active={sortKey === "image"} direction={direction} onSort={() => toggle("image")}>Image</SortHeader>
-                  <TH className="text-right">CPU / Mem</TH>
-                  <TH className="font-data">ID</TH>
+                  <TH className={cn("text-right", hideOnNarrow)}>CPU / Mem</TH>
+                  <TH className={cn("font-data", hideOnNarrow)}>ID</TH>
                   <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
@@ -232,10 +233,10 @@ export function ContainerListPage() {
                           </div>
                         </TD>
                         <TD className="font-data text-muted-foreground truncate max-w-[280px]" title={c.image}>{c.image}</TD>
-                        <TD className="text-right">
+                        <TD className={cn("text-right", hideOnNarrow)}>
                           {c.status === "running" ? <InlineStats containerId={c.id} /> : <span className="text-muted-foreground">—</span>}
                         </TD>
-                        <TD>
+                        <TD className={hideOnNarrow}>
                           <code className="text-[10px] text-muted-foreground font-data">{c.id.slice(0, 12)}</code>
                         </TD>
                         <TD>
@@ -269,7 +270,7 @@ export function ContainerListPage() {
                       </TR>
                       {expanded && (
                         <tr className="bg-cp-950/50">
-                          <td colSpan={7} className="px-3 py-3 border-b border-border/40">
+                          <td colSpan={7} className="px-3 py-3 border-b border-border/40">{/* colSpan stays 7: hidden cells still occupy the column count */}
                             <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
                               <LogViewer containerId={c.id} tail="50" maxLines={200} />
                             </Suspense>
