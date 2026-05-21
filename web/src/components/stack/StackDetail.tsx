@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
+import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/data-table";
 import { apiFetch } from "@/lib/api/errors";
 
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
@@ -304,56 +305,69 @@ export function StackDetail({ stackName }: { stackName: string }) {
           {stack.containers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No containers running</p>
           ) : (
-            <div className="space-y-2" data-testid="container-list">
+            <Table data-testid="container-list">
+              <THead>
+                <TR>
+                  <TH>Name</TH>
+                  <TH>Status</TH>
+                  <TH>Image</TH>
+                  <TH className="text-right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
                 {stack.containers.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                    <div>
-                      <div className="font-medium text-sm">{c.name}</div>
-                      <div className="text-xs text-muted-foreground font-data">{c.image}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {c.completed_one_off ? (
-                        <Badge className="bg-cp-blue/20 text-cp-blue border-cp-blue/30">completed</Badge>
-                      ) : (
-                        <Badge className={statusColor[c.status] || statusColor.unknown}>{c.status}</Badge>
-                      )}
-                      {c.health !== "none" && (
-                        <Badge className={statusColor[c.health] || statusColor.unknown}>{c.health}</Badge>
-                      )}
-                      {/* Container actions */}
-                      {c.status !== "running" && !c.completed_one_off && (
-                        <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
-                          Start
-                        </Button>
-                      )}
-                      {c.status === "running" && (
-                        <>
-                          <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
-                            Restart
+                  <TR key={c.id}>
+                    <TD className="font-medium truncate max-w-[260px]" title={c.name}>{c.name}</TD>
+                    <TD>
+                      <div className="flex items-center gap-1">
+                        {c.completed_one_off ? (
+                          <Badge className="bg-cp-blue/20 text-cp-blue border-cp-blue/30">completed</Badge>
+                        ) : (
+                          <Badge className={statusColor[c.status] || statusColor.unknown}>{c.status}</Badge>
+                        )}
+                        {c.health !== "none" && (
+                          <Badge className={statusColor[c.health] || statusColor.unknown}>{c.health}</Badge>
+                        )}
+                      </div>
+                    </TD>
+                    <TD className="font-data text-muted-foreground truncate max-w-[280px]" title={c.image}>{c.image}</TD>
+                    <TD>
+                      <div className="flex items-center gap-1 justify-end">
+                        {c.status !== "running" && !c.completed_one_off && (
+                          <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                            Start
                           </Button>
-                          <Button size="xs" variant="destructive" onClick={() => apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
-                            Stop
-                          </Button>
-                          <Button
-                            size="xs" variant="ghost"
-                            onClick={() => { setActiveTerminal(c.id); setActiveTab("terminal"); }}
-                            data-testid={`terminal-btn-${c.id}`}
-                          >
-                            Terminal
-                          </Button>
-                          <Button
-                            size="xs" variant="ghost"
-                            onClick={() => { setStatsContainerId(c.id); setActiveTab("stats"); }}
-                            data-testid={`stats-btn-${c.id}`}
-                          >
-                            Stats
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                </div>
-              ))}
-            </div>
+                        )}
+                        {c.status === "running" && (
+                          <>
+                            <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                              Restart
+                            </Button>
+                            <Button size="xs" variant="destructive" onClick={() => apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                              Stop
+                            </Button>
+                            <Button
+                              size="xs" variant="ghost"
+                              onClick={() => { setActiveTerminal(c.id); setActiveTab("terminal"); }}
+                              data-testid={`terminal-btn-${c.id}`}
+                            >
+                              Terminal
+                            </Button>
+                            <Button
+                              size="xs" variant="ghost"
+                              onClick={() => { setStatsContainerId(c.id); setActiveTab("stats"); }}
+                              data-testid={`stats-btn-${c.id}`}
+                            >
+                              Stats
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
           )}
         </section>
       )}

@@ -4,6 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
+import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { useSort } from "@/lib/use-sort";
+import { useSelection } from "@/lib/use-selection";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -78,6 +81,25 @@ type RunOrder = "desc" | "asc";
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 type PageSize = typeof PAGE_SIZES[number];
 
+type SortKey = "name" | "steps" | "created";
+const accessors = {
+  name: (p: PipelineSummary) => p.name.toLowerCase(),
+  steps: (p: PipelineSummary) => p.step_count,
+  created: (p: PipelineSummary) => p.created_at,
+} satisfies Record<SortKey, (p: PipelineSummary) => string | number>;
+
+function formatRelative(iso: string): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const diff = (Date.now() - then) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export function PipelinePage() {
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
   const [selectedPipeline, setSelectedPipeline] = useState<string | null>(null);
@@ -96,6 +118,17 @@ export function PipelinePage() {
   const [createStepStack, setCreateStepStack] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("q") || "";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (filter) url.searchParams.set("q", filter); else url.searchParams.delete("q");
+    window.history.replaceState({}, "", url);
+  }, [filter]);
 
   function fetchPipelines() {
     apiFetch<{ pipelines: PipelineSummary[] }>("/api/v1/pipelines").then(({ data, error: err }) => {
@@ -259,65 +292,16 @@ export function PipelinePage() {
         </Card>
       )}
 
-      {/* Pipeline list */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Pipelines</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {pipelines.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="no-pipelines">
-              No pipelines yet. Create your first pipeline above.
-            </p>
-          ) : (
-            <div className="space-y-2" data-testid="pipeline-list">
-              {pipelines.map((pl) => (
-                <div
-                  key={pl.id}
-                  className={`flex items-center justify-between rounded-lg border p-3 cursor-pointer transition-colors ${
-                    selectedPipeline === pl.id
-                      ? "border-cp-purple bg-cp-purple/5"
-                      : "border-border hover:bg-accent/50"
-                  }`}
-                  // Click toggles selection — clicking the already-selected
-                  // pipeline collapses the Run History panel. Previously only
-                  // ever set the selection so the panel could never be hidden
-                  // again without picking another pipeline.
-                  onClick={() => setSelectedPipeline((cur) => (cur === pl.id ? null : pl.id))}
-                  data-testid={`pipeline-${pl.id}`}
-                >
-                  <div>
-                    <div className="font-medium text-sm">{pl.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {pl.description || `${pl.step_count} steps`}
-                    </div>
-                  </div>
-                    <div className="flex gap-1">
-                    <Button
-                      size="xs"
-                      onClick={(e) => { e.stopPropagation(); handleRun(pl.id); }}
-                      disabled={running === pl.id}
-                      data-testid={`run-${pl.id}`}
-                    >
-                      {running === pl.id ? "Running..." : "Run"}
-                    </Button>
-                    <span onClick={(e) => e.stopPropagation()}>
-                    <ConfirmButton
-                      size="xs"
-                      message="Delete this pipeline?"
-                      onConfirm={() => handleDelete(pl.id)}
-                      data-testid={`delete-${pl.id}`}
-                    >
-                      Delete
-                    </ConfirmButton>
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <PipelineTable
+        pipelines={pipelines}
+        selectedPipeline={selectedPipeline}
+        setSelectedPipeline={setSelectedPipeline}
+        running={running}
+        handleRun={handleRun}
+        handleDelete={handleDelete}
+        filter={filter}
+        setFilter={setFilter}
+      />
 
       {/* Run history for selected pipeline */}
       {selectedPipeline && (
@@ -478,5 +462,177 @@ export function PipelinePage() {
       )}
     </div>
     </ErrorBoundary>
+  );
+}
+
+interface PipelineTableProps {
+  pipelines: PipelineSummary[];
+  selectedPipeline: string | null;
+  setSelectedPipeline: (fn: (cur: string | null) => string | null) => void;
+  running: string;
+  handleRun: (id: string) => void;
+  handleDelete: (id: string) => Promise<void>;
+  filter: string;
+  setFilter: (v: string) => void;
+}
+
+function PipelineTable({
+  pipelines,
+  selectedPipeline,
+  setSelectedPipeline,
+  running,
+  handleRun,
+  handleDelete,
+  filter,
+  setFilter,
+}: PipelineTableProps) {
+  const sel = useSelection<PipelineSummary>((p) => p.id);
+  const filtered = pipelines.filter((p) => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return p.name.toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q);
+  });
+  const { sorted, sortKey, direction, toggle } = useSort<PipelineSummary, SortKey>(
+    filtered,
+    accessors,
+    "created",
+    "desc",
+  );
+
+  async function bulkDelete() {
+    const ids = sorted.filter((p) => sel.isSelected(p.id)).map((p) => p.id);
+    await Promise.all(ids.map((id) => handleDelete(id)));
+    sel.clear();
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-sm shrink-0">
+            Pipelines{" "}
+            <span className="text-muted-foreground font-normal">
+              ({sorted.length}{sorted.length !== pipelines.length ? ` of ${pipelines.length}` : ""})
+            </span>
+          </CardTitle>
+          {pipelines.length > 0 && (
+            <input
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter by name or description…"
+              className="ml-auto h-7 w-56 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              data-testid="pipeline-filter"
+            />
+          )}
+        </div>
+      </CardHeader>
+      {sel.size > 0 && (
+        <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
+          <span className="text-muted-foreground">{sel.size} selected</span>
+          <span className="flex-1" />
+          <ConfirmButton
+            size="xs"
+            message={`Delete ${sel.size} pipeline${sel.size === 1 ? "" : "s"}?`}
+            onConfirm={bulkDelete}
+          >
+            Delete ({sel.size})
+          </ConfirmButton>
+          <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+        </div>
+      )}
+      <CardContent>
+        {pipelines.length === 0 ? (
+          <p className="text-sm text-muted-foreground" data-testid="no-pipelines">
+            No pipelines yet. Create your first pipeline above.
+          </p>
+        ) : sorted.length === 0 ? (
+          <p className="text-sm text-muted-foreground" data-testid="no-pipelines-match">
+            No pipelines match the current filter.
+          </p>
+        ) : (
+          <Table data-testid="pipeline-list">
+            <THead>
+              <TR>
+                <TH className="w-8">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible"
+                    checked={sel.allSelected(sorted)}
+                    ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
+                    onChange={() => sel.toggleAll(sorted)}
+                    className="rounded"
+                    data-testid="select-all-pipelines"
+                  />
+                </TH>
+                <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
+                <TH>Description</TH>
+                <SortHeader active={sortKey === "steps"} direction={direction} onSort={() => toggle("steps")} className="text-right">Steps</SortHeader>
+                <SortHeader active={sortKey === "created"} direction={direction} onSort={() => toggle("created")}>Created</SortHeader>
+                <TH className="text-right">Actions</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {sorted.map((pl) => (
+                <TR
+                  key={pl.id}
+                  className={`cursor-pointer ${
+                    selectedPipeline === pl.id
+                      ? "bg-cp-purple/5"
+                      : sel.isSelected(pl.id) ? "bg-cp-purple/5" : ""
+                  }`}
+                  onClick={() => setSelectedPipeline((cur) => (cur === pl.id ? null : pl.id))}
+                  data-testid={`pipeline-${pl.id}`}
+                >
+                  <TD className="w-8" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={sel.isSelected(pl.id)}
+                      onChange={() => sel.toggle(pl.id)}
+                      aria-label={`Select ${pl.name}`}
+                      className="rounded"
+                      data-testid={`select-pipeline-${pl.id}`}
+                    />
+                  </TD>
+                  <TD className="font-medium">
+                    <span className="flex items-center gap-2">
+                      {pl.name}
+                      {selectedPipeline === pl.id && (
+                        <Badge variant="outline" className="text-[10px] text-cp-purple border-cp-purple/30">selected</Badge>
+                      )}
+                    </span>
+                  </TD>
+                  <TD className="text-muted-foreground truncate max-w-[320px]" title={pl.description}>
+                    {pl.description || <span className="italic">no description</span>}
+                  </TD>
+                  <TD className="text-right font-data tabular-nums">{pl.step_count}</TD>
+                  <TD className="font-data text-muted-foreground" title={pl.created_at}>{formatRelative(pl.created_at)}</TD>
+                  <TD className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1 justify-end">
+                      <Button
+                        size="xs"
+                        onClick={() => handleRun(pl.id)}
+                        disabled={running === pl.id}
+                        data-testid={`run-${pl.id}`}
+                      >
+                        {running === pl.id ? "Running…" : "Run"}
+                      </Button>
+                      <ConfirmButton
+                        size="xs"
+                        message="Delete this pipeline?"
+                        onConfirm={() => handleDelete(pl.id)}
+                        data-testid={`delete-${pl.id}`}
+                      >
+                        Delete
+                      </ConfirmButton>
+                    </div>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
