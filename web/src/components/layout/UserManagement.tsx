@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
+import { useBusy } from "@/lib/use-busy";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -113,14 +114,17 @@ export function UserManagement() {
     const q = filter.toLowerCase();
     return u.email.toLowerCase().includes(q) || u.role.toLowerCase().includes(q);
   });
-  const { sorted, sortKey, direction, toggle } = useSort<UserSummary, SortKey>(filtered, accessors, "email", "asc");
+  const { sorted, sortKey, direction, toggle } = useSort<UserSummary, SortKey>(filtered, accessors, "email", "asc", { urlParam: "userSort" });
   const sel = useSelection<UserSummary>((u) => u.id);
+  const { busy, run } = useBusy();
 
   async function bulkDelete() {
     const ids = sorted.filter((u) => sel.isSelected(u.id)).map((u) => u.id);
-    await Promise.all(ids.map((id) => apiFetch(`/api/v1/users/${id}`, { method: "DELETE" })));
-    sel.clear();
-    fetchUsers();
+    await run(async () => {
+      await Promise.all(ids.map((id) => apiFetch(`/api/v1/users/${id}`, { method: "DELETE" })));
+      sel.clear();
+      fetchUsers();
+    });
   }
 
   return (
@@ -150,14 +154,16 @@ export function UserManagement() {
         <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
           <span className="text-muted-foreground">{sel.size} selected</span>
           <span className="flex-1" />
+          {busy && <span className="text-muted-foreground">working…</span>}
           <ConfirmButton
             size="xs"
             message={`Delete ${sel.size} user${sel.size === 1 ? "" : "s"}?`}
             onConfirm={bulkDelete}
+            disabled={busy}
           >
             Delete ({sel.size})
           </ConfirmButton>
-          <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+          <Button size="xs" variant="ghost" onClick={sel.clear} disabled={busy}>Clear</Button>
         </div>
       )}
       <CardContent className="space-y-4">

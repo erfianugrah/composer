@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
+import { useBusy } from "@/lib/use-busy";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -487,6 +488,7 @@ function PipelineTable({
   setFilter,
 }: PipelineTableProps) {
   const sel = useSelection<PipelineSummary>((p) => p.id);
+  const { busy, run } = useBusy();
   const filtered = pipelines.filter((p) => {
     if (!filter) return true;
     const q = filter.toLowerCase();
@@ -497,12 +499,15 @@ function PipelineTable({
     accessors,
     "created",
     "desc",
+    { urlParam: "sort" },
   );
 
   async function bulkDelete() {
     const ids = sorted.filter((p) => sel.isSelected(p.id)).map((p) => p.id);
-    await Promise.all(ids.map((id) => handleDelete(id)));
-    sel.clear();
+    await run(async () => {
+      await Promise.all(ids.map((id) => handleDelete(id)));
+      sel.clear();
+    });
   }
 
   return (
@@ -531,14 +536,16 @@ function PipelineTable({
         <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
           <span className="text-muted-foreground">{sel.size} selected</span>
           <span className="flex-1" />
+          {busy && <span className="text-muted-foreground">working…</span>}
           <ConfirmButton
             size="xs"
             message={`Delete ${sel.size} pipeline${sel.size === 1 ? "" : "s"}?`}
             onConfirm={bulkDelete}
+            disabled={busy}
           >
             Delete ({sel.size})
           </ConfirmButton>
-          <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+          <Button size="xs" variant="ghost" onClick={sel.clear} disabled={busy}>Clear</Button>
         </div>
       )}
       <CardContent>

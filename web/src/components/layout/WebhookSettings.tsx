@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
+import { useBusy } from "@/lib/use-busy";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -127,14 +128,17 @@ export function WebhookSettings() {
     const q = filter.toLowerCase();
     return w.stack_name.toLowerCase().includes(q) || w.provider.toLowerCase().includes(q) || (w.branch_filter || "").toLowerCase().includes(q);
   });
-  const { sorted, sortKey, direction, toggle } = useSort<WebhookSummary, SortKey>(filtered, accessors, "stack", "asc");
+  const { sorted, sortKey, direction, toggle } = useSort<WebhookSummary, SortKey>(filtered, accessors, "stack", "asc", { urlParam: "webhookSort" });
   const sel = useSelection<WebhookSummary>((w) => w.id);
+  const { busy, run } = useBusy();
 
   async function bulkDelete() {
     const ids = sorted.filter((w) => sel.isSelected(w.id)).map((w) => w.id);
-    await Promise.all(ids.map((id) => apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" })));
-    sel.clear();
-    fetchWebhooks();
+    await run(async () => {
+      await Promise.all(ids.map((id) => apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" })));
+      sel.clear();
+      fetchWebhooks();
+    });
   }
 
   return (
@@ -247,14 +251,16 @@ export function WebhookSettings() {
           <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
             <span className="text-muted-foreground">{sel.size} selected</span>
             <span className="flex-1" />
+            {busy && <span className="text-muted-foreground">working…</span>}
             <ConfirmButton
               size="xs"
               message={`Delete ${sel.size} webhook${sel.size === 1 ? "" : "s"}?`}
               onConfirm={bulkDelete}
+              disabled={busy}
             >
               Delete ({sel.size})
             </ConfirmButton>
-            <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+            <Button size="xs" variant="ghost" onClick={sel.clear} disabled={busy}>Clear</Button>
           </div>
         )}
         <CardContent>

@@ -6,6 +6,7 @@ import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/dat
 import { apiFetch } from "@/lib/api/errors";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
+import { useBusy } from "@/lib/use-busy";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { StatCard } from "@/components/ui/stat-card";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -96,17 +97,20 @@ export function ContainerListPage() {
     return true;
   });
 
-  const { sorted, sortKey, direction, toggle } = useSort<ContainerInfo, SortKey>(filtered, accessors, "name", "asc");
+  const { sorted, sortKey, direction, toggle } = useSort<ContainerInfo, SortKey>(filtered, accessors, "name", "asc", { urlParam: "sort" });
   const sel = useSelection<ContainerInfo>((c) => c.id);
+  const { busy, run } = useBusy();
   const selectedRunning = sorted.filter((c) => sel.isSelected(c.id) && c.status === "running");
   const selectedStopped = sorted.filter((c) => sel.isSelected(c.id) && c.status !== "running");
 
   async function bulk(action: "start" | "stop" | "restart") {
     const targets = action === "start" ? selectedStopped : selectedRunning;
     const ids = targets.map((c) => c.id);
-    await Promise.all(ids.map((id) => apiFetch(`/api/v1/containers/${id}/${action}`, { method: "POST" })));
-    sel.clear();
-    setTimeout(fetchContainers, 1000);
+    await run(async () => {
+      await Promise.all(ids.map((id) => apiFetch(`/api/v1/containers/${id}/${action}`, { method: "POST" })));
+      sel.clear();
+      setTimeout(fetchContainers, 1000);
+    });
   }
 
   if (loading) {
@@ -160,17 +164,18 @@ export function ContainerListPage() {
           <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
             <span className="text-muted-foreground">{sel.size} selected</span>
             <span className="flex-1" />
-            <Button size="xs" variant="outline" onClick={() => bulk("start")} disabled={selectedStopped.length === 0}>Start ({selectedStopped.length})</Button>
-            <Button size="xs" variant="outline" onClick={() => bulk("restart")} disabled={selectedRunning.length === 0}>Restart ({selectedRunning.length})</Button>
+            {busy && <span className="text-muted-foreground">working…</span>}
+            <Button size="xs" variant="outline" onClick={() => bulk("start")} disabled={busy || selectedStopped.length === 0}>Start ({selectedStopped.length})</Button>
+            <Button size="xs" variant="outline" onClick={() => bulk("restart")} disabled={busy || selectedRunning.length === 0}>Restart ({selectedRunning.length})</Button>
             <ConfirmButton
               size="xs"
               message={`Stop ${selectedRunning.length} running container${selectedRunning.length === 1 ? "" : "s"}?`}
               onConfirm={() => bulk("stop")}
-              disabled={selectedRunning.length === 0}
+              disabled={busy || selectedRunning.length === 0}
             >
               Stop ({selectedRunning.length})
             </ConfirmButton>
-            <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+            <Button size="xs" variant="ghost" onClick={sel.clear} disabled={busy}>Clear</Button>
           </div>
         )}
         <CardContent>
