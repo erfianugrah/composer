@@ -2808,7 +2808,9 @@ export interface components {
              * @example //schemas/PruneNetworksOutputBody.json
              */
             readonly $schema?: string;
-            networks_deleted: string[] | null;
+            /** @description Background job ID. Set when the prune was dispatched with ?async=true. Poll /api/v1/jobs/{id} for the final list of deleted networks. */
+            job_id?: string;
+            networks_deleted?: string[] | null;
         };
         PruneOutputBody: {
             /**
@@ -2817,8 +2819,10 @@ export interface components {
              * @example //schemas/PruneOutputBody.json
              */
             readonly $schema?: string;
-            /** @description Human-readable reclaimed size (e.g. '1.2 GB') */
-            space_reclaimed: string;
+            /** @description Background job ID. Set when the prune was dispatched with ?async=true. Poll /api/v1/jobs/{id} for status and the final reclaim total. */
+            job_id?: string;
+            /** @description Human-readable reclaimed size (e.g. '1.2 GB'). Set on synchronous prunes only. */
+            space_reclaimed?: string;
         };
         PullImageInputBody: {
             /**
@@ -3084,11 +3088,13 @@ export interface components {
              * @example //schemas/SystemPruneOutputBody.json
              */
             readonly $schema?: string;
-            build_cache_reclaimed: string;
-            containers_reclaimed: string;
-            images_reclaimed: string;
-            networks_deleted: string[] | null;
-            total_reclaimed: string;
+            build_cache_reclaimed?: string;
+            containers_reclaimed?: string;
+            images_reclaimed?: string;
+            /** @description Background job ID. Set when the prune was dispatched with ?async=true. */
+            job_id?: string;
+            networks_deleted?: string[] | null;
+            total_reclaimed?: string;
             volumes_reclaimed?: string;
         };
         TemplateDetailOutputBody: {
@@ -3698,7 +3704,10 @@ export interface operations {
     };
     pruneBuildCache: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes. */
+                async?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3734,6 +3743,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3801,7 +3819,10 @@ export interface operations {
     };
     pruneContainers: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes. */
+                async?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3837,6 +3858,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4356,6 +4386,8 @@ export interface operations {
                 all?: boolean;
                 /** @description Also prune unused volumes */
                 volumes?: boolean;
+                /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended on hosts with significant accumulated cruft. */
+                async?: boolean;
             };
             header?: never;
             path?: never;
@@ -4471,6 +4503,8 @@ export interface operations {
             query?: {
                 /** @description Remove all unused images, not just dangling/untagged */
                 all?: boolean;
+                /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Strongly recommended when All=true on a host with many tagged images. */
+                async?: boolean;
             };
             header?: never;
             path?: never;
@@ -5193,7 +5227,10 @@ export interface operations {
     };
     pruneNetworks: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes. */
+                async?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5229,6 +5266,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9963,7 +10009,10 @@ export interface operations {
     };
     pruneVolumes: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes. */
+                async?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9999,6 +10048,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

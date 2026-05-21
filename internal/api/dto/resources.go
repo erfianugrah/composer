@@ -138,21 +138,35 @@ type ImageIDInput struct {
 // --- Prune ---
 
 // PruneOutput is a simple reclaim-space result.
+//
+// When the prune was dispatched with `?async=true`, the response carries a
+// job_id instead of space_reclaimed — poll /api/v1/jobs/{id} for the final
+// reclaim total. The two fields are mutually exclusive but kept as one shape
+// to avoid forking the OpenAPI surface for every prune endpoint.
 type PruneOutput struct {
 	Body struct {
-		SpaceReclaimed string `json:"space_reclaimed" doc:"Human-readable reclaimed size (e.g. '1.2 GB')"`
+		SpaceReclaimed string `json:"space_reclaimed,omitempty" doc:"Human-readable reclaimed size (e.g. '1.2 GB'). Set on synchronous prunes only."`
+		JobID          string `json:"job_id,omitempty" doc:"Background job ID. Set when the prune was dispatched with ?async=true. Poll /api/v1/jobs/{id} for status and the final reclaim total."`
 	}
+}
+
+// PruneAsyncInput is the shared `?async=true` toggle for prune endpoints
+// whose only knob is whether to detach the call from the request lifetime.
+type PruneAsyncInput struct {
+	Async bool `query:"async" default:"false" doc:"Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes."`
 }
 
 // PruneImagesInput configures image pruning.
 type PruneImagesInput struct {
-	All bool `query:"all" default:"false" doc:"Remove all unused images, not just dangling/untagged"`
+	All   bool `query:"all" default:"false" doc:"Remove all unused images, not just dangling/untagged"`
+	Async bool `query:"async" default:"false" doc:"Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Strongly recommended when All=true on a host with many tagged images."`
 }
 
 // PruneNetworksOutput is the result of network pruning.
 type PruneNetworksOutput struct {
 	Body struct {
-		NetworksDeleted []string `json:"networks_deleted"`
+		NetworksDeleted []string `json:"networks_deleted,omitempty"`
+		JobID           string   `json:"job_id,omitempty" doc:"Background job ID. Set when the prune was dispatched with ?async=true. Poll /api/v1/jobs/{id} for the final list of deleted networks."`
 	}
 }
 
@@ -160,17 +174,19 @@ type PruneNetworksOutput struct {
 type SystemPruneInput struct {
 	All     bool `query:"all" default:"true" doc:"Remove all unused images (not just dangling)"`
 	Volumes bool `query:"volumes" default:"false" doc:"Also prune unused volumes"`
+	Async   bool `query:"async" default:"false" doc:"Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended on hosts with significant accumulated cruft."`
 }
 
 // SystemPruneOutput reports the results of a system-wide prune.
 type SystemPruneOutput struct {
 	Body struct {
-		ContainersReclaimed string   `json:"containers_reclaimed"`
-		ImagesReclaimed     string   `json:"images_reclaimed"`
-		NetworksDeleted     []string `json:"networks_deleted"`
-		BuildCacheReclaimed string   `json:"build_cache_reclaimed"`
+		ContainersReclaimed string   `json:"containers_reclaimed,omitempty"`
+		ImagesReclaimed     string   `json:"images_reclaimed,omitempty"`
+		NetworksDeleted     []string `json:"networks_deleted,omitempty"`
+		BuildCacheReclaimed string   `json:"build_cache_reclaimed,omitempty"`
 		VolumesReclaimed    string   `json:"volumes_reclaimed,omitempty"`
-		TotalReclaimed      string   `json:"total_reclaimed"`
+		TotalReclaimed      string   `json:"total_reclaimed,omitempty"`
+		JobID               string   `json:"job_id,omitempty" doc:"Background job ID. Set when the prune was dispatched with ?async=true."`
 	}
 }
 

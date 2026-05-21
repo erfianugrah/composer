@@ -97,9 +97,13 @@ export function VolumesPage() {
           size="sm"
           message="Remove all unused volumes? Cannot be undone."
           onConfirm={async () => {
-            const { data, error } = await apiFetch<{ space_reclaimed: string }>("/api/v1/volumes/prune", { method: "POST" });
+            // Async so it shows up in the Jobs drawer instead of blocking the page.
+            const { data, error } = await apiFetch<{ job_id?: string; space_reclaimed?: string }>(
+              "/api/v1/volumes/prune?async=true", { method: "POST" },
+            );
             if (error) setNotice(`Prune failed: ${error}`);
-            else if (data) setNotice(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
+            else if (data?.job_id) setNotice(`Prune started — see Jobs drawer (${data.job_id})`);
+            else if (data?.space_reclaimed) setNotice(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
             fetch_();
           }}
         >

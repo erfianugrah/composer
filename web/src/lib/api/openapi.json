@@ -2862,6 +2862,10 @@
             "readOnly": true,
             "type": "string"
           },
+          "job_id": {
+            "description": "Background job ID. Set when the prune was dispatched with ?async=true. Poll /api/v1/jobs/{id} for the final list of deleted networks.",
+            "type": "string"
+          },
           "networks_deleted": {
             "items": {
               "type": "string"
@@ -2872,9 +2876,6 @@
             ]
           }
         },
-        "required": [
-          "networks_deleted"
-        ],
         "type": "object"
       },
       "PruneOutputBody": {
@@ -2889,14 +2890,15 @@
             "readOnly": true,
             "type": "string"
           },
+          "job_id": {
+            "description": "Background job ID. Set when the prune was dispatched with ?async=true. Poll /api/v1/jobs/{id} for status and the final reclaim total.",
+            "type": "string"
+          },
           "space_reclaimed": {
-            "description": "Human-readable reclaimed size (e.g. '1.2 GB')",
+            "description": "Human-readable reclaimed size (e.g. '1.2 GB'). Set on synchronous prunes only.",
             "type": "string"
           }
         },
-        "required": [
-          "space_reclaimed"
-        ],
         "type": "object"
       },
       "PullImageInputBody": {
@@ -3658,6 +3660,10 @@
           "images_reclaimed": {
             "type": "string"
           },
+          "job_id": {
+            "description": "Background job ID. Set when the prune was dispatched with ?async=true.",
+            "type": "string"
+          },
           "networks_deleted": {
             "items": {
               "type": "string"
@@ -3674,13 +3680,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "containers_reclaimed",
-          "images_reclaimed",
-          "networks_deleted",
-          "build_cache_reclaimed",
-          "total_reclaimed"
-        ],
         "type": "object"
       },
       "TemplateDetailOutputBody": {
@@ -4512,7 +4511,7 @@
       "name": "MIT"
     },
     "title": "Composer",
-    "version": "0.12.0"
+    "version": "0.12.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -4886,6 +4885,19 @@
       "post": {
         "description": "Deletes BuildKit cache. Admin only.",
         "operationId": "pruneBuildCache",
+        "parameters": [
+          {
+            "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
+            "explode": false,
+            "in": "query",
+            "name": "async",
+            "schema": {
+              "default": false,
+              "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4926,6 +4938,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
@@ -5000,6 +5022,19 @@
       "post": {
         "description": "Deletes all stopped containers on the daemon. Admin only.",
         "operationId": "pruneContainers",
+        "parameters": [
+          {
+            "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
+            "explode": false,
+            "in": "query",
+            "name": "async",
+            "schema": {
+              "default": false,
+              "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5040,6 +5075,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
@@ -5696,6 +5741,17 @@
               "description": "Also prune unused volumes",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended on hosts with significant accumulated cruft.",
+            "explode": false,
+            "in": "query",
+            "name": "async",
+            "schema": {
+              "default": false,
+              "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended on hosts with significant accumulated cruft.",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5831,6 +5887,17 @@
             "schema": {
               "default": false,
               "description": "Remove all unused images, not just dangling/untagged",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Strongly recommended when All=true on a host with many tagged images.",
+            "explode": false,
+            "in": "query",
+            "name": "async",
+            "schema": {
+              "default": false,
+              "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Strongly recommended when All=true on a host with many tagged images.",
               "type": "boolean"
             }
           }
@@ -6664,6 +6731,19 @@
       "post": {
         "description": "Deletes networks with no active endpoints. Admin only.",
         "operationId": "pruneNetworks",
+        "parameters": [
+          {
+            "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
+            "explode": false,
+            "in": "query",
+            "name": "async",
+            "schema": {
+              "default": false,
+              "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6704,6 +6784,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
@@ -12785,6 +12875,19 @@
       "post": {
         "description": "Deletes all volumes not referenced by any container. Destructive: data in unused volumes is permanently lost. Admin only.",
         "operationId": "pruneVolumes",
+        "parameters": [
+          {
+            "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
+            "explode": false,
+            "in": "query",
+            "name": "async",
+            "schema": {
+              "default": false,
+              "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -12825,6 +12928,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {

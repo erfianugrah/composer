@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/erfianugrah/composer/internal/api/dto"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
+	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 )
@@ -17,10 +19,34 @@ import (
 // ResourceHandler manages Docker networks, volumes, and images.
 type ResourceHandler struct {
 	docker *docker.Client
+	jobs   *app.JobManager // optional — enables ?async=true on prune endpoints
 }
 
-func NewResourceHandler(docker *docker.Client) *ResourceHandler {
-	return &ResourceHandler{docker: docker}
+func NewResourceHandler(docker *docker.Client, jobs *app.JobManager) *ResourceHandler {
+	return &ResourceHandler{docker: docker, jobs: jobs}
+}
+
+// runPruneAsync wraps a prune operation in a background job. The caller
+// supplies a closure that produces a human-readable summary line; the
+// summary becomes the job's Output, so users see "Reclaimed 4.2 GB across
+// 318 images" in the Jobs drawer when the job lands.
+func (h *ResourceHandler) runPruneAsync(jobType, target string, op func(ctx context.Context) (summary string, err error)) string {
+	job := h.jobs.Create(jobType, target)
+	h.jobs.Start(job.ID)
+	go func() {
+		// Detach from HTTP request context — prunes can run for many minutes
+		// on hosts with thousands of images / dangling layers. 30 min ceiling
+		// matches the worst-case observed on bloated CI runners.
+		opCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		summary, err := op(opCtx)
+		if err != nil {
+			h.jobs.Fail(job.ID, err.Error())
+			return
+		}
+		h.jobs.Complete(job.ID, summary, "")
+	}()
+	return job.ID
 }
 
 func (h *ResourceHandler) Register(api huma.API) {
@@ -328,15 +354,25 @@ func (h *ResourceHandler) InspectVolume(ctx context.Context, input *dto.VolumeNa
 	return out, nil
 }
 
-func (h *ResourceHandler) PruneVolumes(ctx context.Context, input *struct{}) (*dto.PruneOutput, error) {
+func (h *ResourceHandler) PruneVolumes(ctx context.Context, input *dto.PruneAsyncInput) (*dto.PruneOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
+	}
+	out := &dto.PruneOutput{}
+	if input.Async && h.jobs != nil {
+		out.Body.JobID = h.runPruneAsync("prune_volumes", "all unused volumes", func(opCtx context.Context) (string, error) {
+			reclaimed, err := h.docker.PruneVolumes(opCtx)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Reclaimed %s", formatBytes(reclaimed)), nil
+		})
+		return out, nil
 	}
 	reclaimed, err := h.docker.PruneVolumes(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
-	out := &dto.PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
 	return out, nil
 }
@@ -389,6 +425,21 @@ func (h *ResourceHandler) PruneImages(ctx context.Context, input *dto.PruneImage
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
+	out := &dto.PruneOutput{}
+	target := "dangling images"
+	if input.All {
+		target = "all unused images"
+	}
+	if input.Async && h.jobs != nil {
+		out.Body.JobID = h.runPruneAsync("prune_images", target, func(opCtx context.Context) (string, error) {
+			reclaimed, err := h.docker.PruneImages(opCtx, input.All)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Reclaimed %s (%s)", formatBytes(reclaimed), target), nil
+		})
+		return out, nil
+	}
 	// Decouple from HTTP request context — prune can take minutes on large hosts.
 	opCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -396,7 +447,6 @@ func (h *ResourceHandler) PruneImages(ctx context.Context, input *dto.PruneImage
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
-	out := &dto.PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
 	return out, nil
 }
@@ -472,41 +522,74 @@ func (h *ResourceHandler) RecentEvents(ctx context.Context, input *dto.RecentEve
 
 // --- Prune handlers ---
 
-func (h *ResourceHandler) PruneContainers(ctx context.Context, input *struct{}) (*dto.PruneOutput, error) {
+func (h *ResourceHandler) PruneContainers(ctx context.Context, input *dto.PruneAsyncInput) (*dto.PruneOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
+	}
+	out := &dto.PruneOutput{}
+	if input.Async && h.jobs != nil {
+		out.Body.JobID = h.runPruneAsync("prune_containers", "all stopped containers", func(opCtx context.Context) (string, error) {
+			reclaimed, err := h.docker.PruneContainers(opCtx)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Reclaimed %s", formatBytes(reclaimed)), nil
+		})
+		return out, nil
 	}
 	reclaimed, err := h.docker.PruneContainers(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
-	out := &dto.PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
 	return out, nil
 }
 
-func (h *ResourceHandler) PruneNetworks(ctx context.Context, input *struct{}) (*dto.PruneNetworksOutput, error) {
+func (h *ResourceHandler) PruneNetworks(ctx context.Context, input *dto.PruneAsyncInput) (*dto.PruneNetworksOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
+	}
+	out := &dto.PruneNetworksOutput{}
+	if input.Async && h.jobs != nil {
+		out.Body.JobID = h.runPruneAsync("prune_networks", "all unused networks", func(opCtx context.Context) (string, error) {
+			deleted, err := h.docker.PruneNetworks(opCtx)
+			if err != nil {
+				return "", err
+			}
+			if len(deleted) == 0 {
+				return "No unused networks to remove", nil
+			}
+			return fmt.Sprintf("Removed %d networks: %s", len(deleted), strings.Join(deleted, ", ")), nil
+		})
+		return out, nil
 	}
 	deleted, err := h.docker.PruneNetworks(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
-	out := &dto.PruneNetworksOutput{}
 	out.Body.NetworksDeleted = deleted
 	return out, nil
 }
 
-func (h *ResourceHandler) PruneBuildCache(ctx context.Context, input *struct{}) (*dto.PruneOutput, error) {
+func (h *ResourceHandler) PruneBuildCache(ctx context.Context, input *dto.PruneAsyncInput) (*dto.PruneOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
+	}
+	out := &dto.PruneOutput{}
+	if input.Async && h.jobs != nil {
+		out.Body.JobID = h.runPruneAsync("prune_buildcache", "BuildKit cache", func(opCtx context.Context) (string, error) {
+			reclaimed, err := h.docker.PruneBuildCache(opCtx)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Reclaimed %s", formatBytes(reclaimed)), nil
+		})
+		return out, nil
 	}
 	reclaimed, err := h.docker.PruneBuildCache(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
-	out := &dto.PruneOutput{}
 	out.Body.SpaceReclaimed = formatBytes(reclaimed)
 	return out, nil
 }
@@ -516,12 +599,25 @@ func (h *ResourceHandler) SystemPrune(ctx context.Context, input *dto.SystemPrun
 		return nil, err
 	}
 
-	// Decouple from HTTP request context — full system prune can take minutes.
+	out := &dto.SystemPruneOutput{}
+
+	if input.Async && h.jobs != nil {
+		target := "containers + networks + images + build cache"
+		if input.Volumes {
+			target += " + volumes"
+		}
+		out.Body.JobID = h.runPruneAsync("system_prune", target, func(opCtx context.Context) (string, error) {
+			return h.runSystemPrune(opCtx, input.All, input.Volumes), nil
+		})
+		return out, nil
+	}
+
+	// Synchronous path: decouple from HTTP request context — full system prune
+	// can take minutes even on modest hosts.
 	opCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	var total uint64
-	out := &dto.SystemPruneOutput{}
 
 	// 1. Containers
 	cr, _ := h.docker.PruneContainers(opCtx)
@@ -551,4 +647,35 @@ func (h *ResourceHandler) SystemPrune(ctx context.Context, input *dto.SystemPrun
 
 	out.Body.TotalReclaimed = formatBytes(total)
 	return out, nil
+}
+
+// runSystemPrune executes a full system prune and returns a human-readable
+// summary line. Used by both the async job path and reusable by future
+// schedulers without going through the HTTP layer.
+func (h *ResourceHandler) runSystemPrune(ctx context.Context, all, volumes bool) string {
+	var total uint64
+	parts := make([]string, 0, 5)
+
+	if cr, err := h.docker.PruneContainers(ctx); err == nil {
+		total += cr
+		parts = append(parts, fmt.Sprintf("containers %s", formatBytes(cr)))
+	}
+	if nd, err := h.docker.PruneNetworks(ctx); err == nil && len(nd) > 0 {
+		parts = append(parts, fmt.Sprintf("%d networks", len(nd)))
+	}
+	if ir, err := h.docker.PruneImages(ctx, all); err == nil {
+		total += ir
+		parts = append(parts, fmt.Sprintf("images %s", formatBytes(ir)))
+	}
+	if br, err := h.docker.PruneBuildCache(ctx); err == nil {
+		total += br
+		parts = append(parts, fmt.Sprintf("build-cache %s", formatBytes(br)))
+	}
+	if volumes {
+		if vr, err := h.docker.PruneVolumes(ctx); err == nil {
+			total += vr
+			parts = append(parts, fmt.Sprintf("volumes %s", formatBytes(vr)))
+		}
+	}
+	return fmt.Sprintf("Total reclaimed %s (%s)", formatBytes(total), strings.Join(parts, ", "))
 }

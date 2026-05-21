@@ -95,7 +95,7 @@ func main() {
 	handler.NewWebhookCRUDHandler(nil).Register(api)
 	handler.NewAuditHandler(nil).Register(api)
 	handler.NewJobHandler(nil).Register(api)
-	handler.NewResourceHandler(nil).Register(api)
+	handler.NewResourceHandler(nil, nil).Register(api)
 	handler.NewDockerExecHandler(nil).Register(api)
 
 	spec := api.OpenAPI()

@@ -224,9 +224,10 @@ func NewServer(deps Deps) *Server {
 		handler.NewJobHandler(deps.Jobs).Register(api)
 	}
 
-	// Docker resource management (networks, volumes, images)
+	// Docker resource management (networks, volumes, images).
+	// Jobs is optional — when present, prune endpoints honour ?async=true.
 	if deps.DockerClient != nil {
-		handler.NewResourceHandler(deps.DockerClient).Register(api)
+		handler.NewResourceHandler(deps.DockerClient, deps.Jobs).Register(api)
 	}
 
 	// Global docker command runner (admin only)

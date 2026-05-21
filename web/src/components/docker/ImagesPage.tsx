@@ -38,11 +38,18 @@ function PruneDropdown({ onPrune, onResult }: { onPrune: () => void; onResult: (
 
   async function prune(all: boolean) {
     setOpen(false);
-    const { data, error } = await apiFetch<{ space_reclaimed: string }>(
-      `/api/v1/images/prune${all ? "?all=true" : ""}`, { method: "POST" },
+    // Always go async: on hosts with many images a synchronous prune ties up
+    // the request for minutes, and the user has no progress feedback. With
+    // ?async=true the prune lands in the Jobs drawer where it can be watched
+    // to completion, and the UI is responsive immediately.
+    const params = new URLSearchParams({ async: "true" });
+    if (all) params.set("all", "true");
+    const { data, error } = await apiFetch<{ job_id?: string; space_reclaimed?: string }>(
+      `/api/v1/images/prune?${params.toString()}`, { method: "POST" },
     );
     if (error) onResult(`Prune failed: ${error}`);
-    else if (data) onResult(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
+    else if (data?.job_id) onResult(`Prune started — see Jobs drawer (${data.job_id})`);
+    else if (data?.space_reclaimed) onResult(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
     onPrune();
   }
 

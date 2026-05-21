@@ -75,6 +75,18 @@ function jobTypeLabel(type: string): string {
       return "Pull";
     case "sync_redeploy":
       return "Git Sync";
+    case "prune_images":
+      return "Prune Images";
+    case "prune_volumes":
+      return "Prune Volumes";
+    case "prune_containers":
+      return "Prune Containers";
+    case "prune_networks":
+      return "Prune Networks";
+    case "prune_buildcache":
+      return "Prune Build Cache";
+    case "system_prune":
+      return "System Prune";
     default:
       return type;
   }
