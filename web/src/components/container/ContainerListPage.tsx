@@ -2,7 +2,8 @@ import { Fragment, useEffect, useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Table, THead, TBody, TR, TH, TD, SortHeader, hideOnNarrow } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
+import { FilterInput } from "@/components/ui/filter-input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api/errors";
 import { useSort } from "@/lib/use-sort";
@@ -138,14 +139,7 @@ export function ContainerListPage() {
             </CardTitle>
             {containers.length > 0 && (
               <>
-                <input
-                  type="search"
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  placeholder="Filter by name or image…"
-                  className="ml-auto h-7 w-56 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  data-testid="container-filter"
-                />
+                <FilterInput value={filter} onChange={setFilter} placeholder="Filter by name or image…" testId="container-filter" width="w-56" />
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
@@ -183,17 +177,7 @@ export function ContainerListPage() {
             <Table data-testid="global-container-list">
               <THead>
                 <TR>
-                  <TH className="w-8">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all visible"
-                      checked={sel.allSelected(sorted)}
-                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
-                      onChange={() => sel.toggleAll(sorted)}
-                      className="rounded"
-                      data-testid="select-all-containers"
-                    />
-                  </TH>
+                  <SelectAllTH rows={sorted} selection={sel} testId="select-all-containers" />
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
                   <SortHeader active={sortKey === "image"} direction={direction} onSort={() => toggle("image")}>Image</SortHeader>

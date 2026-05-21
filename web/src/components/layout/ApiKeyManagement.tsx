@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
-import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH } from "@/components/ui/data-table";
+import { FilterInput } from "@/components/ui/filter-input";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy } from "@/lib/use-busy";
@@ -138,14 +139,7 @@ export function ApiKeyManagement() {
             </span>
           </CardTitle>
           {keys.length > 0 && (
-            <input
-              type="search"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter…"
-              className="ml-auto h-7 w-56 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              data-testid="key-filter"
-            />
+            <FilterInput value={filter} onChange={setFilter} testId="key-filter" width="w-56" />
           )}
         </div>
       </CardHeader>
@@ -220,17 +214,7 @@ export function ApiKeyManagement() {
           <Table data-testid="key-list">
             <THead>
               <TR>
-                <TH className="w-8">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all visible"
-                    checked={sel.allSelected(sorted)}
-                    ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
-                    onChange={() => sel.toggleAll(sorted)}
-                    className="rounded"
-                    data-testid="select-all-keys"
-                  />
-                </TH>
+                <SelectAllTH rows={sorted} selection={sel} testId="select-all-keys" />
                 <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                 <SortHeader active={sortKey === "role"} direction={direction} onSort={() => toggle("role")}>Role</SortHeader>
                 <SortHeader active={sortKey === "lastUsed"} direction={direction} onSort={() => toggle("lastUsed")}>Last used</SortHeader>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, THead, TBody, TR, TH, TD, SortHeader, hideOnNarrow } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
+import { FilterInput } from "@/components/ui/filter-input";
 import { cn } from "@/lib/utils";
 import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
@@ -151,14 +152,7 @@ export function DashboardOverview() {
             </CardTitle>
             {stacks.length > 0 && (
               <>
-                <input
-                  type="search"
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  placeholder="Filter by name…"
-                  className="ml-auto h-7 w-48 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  data-testid="stack-filter"
-                />
+                <FilterInput value={filter} onChange={setFilter} placeholder="Filter by name…" testId="stack-filter" />
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
@@ -200,17 +194,7 @@ export function DashboardOverview() {
             <Table data-testid="stack-list">
               <THead>
                 <TR>
-                  <TH className="w-8">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all visible"
-                      checked={sel.allSelected(sorted)}
-                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
-                      onChange={() => sel.toggleAll(sorted)}
-                      className="rounded"
-                      data-testid="select-all-stacks"
-                    />
-                  </TH>
+                  <SelectAllTH rows={sorted} selection={sel} testId="select-all-stacks" />
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
                   <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className={cn("text-right", hideOnNarrow)}>Containers</SortHeader>

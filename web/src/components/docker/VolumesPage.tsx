@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, THead, TBody, TR, TH, TD, SortHeader, hideOnNarrow } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
+import { FilterInput } from "@/components/ui/filter-input";
 import { cn } from "@/lib/utils";
 import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
@@ -115,14 +116,7 @@ export function VolumesPage() {
               Volumes <span className="text-muted-foreground font-normal">({sorted.length}{sorted.length !== volumes.length ? ` of ${volumes.length}` : ""})</span>
             </CardTitle>
             {volumes.length > 0 && (
-              <input
-                type="search"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filter…"
-                className="ml-auto h-7 w-48 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                data-testid="volume-filter"
-              />
+              <FilterInput value={filter} onChange={setFilter} testId="volume-filter" />
             )}
             <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
           </div>
@@ -142,17 +136,7 @@ export function VolumesPage() {
             <Table>
               <THead>
                 <TR>
-                  <TH className="w-8">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all visible"
-                      checked={sel.allSelected(sorted)}
-                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
-                      onChange={() => sel.toggleAll(sorted)}
-                      className="rounded"
-                      data-testid="select-all-volumes"
-                    />
-                  </TH>
+                  <SelectAllTH rows={sorted} selection={sel} testId="select-all-volumes" />
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")} className={hideOnNarrow}>Driver</SortHeader>
                   <TH className={hideOnNarrow}>Mountpoint</TH>

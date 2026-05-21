@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, THead, TBody, TR, TH, TD, SortHeader, hideOnNarrow } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
+import { FilterInput } from "@/components/ui/filter-input";
 import { cn } from "@/lib/utils";
 import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
@@ -101,14 +102,7 @@ export function NetworksPage() {
               Networks <span className="text-muted-foreground font-normal">({sorted.length}{sorted.length !== networks.length ? ` of ${networks.length}` : ""})</span>
             </CardTitle>
             {networks.length > 0 && (
-              <input
-                type="search"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filter…"
-                className="ml-auto h-7 w-48 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                data-testid="network-filter"
-              />
+              <FilterInput value={filter} onChange={setFilter} testId="network-filter" />
             )}
             <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
           </div>
@@ -128,17 +122,7 @@ export function NetworksPage() {
             <Table>
               <THead>
                 <TR>
-                  <TH className="w-8">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all visible"
-                      checked={sel.allSelected(sorted)}
-                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
-                      onChange={() => sel.toggleAll(sorted)}
-                      className="rounded"
-                      data-testid="select-all-networks"
-                    />
-                  </TH>
+                  <SelectAllTH rows={sorted} selection={sel} testId="select-all-networks" />
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")} className={hideOnNarrow}>Driver</SortHeader>
                   <SortHeader active={sortKey === "scope"} direction={direction} onSort={() => toggle("scope")} className={hideOnNarrow}>Scope</SortHeader>

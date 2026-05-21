@@ -77,6 +77,42 @@ export function TD({ className, ...rest }: React.TdHTMLAttributes<HTMLTableCellE
 export const hideOnNarrow = "hidden md:table-cell";
 export const hideOnVeryNarrow = "hidden sm:table-cell";
 
+export interface SelectAllTHProps<T> {
+  /** All currently-visible rows (after filter + sort). */
+  rows: T[];
+  /** Selection state returned by useSelection. */
+  selection: {
+    allSelected: (rows: T[]) => boolean;
+    someSelected: (rows: T[]) => boolean;
+    toggleAll: (rows: T[]) => void;
+  };
+  testId?: string;
+}
+
+/**
+ * Standard select-all checkbox column header.
+ *
+ * Renders the leading <TH> with a tri-state checkbox driven by
+ * `useSelection.allSelected()` / `someSelected()`. The indeterminate state is
+ * applied via a ref callback because React doesn't expose `indeterminate` as a
+ * declarative prop.
+ */
+export function SelectAllTH<T>({ rows, selection, testId }: SelectAllTHProps<T>) {
+  return (
+    <TH className="w-8">
+      <input
+        type="checkbox"
+        aria-label="Select all visible"
+        checked={selection.allSelected(rows)}
+        ref={(el) => { if (el) el.indeterminate = selection.someSelected(rows); }}
+        onChange={() => selection.toggleAll(rows)}
+        className="rounded"
+        data-testid={testId}
+      />
+    </TH>
+  );
+}
+
 export interface SortHeaderProps extends React.ThHTMLAttributes<HTMLTableCellElement> {
   active: boolean;
   direction: SortDirection;
