@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
+import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
+import { useSort } from "@/lib/use-sort";
+import { useSelection } from "@/lib/use-selection";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -26,6 +29,14 @@ interface WebhookDetail {
   auto_redeploy: boolean;
 }
 
+interface Delivery {
+  id: string;
+  event: string;
+  status: string;
+  branch: string;
+  created_at: string;
+}
+
 const providerColor: Record<string, string> = {
   github: "bg-cp-purple/20 text-cp-purple border-cp-purple/30",
   gitlab: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
@@ -33,13 +44,21 @@ const providerColor: Record<string, string> = {
   generic: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
 };
 
+type SortKey = "stack" | "provider" | "branch";
+const accessors = {
+  stack: (w: WebhookSummary) => w.stack_name.toLowerCase(),
+  provider: (w: WebhookSummary) => w.provider,
+  branch: (w: WebhookSummary) => w.branch_filter || "",
+} satisfies Record<SortKey, (w: WebhookSummary) => string>;
+
 export function WebhookSettings() {
   const [webhooks, setWebhooks] = useState<WebhookSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newWebhook, setNewWebhook] = useState<WebhookDetail | null>(null);
   const [error, setError] = useState("");
-  const [deliveries, setDeliveries] = useState<{ id: string; event: string; status: string; branch: string; created_at: string }[]>([]);
+  const [filter, setFilter] = useState("");
+  const [deliveries, setDeliveries] = useState<Record<string, Delivery[]>>({});
   const [deliveriesFor, setDeliveriesFor] = useState<string | null>(null);
 
   // Form state
@@ -50,7 +69,7 @@ export function WebhookSettings() {
   const [stackNames, setStackNames] = useState<string[]>([]);
 
   function fetchWebhooks() {
-    apiFetch<{ webhooks: WebhookSummary[] }>("/api/v1/webhooks").then(({ data, error: err }) => {
+    apiFetch<{ webhooks: WebhookSummary[] }>("/api/v1/webhooks").then(({ data }) => {
       if (data) setWebhooks(data.webhooks || []);
       setLoading(false);
     });
@@ -72,10 +91,10 @@ export function WebhookSettings() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-          stack_name: stackName.trim(),
-          provider,
-          branch_filter: branchFilter.trim() || undefined,
-          auto_redeploy: autoRedeploy,
+        stack_name: stackName.trim(),
+        provider,
+        branch_filter: branchFilter.trim() || undefined,
+        auto_redeploy: autoRedeploy,
       }),
     });
     if (err) setError(err);
@@ -92,6 +111,30 @@ export function WebhookSettings() {
     const { error: err } = await apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" });
     if (err) setError(err);
     else fetchWebhooks();
+  }
+
+  async function toggleDeliveries(id: string) {
+    if (deliveriesFor === id) { setDeliveriesFor(null); return; }
+    setDeliveriesFor(id);
+    if (!deliveries[id]) {
+      const { data } = await apiFetch<{ deliveries: Delivery[] }>(`/api/v1/webhooks/${id}/deliveries`);
+      if (data) setDeliveries((prev) => ({ ...prev, [id]: data.deliveries || [] }));
+    }
+  }
+
+  const filtered = webhooks.filter((w) => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return w.stack_name.toLowerCase().includes(q) || w.provider.toLowerCase().includes(q) || (w.branch_filter || "").toLowerCase().includes(q);
+  });
+  const { sorted, sortKey, direction, toggle } = useSort<WebhookSummary, SortKey>(filtered, accessors, "stack", "asc");
+  const sel = useSelection<WebhookSummary>((w) => w.id);
+
+  async function bulkDelete() {
+    const ids = sorted.filter((w) => sel.isSelected(w.id)).map((w) => w.id);
+    await Promise.all(ids.map((id) => apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" })));
+    sel.clear();
+    fetchWebhooks();
   }
 
   return (
@@ -149,18 +192,18 @@ export function WebhookSettings() {
             </datalist>
             {error && <p className="text-sm text-cp-red">{error}</p>}
             <Button type="submit" disabled={creating || !stackName} data-testid="webhook-create-btn">
-              {creating ? "Creating..." : "Create Webhook"}
+              {creating ? "Creating…" : "Create Webhook"}
             </Button>
           </form>
 
           {/* Show newly created webhook with secret (shown once) */}
           {newWebhook && (
             <div className="mt-4 rounded-lg border border-cp-green/30 bg-cp-green/5 p-4 space-y-2" data-testid="webhook-created">
-              <p className="text-sm font-medium text-cp-green">Webhook created! Save the secret -- it won't be shown again.</p>
+              <p className="text-sm font-medium text-cp-green">Webhook created — save the secret, it won't be shown again.</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                 <div>
                   <span className="text-muted-foreground">Webhook URL</span>
-                  <p className="font-data break-all">{window.location.origin}{newWebhook.url}</p>
+                  <p className="font-data break-all">{typeof window !== "undefined" ? window.location.origin : ""}{newWebhook.url}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Secret</span>
@@ -172,6 +215,7 @@ export function WebhookSettings() {
                 Set content type to <code className="font-data">application/json</code>.
                 {newWebhook.provider === "github" && " Enable the 'push' event."}
               </p>
+              <Button size="xs" variant="ghost" onClick={() => setNewWebhook(null)}>Dismiss</Button>
             </div>
           )}
         </CardContent>
@@ -180,8 +224,39 @@ export function WebhookSettings() {
       {/* Webhook list */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Active Webhooks</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-sm shrink-0">
+              Active Webhooks{" "}
+              <span className="text-muted-foreground font-normal">
+                ({sorted.length}{sorted.length !== webhooks.length ? ` of ${webhooks.length}` : ""})
+              </span>
+            </CardTitle>
+            {webhooks.length > 0 && (
+              <input
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter…"
+                className="ml-auto h-7 w-56 rounded border border-input bg-transparent px-2 text-xs font-data placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                data-testid="webhook-filter"
+              />
+            )}
+          </div>
         </CardHeader>
+        {sel.size > 0 && (
+          <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
+            <span className="text-muted-foreground">{sel.size} selected</span>
+            <span className="flex-1" />
+            <ConfirmButton
+              size="xs"
+              message={`Delete ${sel.size} webhook${sel.size === 1 ? "" : "s"}?`}
+              onConfirm={bulkDelete}
+            >
+              Delete ({sel.size})
+            </ConfirmButton>
+            <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+          </div>
+        )}
         <CardContent>
           {loading ? (
             <div className="animate-pulse space-y-2">
@@ -190,67 +265,108 @@ export function WebhookSettings() {
             </div>
           ) : webhooks.length === 0 ? (
             <p className="text-sm text-muted-foreground">No webhooks configured.</p>
+          ) : sorted.length === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="no-webhooks-match">No webhooks match the current filter.</p>
           ) : (
-            <div className="space-y-2" data-testid="webhook-list">
-              {webhooks.map((wh) => (
-                <div key={wh.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div className="flex items-center gap-3">
-                    <Badge className={providerColor[wh.provider] || providerColor.generic}>
-                      {wh.provider}
-                    </Badge>
-                    <div>
-                      <span className="text-sm font-medium">{wh.stack_name}</span>
-                      {wh.branch_filter && (
-                        <span className="text-xs text-muted-foreground ml-2">
-                          branch: {wh.branch_filter}
-                        </span>
+            <Table data-testid="webhook-list">
+              <THead>
+                <TR>
+                  <TH className="w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible"
+                      checked={sel.allSelected(sorted)}
+                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
+                      onChange={() => sel.toggleAll(sorted)}
+                      className="rounded"
+                      data-testid="select-all-webhooks"
+                    />
+                  </TH>
+                  <SortHeader active={sortKey === "stack"} direction={direction} onSort={() => toggle("stack")}>Stack</SortHeader>
+                  <SortHeader active={sortKey === "provider"} direction={direction} onSort={() => toggle("provider")}>Provider</SortHeader>
+                  <SortHeader active={sortKey === "branch"} direction={direction} onSort={() => toggle("branch")}>Branch</SortHeader>
+                  <TH>URL</TH>
+                  <TH className="text-right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {sorted.map((wh) => {
+                  const expanded = deliveriesFor === wh.id;
+                  const rows = deliveries[wh.id];
+                  return (
+                    <Fragment key={wh.id}>
+                      <TR className={sel.isSelected(wh.id) ? "bg-cp-purple/5" : ""}>
+                        <TD className="w-8">
+                          <input
+                            type="checkbox"
+                            checked={sel.isSelected(wh.id)}
+                            onChange={() => sel.toggle(wh.id)}
+                            aria-label={`Select webhook for ${wh.stack_name}`}
+                            className="rounded"
+                            data-testid={`select-webhook-${wh.id}`}
+                          />
+                        </TD>
+                        <TD className="font-medium">{wh.stack_name}</TD>
+                        <TD>
+                          <Badge className={providerColor[wh.provider] || providerColor.generic}>{wh.provider}</Badge>
+                        </TD>
+                        <TD className="font-data text-muted-foreground">
+                          {wh.branch_filter || <span className="italic">any</span>}
+                        </TD>
+                        <TD className="font-data text-muted-foreground truncate max-w-[280px]" title={wh.url}>
+                          <code className="text-[10px]">{wh.url}</code>
+                        </TD>
+                        <TD className="text-right">
+                          <div className="flex items-center gap-1 justify-end">
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() => toggleDeliveries(wh.id)}
+                              aria-expanded={expanded}
+                              data-testid={`webhook-history-${wh.id}`}
+                            >
+                              {expanded ? "Hide" : "History"}
+                            </Button>
+                            <ConfirmButton
+                              size="xs"
+                              message="Delete this webhook?"
+                              onConfirm={() => handleDelete(wh.id)}
+                              data-testid={`webhook-delete-${wh.id}`}
+                            >
+                              Delete
+                            </ConfirmButton>
+                          </div>
+                        </TD>
+                      </TR>
+                      {expanded && (
+                        <tr className="bg-cp-950/50">
+                          <td colSpan={6} className="px-3 py-3 border-b border-border/40">
+                            {!rows ? (
+                              <p className="text-xs text-muted-foreground">Loading deliveries…</p>
+                            ) : rows.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">No deliveries yet.</p>
+                            ) : (
+                              <div className="space-y-1">
+                                {rows.map((d) => (
+                                  <div key={d.id} className="flex items-center gap-2 text-xs rounded border border-border/50 p-2">
+                                    <Badge className={d.status === "success" ? "bg-cp-green/20 text-cp-green border-cp-green/30" : d.status === "failed" ? "bg-cp-red/20 text-cp-red border-cp-red/30" : "bg-cp-600/20 text-muted-foreground border-cp-600/30"}>
+                                      {d.status}
+                                    </Badge>
+                                    <span className="font-data">{d.event}</span>
+                                    {d.branch && <span className="text-muted-foreground">{d.branch}</span>}
+                                    <span className="ml-auto text-muted-foreground font-data">{new Date(d.created_at).toLocaleString()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
                       )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <code className="text-xs font-data text-muted-foreground">{wh.url}</code>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={async () => {
-                        if (deliveriesFor === wh.id) { setDeliveriesFor(null); return; }
-                        const { data } = await apiFetch<{ deliveries: typeof deliveries }>(`/api/v1/webhooks/${wh.id}/deliveries`);
-                        if (data) setDeliveries(data.deliveries || []);
-                        setDeliveriesFor(wh.id);
-                      }}
-                      data-testid={`webhook-history-${wh.id}`}
-                    >
-                      {deliveriesFor === wh.id ? "Hide" : "History"}
-                    </Button>
-                    <ConfirmButton
-                      size="xs"
-                      message="Delete this webhook?"
-                      onConfirm={() => handleDelete(wh.id)}
-                      data-testid={`webhook-delete-${wh.id}`}
-                    >
-                      Delete
-                    </ConfirmButton>
-                  </div>
-                  {/* Delivery history for this webhook */}
-                  {deliveriesFor === wh.id && (
-                    <div className="mt-2 space-y-1">
-                      {deliveries.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No deliveries yet.</p>
-                      ) : deliveries.map((d) => (
-                        <div key={d.id} className="flex items-center gap-2 text-xs rounded border border-border/50 p-2">
-                          <Badge className={d.status === "success" ? "bg-cp-green/20 text-cp-green border-cp-green/30" : d.status === "failed" ? "bg-cp-red/20 text-cp-red border-cp-red/30" : "bg-cp-600/20 text-muted-foreground border-cp-600/30"}>
-                            {d.status}
-                          </Badge>
-                          <span className="font-data">{d.event}</span>
-                          {d.branch && <span className="text-muted-foreground">{d.branch}</span>}
-                          <span className="ml-auto text-muted-foreground font-data">{new Date(d.created_at).toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                    </Fragment>
+                  );
+                })}
+              </TBody>
+            </Table>
           )}
         </CardContent>
       </Card>
