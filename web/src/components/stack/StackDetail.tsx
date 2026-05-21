@@ -17,6 +17,7 @@ const LogViewer = lazy(() => import("@/components/container/LogViewer").then(m =
 const StackConsole = lazy(() => import("./StackConsole").then(m => ({ default: m.StackConsole })));
 const DiffViewer = lazy(() => import("./DiffViewer").then(m => ({ default: m.DiffViewer })));
 import { GitStatus } from "./GitStatus";
+import { StackRegistryAuths } from "./StackRegistryAuths";
 import { EnvEditor } from "./EnvEditor";
 import { StackWebhooks } from "./StackWebhooks";
 import { StackCredentials } from "./StackCredentials";
@@ -76,8 +77,8 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
   const [attachGitUrl, setAttachGitUrl] = useState<string | null>(null);
-  type TabId = "containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "git";
-  const VALID_TABS: readonly TabId[] = ["containers", "compose", "dockerfiles", "env", "diff", "logs", "console", "terminal", "stats", "webhooks", "credentials", "git"];
+  type TabId = "containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "registries" | "git";
+  const VALID_TABS: readonly TabId[] = ["containers", "compose", "dockerfiles", "env", "diff", "logs", "console", "terminal", "stats", "webhooks", "credentials", "registries", "git"];
   // Tab state is driven by the React Router :tab URL param. The router
   // (StacksRouter) maps /stacks/:name/:tab here; setActiveTab navigates
   // which updates :tab and re-renders. Default to "containers" when no
@@ -304,7 +305,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Tabs */}
       <div role="tablist" className="flex gap-1 border-b border-border overflow-x-auto">
-        {(["containers", "compose", ...(stack.dockerfiles?.length ? ["dockerfiles" as const] : []), "env", "diff", "logs", "console", "terminal", "stats", ...(stack.source === "git" ? ["webhooks" as const, "credentials" as const, "git" as const] : [])] as const).map((tab) => (
+        {(["containers", "compose", ...(stack.dockerfiles?.length ? ["dockerfiles" as const] : []), "env", "diff", "logs", "console", "terminal", "stats", "registries" as const, ...(stack.source === "git" ? ["webhooks" as const, "credentials" as const, "git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             role="tab"
@@ -621,6 +622,10 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {activeTab === "git" && stack.source === "git" && (
         <GitStatus stackName={stack.name} />
+      )}
+
+      {activeTab === "registries" && (
+        <StackRegistryAuths stackName={stack.name} />
       )}
     </div>
   );

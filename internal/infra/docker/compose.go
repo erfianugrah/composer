@@ -13,6 +13,46 @@ import (
 	"go.uber.org/zap"
 )
 
+// dockerConfigDirCtxKey carries an ephemeral DOCKER_CONFIG directory (built
+// from registry.Credential entries) into compose.run so it can be appended
+// to the child process's env. We use an unexported type so external packages
+// must go through WithDockerConfigDir.
+type dockerConfigDirCtxKey struct{}
+
+// WithDockerConfigDir returns a child context that instructs subsequent
+// compose/docker invocations to set DOCKER_CONFIG=dir. Pass "" to disable.
+// Pair with registry.BuildConfigDir's cleanup func to remove the tempdir
+// after the docker operation completes.
+func WithDockerConfigDir(ctx context.Context, dir string) context.Context {
+	if dir == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, dockerConfigDirCtxKey{}, dir)
+}
+
+// dockerConfigDirFromCtx extracts a DOCKER_CONFIG override from ctx, or "".
+func dockerConfigDirFromCtx(ctx context.Context) string {
+	if v, ok := ctx.Value(dockerConfigDirCtxKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// applyExtraEnv appends DOCKER_HOST (when configured) and DOCKER_CONFIG
+// (when present on ctx) to cmd.Env. Returns the resulting slice so callers
+// can keep appending if needed.
+func (c *Compose) applyExtraEnv(ctx context.Context, cmd *exec.Cmd) []string {
+	env := cmd.Environ()
+	if c.dockerHost != "" {
+		env = append(env, "DOCKER_HOST="+c.dockerHost)
+	}
+	if cfgDir := dockerConfigDirFromCtx(ctx); cfgDir != "" {
+		env = append(env, "DOCKER_CONFIG="+cfgDir)
+	}
+	cmd.Env = env
+	return env
+}
+
 // ComposeResult holds the output of a docker compose command.
 type ComposeResult struct {
 	Stdout   string
@@ -106,9 +146,7 @@ func (c *Compose) RunDocker(ctx context.Context, args []string) (*ComposeResult,
 	)
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	if c.dockerHost != "" {
-		cmd.Env = append(cmd.Environ(), "DOCKER_HOST="+c.dockerHost)
-	}
+	c.applyExtraEnv(ctx, cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -170,10 +208,7 @@ func (c *Compose) run(ctx context.Context, workDir string, composeFile string, a
 	}
 	cmd := exec.CommandContext(ctx, "docker", fullArgs...)
 	cmd.Dir = workDir
-
-	if c.dockerHost != "" {
-		cmd.Env = append(cmd.Environ(), "DOCKER_HOST="+c.dockerHost)
-	}
+	c.applyExtraEnv(ctx, cmd)
 
 	// P16: limit to 1MB to prevent unbounded memory from verbose compose output
 	stdout := &limitedBuffer{max: 1 << 20}
@@ -272,6 +307,9 @@ func (c *Compose) RunPTY(ctx context.Context, workDir, composeFile string, cols,
 	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
 	if c.dockerHost != "" {
 		cmd.Env = append(cmd.Env, "DOCKER_HOST="+c.dockerHost)
+	}
+	if cfgDir := dockerConfigDirFromCtx(ctx); cfgDir != "" {
+		cmd.Env = append(cmd.Env, "DOCKER_CONFIG="+cfgDir)
 	}
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})

@@ -50,6 +50,7 @@ func main() {
 		{Name: "auth", Description: "Login, logout, session, and bootstrap"},
 		{Name: "users", Description: "User management (admin only)"},
 		{Name: "keys", Description: "API key management (plaintext shown once at creation)"},
+		{Name: "registries", Description: "Docker registry credentials (global + per-stack, encrypted at rest)"},
 		{Name: "stacks", Description: "Docker Compose stack lifecycle"},
 		{Name: "git", Description: "Git-backed stack sync, rollback, and deploy pipeline"},
 		{Name: "containers", Description: "Container inspection and lifecycle"},
@@ -85,6 +86,7 @@ func main() {
 	handler.NewAuthHandler(nil).Register(api)
 	handler.NewUserHandler(nil).Register(api)
 	handler.NewKeyHandler(nil).Register(api)
+	handler.NewRegistryHandler(nil).Register(api)
 	handler.NewStackHandler(nil, nil).Register(api)
 	handler.NewContainerHandler(nil).Register(api)
 	handler.NewSSEHandler(nil, nil).Register(api)

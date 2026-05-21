@@ -151,6 +151,7 @@ func (h *GitHandler) Status(ctx context.Context, input *dto.GitStatusInput) (*dt
 	out.Body.RepoURL = cfg.RepoURL
 	out.Body.Branch = cfg.Branch
 	out.Body.ComposePath = cfg.ComposePath
+	out.Body.EnvPath = cfg.EnvPath
 	out.Body.AutoSync = cfg.AutoSync
 	out.Body.LastSyncAt = cfg.LastSyncAt
 	out.Body.LastCommitSHA = cfg.LastCommitSHA
@@ -275,6 +276,7 @@ func (h *GitHandler) CreateGitStack(ctx context.Context, input *dto.CreateGitSta
 		RepoURL:     input.Body.RepoURL,
 		Branch:      branch,
 		ComposePath: composePath,
+		EnvPath:     input.Body.EnvPath,
 		AutoSync:    true,
 		AuthMethod:  authMethod,
 	}

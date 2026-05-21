@@ -151,12 +151,11 @@ func DecryptInMemory(filePath, ageKey string) ([]byte, error) {
 	return Decrypt(filePath, ageKey)
 }
 
-// DecryptEnvFile decrypts a SOPS-encrypted .env file in a stack directory.
-// Saves the encrypted original as .env.sops before writing decrypted .env.
+// DecryptEnvFile decrypts a SOPS-encrypted .env file at envPath.
+// Saves the encrypted original as <envPath>.sops before writing the decrypted file.
 // This allows ReEncryptEnvFile to restore the encrypted version after deploy.
 // Returns false if the file is not SOPS-encrypted or doesn't exist.
-func DecryptEnvFile(stackDir, ageKey string) (decrypted bool, err error) {
-	envPath := filepath.Join(stackDir, ".env")
+func DecryptEnvFile(envPath, ageKey string) (decrypted bool, err error) {
 	data, err := os.ReadFile(envPath)
 	if err != nil {
 		return false, nil // no .env file
@@ -184,11 +183,10 @@ func DecryptEnvFile(stackDir, ageKey string) (decrypted bool, err error) {
 	return true, nil
 }
 
-// ReEncryptEnvFile restores the SOPS-encrypted .env from the .env.sops backup
-// created by DecryptEnvFile. Call this after deploy completes so the .env is
-// never left decrypted at rest.
-func ReEncryptEnvFile(stackDir string) error {
-	envPath := filepath.Join(stackDir, ".env")
+// ReEncryptEnvFile restores the SOPS-encrypted .env file at envPath from the
+// <envPath>.sops backup created by DecryptEnvFile. Call this after deploy completes
+// so the .env is never left decrypted at rest.
+func ReEncryptEnvFile(envPath string) error {
 	sopsPath := envPath + ".sops"
 
 	sopsData, err := os.ReadFile(sopsPath)

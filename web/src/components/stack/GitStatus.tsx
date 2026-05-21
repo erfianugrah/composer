@@ -9,6 +9,7 @@ interface GitStatusData {
   repo_url: string;
   branch: string;
   compose_path: string;
+  env_path?: string;
   auto_sync: boolean;
   last_sync_at: string | null;
   last_commit_sha: string;
@@ -109,6 +110,10 @@ export function GitStatus({ stackName }: { stackName: string }) {
             <div>
               <span className="text-muted-foreground">Compose Path</span>
               <p className="font-data">{status.compose_path}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">.env Path</span>
+              <p className="font-data">{status.env_path || ".env"}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Last Commit</span>

@@ -55,6 +55,7 @@ type GitStatusOutput struct {
 		RepoURL       string     `json:"repo_url"`
 		Branch        string     `json:"branch"`
 		ComposePath   string     `json:"compose_path"`
+		EnvPath       string     `json:"env_path,omitempty" doc:"Path to .env relative to repo root (empty means default '.env' at repo root)"`
 		AutoSync      bool       `json:"auto_sync"`
 		LastSyncAt    *time.Time `json:"last_sync_at,omitempty"`
 		LastCommitSHA string     `json:"last_commit_sha,omitempty"`

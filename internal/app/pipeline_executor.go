@@ -293,10 +293,11 @@ func (e *PipelineExecutor) executeComposeStep(ctx context.Context, step pipeline
 					perStackAgeKey = cfg.Credentials.AgeKey
 				}
 				ageKey := sops.ResolveAgeKey(perStackAgeKey, e.stacksDir)
-				sops.DecryptEnvFile(st.Path, ageKey)
+				envFile := cfg.ResolveEnvPath(st.Path)
+				sops.DecryptEnvFile(envFile, ageKey)
 				sops.DecryptComposeSecrets(composePath, ageKey)
 				defer func() {
-					sops.ReEncryptEnvFile(st.Path)
+					sops.ReEncryptEnvFile(envFile)
 					sops.ReEncryptComposeSecrets(composePath)
 				}()
 			}

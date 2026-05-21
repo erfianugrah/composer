@@ -107,12 +107,12 @@ func NewGitConfigRepo(db *sql.DB) *GitConfigRepo {
 
 func (r *GitConfigRepo) Upsert(ctx context.Context, stackName string, cfg *stack.GitSource) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO stack_git_configs (stack_name, repo_url, branch, compose_path, auto_sync, auth_method, credentials, last_sync_at, last_commit, sync_status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`INSERT INTO stack_git_configs (stack_name, repo_url, branch, compose_path, env_path, auto_sync, auth_method, credentials, last_sync_at, last_commit, sync_status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 ON CONFLICT (stack_name) DO UPDATE SET
-		   repo_url=$2, branch=$3, compose_path=$4, auto_sync=$5, auth_method=$6,
-		   credentials=$7, last_sync_at=$8, last_commit=$9, sync_status=$10`,
-		stackName, cfg.RepoURL, cfg.Branch, cfg.ComposePath, cfg.AutoSync,
+		   repo_url=$2, branch=$3, compose_path=$4, env_path=$5, auto_sync=$6, auth_method=$7,
+		   credentials=$8, last_sync_at=$9, last_commit=$10, sync_status=$11`,
+		stackName, cfg.RepoURL, cfg.Branch, cfg.ComposePath, cfg.EnvPath, cfg.AutoSync,
 		string(cfg.AuthMethod), marshalCredentials(cfg.Credentials), cfg.LastSyncAt, cfg.LastCommitSHA, string(cfg.SyncStatus),
 	)
 	if err != nil {
@@ -126,9 +126,9 @@ func (r *GitConfigRepo) GetByStackName(ctx context.Context, stackName string) (*
 	var authMethod, syncStatus string
 	var credsRaw sql.NullString
 	err := r.db.QueryRowContext(ctx,
-		`SELECT repo_url, branch, compose_path, auto_sync, auth_method, credentials, last_sync_at, last_commit, sync_status
+		`SELECT repo_url, branch, compose_path, env_path, auto_sync, auth_method, credentials, last_sync_at, last_commit, sync_status
 		 FROM stack_git_configs WHERE stack_name = $1`, stackName,
-	).Scan(&cfg.RepoURL, &cfg.Branch, &cfg.ComposePath, &cfg.AutoSync,
+	).Scan(&cfg.RepoURL, &cfg.Branch, &cfg.ComposePath, &cfg.EnvPath, &cfg.AutoSync,
 		&authMethod, &credsRaw, &cfg.LastSyncAt, &cfg.LastCommitSHA, &syncStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

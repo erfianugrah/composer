@@ -26,6 +26,9 @@ All configuration is via `COMPOSER_*` environment variables. No config files, no
 | `COMPOSER_ENCRYPTION_KEY` | (empty) | Encryption key for secrets at rest (git credentials, webhook secrets). Auto-generated on first run and saved to `COMPOSER_DATA_DIR/encryption.key`. Set explicitly to override. |
 | `COMPOSER_TRUSTED_PROXIES` | (empty) | Set to any value to trust `X-Real-IP`/`X-Forwarded-For` headers (required when behind a reverse proxy like Caddy/nginx). Empty = use raw `RemoteAddr` |
 | `COMPOSER_SOPS_AGE_KEY` | (empty) | Age private key (`AGE-SECRET-KEY-...`) for decrypting SOPS-encrypted `.env` and compose files. Also checks `SOPS_AGE_KEY`, `SOPS_AGE_KEYS`, key files, and `~/.config/sops/age/keys.txt` |
+| `COMPOSER_REGISTRY_AUTHS` | (empty) | Bootstrap Docker registry credentials at startup. JSON array of `{registry,username,secret,email?,stack_name?}`. Empty `stack_name` = global (applied to every stack). Idempotent: existing rows preserved unless `COMPOSER_REGISTRY_AUTHS_OVERWRITE=true`. Use the UI / `/api/v1/registries` for ongoing changes. |
+| `COMPOSER_REGISTRY_AUTHS_FILE` | (empty) | Alternative to `COMPOSER_REGISTRY_AUTHS`: path to a JSON file with the same shape. Useful when secrets are mounted in as files. |
+| `COMPOSER_REGISTRY_AUTHS_OVERWRITE` | `false` | When `true`, env-bootstrapped registry credentials replace any existing DB rows on every boot. Default keeps the DB as source of truth after first seed. |
 
 ## Container User Mapping (PUID/PGID)
 

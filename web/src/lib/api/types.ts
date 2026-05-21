@@ -696,6 +696,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/registries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Docker registry credentials
+         * @description Returns global + per-stack registry credentials. Pass `?stack=<name>` to filter to per-stack rows for one stack. Secrets are redacted in every response.
+         */
+        get: operations["listRegistryCredentials"];
+        put?: never;
+        /**
+         * Create a Docker registry credential
+         * @description Adds a registry auth entry. `stack_name` empty = global (applied to every stack). `stack_name` set = per-stack override (wins over global for the same registry). Supports multiple registries: add one row per registry — composer merges them into DOCKER_CONFIG before pull/up.
+         */
+        post: operations["createRegistryCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registries/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a registry credential */
+        get: operations["getRegistryCredential"];
+        /**
+         * Update a registry credential
+         * @description Replaces the credential atomically. Leave `secret` empty to keep the existing secret unchanged.
+         */
+        put: operations["updateRegistryCredential"];
+        post?: never;
+        /** Delete a registry credential */
+        delete: operations["deleteRegistryCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sse/containers/{id}/logs": {
         parameters: {
             query?: never;
@@ -1929,6 +1975,10 @@ export interface components {
             age_key?: string;
             /** @description Branch (default: main) */
             branch?: string;
+            /** @description Path to compose file in repo (default: compose.yaml) */
+            compose_path?: string;
+            /** @description Path to .env file in repo, relative to repo root (default: .env at repo root) */
+            env_path?: string;
             /** @description Password for basic auth */
             password?: string;
             /** @description Git repository URL */
@@ -1960,6 +2010,8 @@ export interface components {
             branch?: string;
             /** @description Path to compose file in repo (default: compose.yaml) */
             compose_path?: string;
+            /** @description Path to .env file in repo, relative to repo root (default: .env at repo root) */
+            env_path?: string;
             /** @description Stack name */
             name: string;
             /** @description Password for basic auth */
@@ -2006,6 +2058,24 @@ export interface components {
             driver?: string;
             /** @description Network name */
             name: string;
+        };
+        CreateRegistryCredentialInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/CreateRegistryCredentialInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Optional email (some legacy registries require it) */
+            email?: string;
+            /** @description Registry hostname (ghcr.io, docker.io, registry.example.com:5000) */
+            registry: string;
+            /** @description Password or personal access token */
+            secret: string;
+            /** @description Empty = global credential applied to all stacks. Non-empty = per-stack override. */
+            stack_name?: string;
+            /** @description Registry username */
+            username: string;
         };
         CreateStackInputBody: {
             /**
@@ -2291,6 +2361,8 @@ export interface components {
             auto_sync: boolean;
             branch: string;
             compose_path: string;
+            /** @description Path to .env relative to repo root (empty means default '.env' at repo root) */
+            env_path?: string;
             last_commit_sha?: string;
             /** Format: date-time */
             last_sync_at?: string;
@@ -2310,6 +2382,8 @@ export interface components {
             auto_sync: boolean;
             branch: string;
             compose_path: string;
+            /** @description Path to .env relative to repo root (empty means default '.env' at repo root) */
+            env_path?: string;
             last_commit_sha?: string;
             /** Format: date-time */
             last_sync_at?: string;
@@ -2489,6 +2563,15 @@ export interface components {
             name: string;
             /** @enum {string} */
             role: "admin" | "operator" | "viewer";
+        };
+        ListRegistryCredentialsOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/ListRegistryCredentialsOutputBody.json
+             */
+            readonly $schema?: string;
+            credentials: components["schemas"]["RegistryCredentialOutput"][] | null;
         };
         LogEntry: {
             container_id: string;
@@ -2753,6 +2836,30 @@ export interface components {
              */
             readonly $schema?: string;
             events: components["schemas"]["DockerEventItem"][] | null;
+        };
+        RegistryCredentialOutput: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/RegistryCredentialOutput.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            email?: string;
+            /** Format: int64 */
+            id: number;
+            is_global: boolean;
+            registry: string;
+            /** @description Last 4 characters of the secret (debug aid) */
+            secret_preview?: string;
+            /** @description True when a secret is stored. Plaintext is never returned. */
+            secret_set: boolean;
+            /** @description Empty means global credential */
+            stack_name?: string;
+            /** Format: date-time */
+            updated_at: string;
+            username: string;
         };
         ResolvedStruct: {
             /** @description Where age key comes from (per-stack, env, file, none) */
@@ -3063,6 +3170,20 @@ export interface components {
             readonly $schema?: string;
             /** @description Global git access token (GitHub PAT, GitLab token, etc.). Empty to remove. */
             token: string;
+        };
+        UpdateRegistryCredentialInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/UpdateRegistryCredentialInputBody.json
+             */
+            readonly $schema?: string;
+            email?: string;
+            registry: string;
+            /** @description Leave empty to keep the existing secret */
+            secret?: string;
+            stack_name?: string;
+            username: string;
         };
         UpdateStackCredentialsInputBody: {
             /**
@@ -5847,6 +5968,339 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RunOutputBody"];
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    listRegistryCredentials: {
+        parameters: {
+            query?: {
+                /** @description Optional: filter to this stack's per-stack creds. Empty returns all (global + every stack). */
+                stack?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListRegistryCredentialsOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    createRegistryCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRegistryCredentialInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryCredentialOutput"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getRegistryCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Registry credential ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryCredentialOutput"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    updateRegistryCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Registry credential ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRegistryCredentialInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryCredentialOutput"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    deleteRegistryCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

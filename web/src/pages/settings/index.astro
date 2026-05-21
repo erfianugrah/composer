@@ -2,6 +2,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { SystemConfig } from "@/components/layout/SystemConfig";
 import { CredentialsOverview } from "@/components/layout/CredentialsOverview";
+import { RegistryAuthSettings } from "@/components/layout/RegistryAuthSettings";
 import { UserManagement } from "@/components/layout/UserManagement";
 import { ApiKeyManagement } from "@/components/layout/ApiKeyManagement";
 import { ImportStacks } from "@/components/stack/ImportStacks";
@@ -13,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
   <div class="space-y-6">
     <SystemConfig client:load />
     <CredentialsOverview client:load />
+    <RegistryAuthSettings client:load />
     <UserManagement client:load />
     <ApiKeyManagement client:load />
     <ImportStacks client:load />

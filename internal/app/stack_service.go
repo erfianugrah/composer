@@ -13,22 +13,69 @@ import (
 
 	domcontainer "github.com/erfianugrah/composer/internal/domain/container"
 	"github.com/erfianugrah/composer/internal/domain/event"
+	domreg "github.com/erfianugrah/composer/internal/domain/registry"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
+	infreg "github.com/erfianugrah/composer/internal/infra/registry"
 	"github.com/erfianugrah/composer/internal/infra/sops"
 )
 
 // StackService orchestrates stack management operations.
 type StackService struct {
-	stacks    stack.StackRepository
-	gitCfgs   stack.GitConfigRepository
-	docker    *docker.Client
-	compose   *docker.Compose
-	bus       event.Bus
-	log       *zap.Logger
-	stacksDir string
-	dataDir   string
-	locks     *StackLocks // per-stack mutex to prevent concurrent compose operations (shared)
+	stacks       stack.StackRepository
+	gitCfgs      stack.GitConfigRepository
+	registryRepo domreg.Repository // optional; nil disables registry auth
+	docker       *docker.Client
+	compose      *docker.Compose
+	bus          event.Bus
+	log          *zap.Logger
+	stacksDir    string
+	dataDir      string
+	locks        *StackLocks // per-stack mutex to prevent concurrent compose operations (shared)
+}
+
+// SetRegistryRepo wires an optional registry credentials repository. When set,
+// docker compose pull/up operations get a DOCKER_CONFIG with auths resolved
+// from global + per-stack rows. Pass nil to disable.
+func (s *StackService) SetRegistryRepo(r domreg.Repository) { s.registryRepo = r }
+
+// withRegistryAuth resolves registry credentials for stackName, materialises
+// a tempdir DOCKER_CONFIG, and returns a child context plus a cleanup func.
+// Safe to call with no registryRepo configured (returns ctx + no-op cleanup).
+func (s *StackService) withRegistryAuth(ctx context.Context, stackName string) (context.Context, func()) {
+	noop := func() {}
+	if s.registryRepo == nil {
+		return ctx, noop
+	}
+	global, err := s.registryRepo.ListGlobal(ctx)
+	if err != nil {
+		s.log.Warn("registry: list global creds failed", zap.Error(err))
+	}
+	var perStack []*domreg.Credential
+	if stackName != "" {
+		if rows, err := s.registryRepo.ListForStack(ctx, stackName); err != nil {
+			s.log.Warn("registry: list per-stack creds failed", zap.String("stack", stackName), zap.Error(err))
+		} else {
+			perStack = rows
+		}
+	}
+	merged := domreg.Resolve(global, perStack)
+	if len(merged) == 0 {
+		return ctx, noop
+	}
+	dir, cleanup, err := infreg.BuildConfigDir(merged)
+	if err != nil {
+		s.log.Error("registry: build DOCKER_CONFIG failed", zap.Error(err))
+		return ctx, noop
+	}
+	if dir == "" {
+		return ctx, cleanup
+	}
+	s.log.Debug("registry: DOCKER_CONFIG materialised",
+		zap.String("stack", stackName),
+		zap.Int("registries", len(merged)),
+	)
+	return docker.WithDockerConfigDir(ctx, dir), cleanup
 }
 
 // NewStackService creates a new StackService.
@@ -99,11 +146,13 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string) 
 	s.log.Info("auto-deploying new stack", zap.String("stack", name))
 	cf := s.resolveComposeFile(ctx, name)
 	s.decryptSopsSecrets(ctx, name, st.Path)
-	if _, err := s.compose.Up(ctx, st.Path, cf); err != nil {
+	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
+	defer regCleanup()
+	if _, err := s.compose.Up(deployCtx, st.Path, cf); err != nil {
 		s.log.Warn("auto-deploy failed (stack created but not running)", zap.String("stack", name), zap.Error(err))
 		// Don't fail the create -- stack is saved, user can deploy manually
 	} else {
-		s.reEncryptSopsSecrets(st.Path)
+		s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
 		s.publishEvent(event.StackDeployed{Name: name, Timestamp: time.Now()})
 	}
 
@@ -279,9 +328,11 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("deploying stack", zap.String("stack", name), zap.String("path", st.Path), zap.String("compose_file", cf))
 	s.decryptSopsSecrets(ctx, name, st.Path)
-	defer s.reEncryptSopsSecrets(st.Path)
+	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
+	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
+	defer regCleanup()
 
-	result, err := s.compose.Up(ctx, st.Path, cf)
+	result, err := s.compose.Up(deployCtx, st.Path, cf)
 	if err != nil {
 		s.log.Error("deploy failed", zap.String("stack", name), zap.Error(err))
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
@@ -309,9 +360,11 @@ func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("build+deploy stack", zap.String("stack", name), zap.String("path", st.Path), zap.String("compose_file", cf))
 	s.decryptSopsSecrets(ctx, name, st.Path)
-	defer s.reEncryptSopsSecrets(st.Path)
+	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
+	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
+	defer regCleanup()
 
-	result, err := s.compose.BuildAndUp(ctx, st.Path, cf)
+	result, err := s.compose.BuildAndUp(deployCtx, st.Path, cf)
 	if err != nil {
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
 		return result, err
@@ -387,7 +440,9 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("pulling images", zap.String("stack", name))
-	result, err := s.compose.Pull(ctx, st.Path, cf)
+	pullCtx, regCleanup := s.withRegistryAuth(ctx, name)
+	defer regCleanup()
+	result, err := s.compose.Pull(pullCtx, st.Path, cf)
 	if err == nil {
 		s.log.Info("pull completed", zap.String("stack", name))
 		s.publishEvent(event.StackUpdated{Name: name, Timestamp: time.Now()})
@@ -516,7 +571,7 @@ func (s *StackService) ImportFromDir(ctx context.Context, sourceDir string) (*Im
 
 // ConvertToGit converts a local stack to a git-backed stack by initializing
 // a git repo, committing the compose file, and optionally pushing to a remote.
-func (s *StackService) ConvertToGit(ctx context.Context, name string, repoURL, branch string, creds *stack.GitCredentials) error {
+func (s *StackService) ConvertToGit(ctx context.Context, name string, repoURL, branch, composePath, envPath string, creds *stack.GitCredentials) error {
 	s.locks.Lock(name)
 	defer s.locks.Unlock(name)
 
@@ -536,10 +591,14 @@ func (s *StackService) ConvertToGit(ctx context.Context, name string, repoURL, b
 	}
 
 	// Create git config
+	if composePath == "" {
+		composePath = "compose.yaml"
+	}
 	gitCfg := &stack.GitSource{
 		RepoURL:     repoURL,
 		Branch:      branch,
-		ComposePath: "compose.yaml",
+		ComposePath: composePath,
+		EnvPath:     envPath,
 		AutoSync:    true,
 		AuthMethod:  stack.GitAuthNone,
 		SyncStatus:  stack.GitSynced,
@@ -775,10 +834,11 @@ func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackP
 		return
 	}
 
-	if decrypted, err := sops.DecryptEnvFile(stackPath, ageKey); err != nil {
-		s.log.Error("sops: failed to decrypt .env", zap.String("stack", stackName), zap.Error(err))
+	envFile := s.resolveEnvFile(ctx, stackName, stackPath)
+	if decrypted, err := sops.DecryptEnvFile(envFile, ageKey); err != nil {
+		s.log.Error("sops: failed to decrypt .env", zap.String("stack", stackName), zap.String("path", envFile), zap.Error(err))
 	} else if decrypted {
-		s.log.Info("sops: decrypted .env", zap.String("stack", stackName))
+		s.log.Info("sops: decrypted .env", zap.String("stack", stackName), zap.String("path", envFile))
 	}
 
 	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
@@ -793,20 +853,33 @@ func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackP
 	}
 }
 
-func (s *StackService) reEncryptSopsSecrets(stackPath string) {
-	if err := sops.ReEncryptEnvFile(stackPath); err != nil {
-		s.log.Error("sops: failed to re-encrypt .env", zap.String("path", stackPath), zap.Error(err))
+// reEncryptSopsSecretsCtx restores SOPS-encrypted .env / compose files. The
+// stackName is used to look up GitSource.EnvPath when present; pass "" for
+// non-git stacks.
+func (s *StackService) reEncryptSopsSecretsCtx(ctx context.Context, stackName, stackPath string) {
+	envFile := s.resolveEnvFile(ctx, stackName, stackPath)
+	if err := sops.ReEncryptEnvFile(envFile); err != nil {
+		s.log.Error("sops: failed to re-encrypt .env", zap.String("path", envFile), zap.Error(err))
 	} else {
-		// Only log if there was a .sops backup to restore
-		envSops := filepath.Join(stackPath, ".env.sops")
-		if _, err := os.Stat(envSops); err != nil {
-			// .sops already cleaned up = re-encrypt happened
-			s.log.Info("sops: re-encrypted .env", zap.String("path", stackPath))
+		if _, err := os.Stat(envFile + ".sops"); err != nil {
+			s.log.Info("sops: re-encrypted .env", zap.String("path", envFile))
 		}
 	}
 	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
 		sops.ReEncryptComposeSecrets(filepath.Join(stackPath, name))
 	}
+}
+
+// resolveEnvFile returns the absolute path to the .env file for a stack.
+// For git stacks, honours GitSource.EnvPath; for local stacks, defaults to
+// "<stackPath>/.env".
+func (s *StackService) resolveEnvFile(ctx context.Context, stackName, stackPath string) string {
+	if stackName != "" && s.gitCfgs != nil {
+		if cfg, _ := s.gitCfgs.GetByStackName(ctx, stackName); cfg != nil {
+			return cfg.ResolveEnvPath(stackPath)
+		}
+	}
+	return filepath.Join(stackPath, ".env")
 }
 
 // publishEvent sends an event to the bus if one is configured.
@@ -854,7 +927,7 @@ func (s *StackService) PrepareAction(ctx context.Context, name string) (*ActionC
 		StackPath:   st.Path,
 		ComposeFile: cf,
 		cleanup: func() {
-			s.reEncryptSopsSecrets(st.Path)
+			s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
 			s.locks.Unlock(name)
 		},
 	}, nil

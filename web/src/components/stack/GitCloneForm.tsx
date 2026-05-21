@@ -13,6 +13,7 @@ export function GitCloneForm({ onCreated }: Props) {
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
   const [composePath, setComposePath] = useState("compose.yaml");
+  const [envPath, setEnvPath] = useState("");
   const [authMethod, setAuthMethod] = useState("none");
   const [token, setToken] = useState("");
   const [sshKey, setSshKey] = useState("");
@@ -36,6 +37,7 @@ export function GitCloneForm({ onCreated }: Props) {
         repo_url: repoUrl.trim(),
         branch: (branch || "main").trim(),
         compose_path: (composePath || "compose.yaml").trim(),
+        ...(envPath.trim() && { env_path: envPath.trim() }),
         auth_method: authMethod,
         ...(authMethod === "token" && { token: token.trim() }),
         ...(authMethod === "ssh_key" && { ssh_key: sshKey.trim() }),
@@ -71,7 +73,7 @@ export function GitCloneForm({ onCreated }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-1">
               <label className="text-xs uppercase tracking-wider text-muted-foreground">Branch</label>
               <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" data-testid="git-branch" />
@@ -79,6 +81,10 @@ export function GitCloneForm({ onCreated }: Props) {
             <div className="space-y-1">
               <label className="text-xs uppercase tracking-wider text-muted-foreground">Compose Path</label>
               <Input value={composePath} onChange={(e) => setComposePath(e.target.value)} placeholder="compose.yaml" data-testid="git-compose-path" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs uppercase tracking-wider text-muted-foreground">.env Path</label>
+              <Input value={envPath} onChange={(e) => setEnvPath(e.target.value)} placeholder=".env" title="Path to .env relative to repo root. Leave empty for .env at repo root." data-testid="git-env-path" />
             </div>
             <div className="space-y-1">
               <label className="text-xs uppercase tracking-wider text-muted-foreground">Auth Method</label>

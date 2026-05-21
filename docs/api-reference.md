@@ -4,7 +4,7 @@ Composer exposes a REST API with auto-generated OpenAPI 3.1 spec.
 
 **Live spec:** `GET /openapi.json` or `GET /openapi.yaml`
 
-**Total endpoints:** 80 Huma-registered operations (+ WebSocket, OAuth, and webhook receiver paths registered as raw chi handlers).
+**Total endpoints:** 106 Huma-registered operations (+ WebSocket, OAuth, and webhook receiver paths registered as raw chi handlers).
 
 The spec declares three security schemes (`cookieAuth`, `apiKeyAuth`, `bearerAuth`) and enumerates per-operation error codes (401 / 403 / 404 / 409 / 422 / 429 / 500) so generated clients can branch on specific failures. Output fields for status-like data (`StackSummary.Status`, `ContainerOutput.Health`, `GitSourceOutput.SyncStatus`, etc.) declare their enum values in the schema.
 
@@ -64,6 +64,18 @@ curl -H "X-API-Key: ck_your_key_here" /api/v1/stacks
 | `GET` | `/api/v1/keys/{id}` | Get key details |
 | `POST` | `/api/v1/keys` | Create key (plaintext shown once!) |
 | `DELETE` | `/api/v1/keys/{id}` | Revoke key |
+
+### Docker Registry Credentials (5 endpoints)
+
+Global + per-stack Docker registry auth. Multi-registry: one row per registry. Secrets are stored encrypted (AES-256-GCM) and never returned by the API — responses include only `secret_set` and a last-4 `secret_preview`. Per-stack rows override the global entry for the same registry on that one stack.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/registries` | List credentials (viewer+). Pass `?stack=<name>` to filter to per-stack rows |
+| `GET` | `/api/v1/registries/{id}` | Get a single credential (viewer+) |
+| `POST` | `/api/v1/registries` | Create credential (admin). `stack_name` empty = global; non-empty = per-stack override |
+| `PUT` | `/api/v1/registries/{id}` | Update credential (admin). Leave `secret` empty to keep the existing value |
+| `DELETE` | `/api/v1/registries/{id}` | Delete credential (admin) |
 
 ### Stacks (20 endpoints)
 

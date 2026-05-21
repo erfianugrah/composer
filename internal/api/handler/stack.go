@@ -333,8 +333,8 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 	out.Body.CreatedAt = st.CreatedAt
 	out.Body.UpdatedAt = st.UpdatedAt
 
-	// Read .env file if it exists
-	envPath := st.Path + "/.env"
+	// Read .env file if it exists. For git stacks, honour GitSource.EnvPath.
+	envPath := resolveEnvPath(st)
 	if envData, err := os.ReadFile(envPath); err == nil {
 		out.Body.EnvContent = string(envData)
 		out.Body.EnvSopsEncrypted = sopsInfra.IsSopsEncrypted(envData)
@@ -373,6 +373,7 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 			RepoURL:          st.GitConfig.RepoURL,
 			Branch:           st.GitConfig.Branch,
 			ComposePath:      st.GitConfig.ComposePath,
+			EnvPath:          st.GitConfig.EnvPath,
 			AutoSync:         st.GitConfig.AutoSync,
 			AuthMethod:       string(st.GitConfig.AuthMethod),
 			LastSyncAt:       st.GitConfig.LastSyncAt,
@@ -613,7 +614,7 @@ func (h *StackHandler) ConvertToGit(ctx context.Context, input *dto.ConvertToGit
 		}
 	}
 
-	if err := h.stacks.ConvertToGit(ctx, input.Name, input.Body.RepoURL, branch, creds); err != nil {
+	if err := h.stacks.ConvertToGit(ctx, input.Name, input.Body.RepoURL, branch, input.Body.ComposePath, input.Body.EnvPath, creds); err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
@@ -694,6 +695,17 @@ func (h *StackHandler) ExecCompose(ctx context.Context, input *dto.ExecComposeIn
 // scanDockerfiles finds Dockerfiles in a stack directory and returns their content.
 // Looks for Dockerfile, Dockerfile.*, and *.dockerfile patterns, including one level
 // of subdirectories (e.g., services/web/Dockerfile). Caps content at 64KB per file.
+// resolveEnvPath returns the absolute path to the .env file for a stack.
+// For git stacks it honours GitSource.EnvPath (relative to repo root); for
+// local stacks (or git stacks with EnvPath unset) it defaults to <stack>/.env
+// at the repo / stack root.
+func resolveEnvPath(st *stack.Stack) string {
+	if st.GitConfig != nil {
+		return st.GitConfig.ResolveEnvPath(st.Path)
+	}
+	return filepath.Join(st.Path, ".env")
+}
+
 func scanDockerfiles(stackDir string) []dto.StackFile {
 	const maxFileSize = 64 * 1024 // 64KB limit per file
 	var files []dto.StackFile
@@ -759,7 +771,7 @@ func (h *StackHandler) UpdateEnv(ctx context.Context, input *dto.UpdateEnvInput)
 		return nil, serverError(ctx, err)
 	}
 
-	envPath := st.Path + "/.env"
+	envPath := resolveEnvPath(st)
 	if input.Body.Env == "" {
 		// Empty env = delete the .env file
 		os.Remove(envPath)

@@ -34,6 +34,7 @@ type Deps struct {
 	StackService    *app.StackService      // nil if Docker not available
 	GitService      *app.GitService        // nil disables git operations
 	PipelineService *app.PipelineService   // nil disables pipeline operations
+	RegistryService *app.RegistryService   // nil disables registry credential endpoints
 	UserRepo        auth.UserRepository    // nil disables user management
 	SessionRepo     auth.SessionRepository // needed for OAuth session persistence
 	WebhookRepo     *store.WebhookRepo     // nil disables webhook receiver
@@ -177,6 +178,11 @@ func NewServer(deps Deps) *Server {
 
 	// API key management (operator+)
 	handler.NewKeyHandler(deps.AuthService).Register(api)
+
+	// Docker registry credentials (admin mutations, viewer reads)
+	if deps.RegistryService != nil {
+		handler.NewRegistryHandler(deps.RegistryService).Register(api)
+	}
 
 	// Stack handlers (requires Docker)
 	if deps.StackService != nil {

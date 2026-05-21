@@ -134,3 +134,24 @@ func TestStack_SetStatus(t *testing.T) {
 		t.Errorf("Status = %q, want %q", s.Status, stack.StatusStopped)
 	}
 }
+
+func TestGitSource_ResolveEnvPath(t *testing.T) {
+	cases := []struct {
+		name      string
+		envPath   string
+		stackPath string
+		want      string
+	}{
+		{"empty defaults to repo-root .env", "", "/srv/stacks/foo", "/srv/stacks/foo/.env"},
+		{"relative path is joined", "deploy/unraid/.env", "/srv/stacks/foo", "/srv/stacks/foo/deploy/unraid/.env"},
+		{"clean path", "./conf/.env", "/srv/stacks/foo", "/srv/stacks/foo/conf/.env"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &stack.GitSource{EnvPath: tc.envPath}
+			if got := g.ResolveEnvPath(tc.stackPath); got != tc.want {
+				t.Errorf("ResolveEnvPath = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

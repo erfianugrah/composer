@@ -19,7 +19,8 @@ Think Dockge's simplicity meets Portainer's power -- built from scratch with Go,
 - **Container terminal** -- Interactive shell via WebSocket (xterm.js)
 - **Container management** -- Global container page with start/stop/restart, stats, health badges
 - **Docker events** -- Real-time Docker event stream on dashboard
-- **GitOps** -- Git-backed stacks with webhook-triggered auto-redeploy (GitHub, GitLab, Gitea) + delivery history + dirty-state detection
+- **GitOps** -- Git-backed stacks with webhook-triggered auto-redeploy (GitHub, GitLab, Gitea) + delivery history + dirty-state detection; per-stack `env_path` for `.env` files that live next to the compose file in a subdirectory
+- **Docker registry auth** -- Multi-registry credentials (global + per-stack overrides), encrypted at rest, materialised into an ephemeral `DOCKER_CONFIG` per deploy. Seeded via UI / API / `COMPOSER_REGISTRY_AUTHS` env
 - **Pipelines** -- CI-esque workflows with DAG execution, concurrent steps, 8 step types, cron scheduling
 - **RBAC** -- Admin / Operator / Viewer roles with session cookies + API keys
 - **OAuth/OIDC** -- Login with GitHub or Google accounts
@@ -55,7 +56,7 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 |----------|-------------|
 | [Getting Started](docs/getting-started.md) | Installation, first run, bootstrap |
 | [Configuration](docs/configuration.md) | All environment variables, encryption, PUID/PGID |
-| [API Reference](docs/api-reference.md) | 99 REST endpoints, SSE streams, WebSocket |
+| [API Reference](docs/api-reference.md) | 106 REST endpoints, SSE streams, WebSocket |
 | [Deployment](docs/deployment.md) | Docker, Unraid, TrueNAS, bare metal, Podman |
 | [Security](docs/security.md) | Docker socket, RBAC, encryption, hardening |
 | [Architecture](docs/architecture.md) | DDD, tech stack, domain model |

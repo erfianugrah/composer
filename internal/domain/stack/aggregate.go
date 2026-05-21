@@ -3,6 +3,7 @@ package stack
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -35,12 +36,28 @@ type GitSource struct {
 	RepoURL       string
 	Branch        string
 	ComposePath   string
+	// EnvPath is the path to the .env file relative to the repo root.
+	// Empty string means the legacy default: ".env" at the repo root.
+	// Use e.g. "deploy/unraid/.env" to keep the .env next to a compose file in a subdirectory.
+	EnvPath       string
 	AutoSync      bool
 	AuthMethod    GitAuthMethod
 	Credentials   *GitCredentials
 	LastSyncAt    *time.Time
 	LastCommitSHA string
 	SyncStatus    GitSyncStatus
+}
+
+// ResolveEnvPath returns the path to the .env file for this git source, given
+// the stack's local checkout path. If EnvPath is empty, defaults to ".env" at
+// the repo root (legacy behavior). Otherwise treats EnvPath as a path relative
+// to the repo root.
+func (g *GitSource) ResolveEnvPath(stackPath string) string {
+	p := g.EnvPath
+	if p == "" {
+		p = ".env"
+	}
+	return filepath.Join(stackPath, p)
 }
 
 // GitCredentials holds credential data for git authentication.

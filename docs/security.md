@@ -37,6 +37,7 @@ Encryption is **automatic** -- no configuration needed:
 
 - **Git credentials** (tokens, SSH keys, passwords) are encrypted with AES-256-GCM before storage in the database
 - **Webhook secrets** are encrypted with AES-256-GCM before storage in the database
+- **Docker registry credentials** (passwords / PATs in `registry_credentials`) are encrypted with AES-256-GCM before storage. See [Docker Registry Auth](#docker-registry-auth)
 - **SSH key files** on disk at `/home/composer/.ssh/` are encrypted at rest on startup (see [SSH Key Files](#ssh-key-files) for the targeting policy)
 - **Per-stack SSH key files** can be specified via the `ssh_key_file` field (auth method `ssh_file`), allowing individual stacks to use dedicated keys
 - **`.env` files** are written with `0600` permissions (owner read/write only)
@@ -113,6 +114,29 @@ Composer can transparently decrypt SOPS-encrypted `.env` files and compose YAML 
   7. `~/.config/sops/age/keys.txt` (standard SOPS location)
 - No auto-generation of age keys -- the user must bring their own or explicitly generate one
 - Decrypted files are written with mode `0600`
+
+### `.env` File Location
+
+For git-backed stacks, `.env` is read from the repo root (`<stack>/.env`) by default — matching `docker compose`'s native behaviour. Set `env_path` on the stack (relative to the repo root, e.g. `deploy/unraid/.env`) when the `.env` lives next to a compose file in a subdirectory. The path is honoured by every code path that reads or writes the file: SOPS decrypt/re-encrypt, the API getter/setter, and the UI editor.
+
+## Docker Registry Auth
+
+Composer authenticates `docker compose pull` / `docker compose up` against private registries without modifying the host's `~/.docker/config.json`.
+
+- **Storage**: `registry_credentials` table, secrets encrypted with AES-256-GCM (fail-closed — never written in plaintext)
+- **Scope**: a credential is **global** (`stack_name = ''`, applied to every stack) or **per-stack** (`stack_name = '<name>'`, overrides the global entry for the same registry on that one stack)
+- **Multi-registry**: one row per registry. A stack pulling from both `ghcr.io` and a private mirror just gets two credentials merged into its `DOCKER_CONFIG` before each deploy.
+- **Isolation**: before every `pull`/`up`/`build`, composer writes an ephemeral `config.json` to a fresh tempdir (mode `0600`) and sets `DOCKER_CONFIG=<dir>` for that one child process. The tempdir is removed when the operation completes — secrets never leak into the host's docker config.
+- **API**: CRUD at `/api/v1/registries` (admin mutations, viewer reads). Secret values are never returned — only a `secret_set` boolean + last-4 preview.
+- **Bootstrap from env**: `COMPOSER_REGISTRY_AUTHS` (inline JSON), `COMPOSER_REGISTRY_AUTHS_FILE` (path), `COMPOSER_REGISTRY_AUTHS_OVERWRITE` (force reseed on every boot). Idempotent by default — existing DB rows are preserved.
+
+Seed via env on first boot:
+
+```
+COMPOSER_REGISTRY_AUTHS=[{"registry":"ghcr.io","username":"you","secret":"ghp_..."}]
+```
+
+Then manage from the UI (`/settings` for globals, per-stack **Registries** tab for overrides) or via API.
 
 ## Authentication
 

@@ -239,9 +239,21 @@ func main() {
 	}
 	stackLocks := app.NewStackLocks() // shared across all services that run compose operations
 	var gitSvc *app.GitService
+	// Registry credentials repo + service — always constructed so the API
+	// surface is available even before any creds exist.
+	registryRepo := store.NewRegistryCredentialRepo(db.SQL)
+	registrySvc := app.NewRegistryService(registryRepo, logger)
+	// Seed global registry credentials from env (Unraid/headless bootstrap path)
+	// before any deploys run. Failures are logged but non-fatal — the UI can
+	// still be used to add creds manually.
+	if err := registrySvc.BootstrapFromEnv(ctx); err != nil {
+		logger.Warn("registry env bootstrap failed", zap.Error(err))
+	}
 	if dockerClient != nil {
 		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, logger, cfg.StacksDir, cfg.DataDir, stackLocks)
+		stackSvc.SetRegistryRepo(registryRepo)
 		gitSvc = app.NewGitService(stackRepo, gitConfigRepo, gitClient, compose, bus, logger, cfg.StacksDir, stackLocks)
+		gitSvc.SetRegistryRepo(registryRepo)
 	}
 
 	// --- Pipeline Service ---
@@ -280,6 +292,7 @@ func main() {
 		StackService:    stackSvc,
 		GitService:      gitSvc,
 		PipelineService: pipelineSvc,
+		RegistryService: registrySvc,
 		UserRepo:        userRepo,
 		SessionRepo:     sessionRepo,
 		WebhookRepo:     webhookRepo,

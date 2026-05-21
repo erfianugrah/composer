@@ -891,6 +891,7 @@ CREATE TABLE stack_git_configs (
     repo_url      TEXT NOT NULL,
     branch        TEXT NOT NULL DEFAULT 'main',
     compose_path  TEXT NOT NULL DEFAULT 'compose.yaml',
+    env_path      TEXT NOT NULL DEFAULT '',       -- path to .env relative to repo root; '' = legacy '.env' at repo root
     auto_sync     BOOLEAN NOT NULL DEFAULT true,
     auth_method   TEXT NOT NULL DEFAULT 'none'
                   CHECK (auth_method IN ('none', 'token', 'ssh_key', 'ssh_file', 'basic')),
@@ -900,6 +901,23 @@ CREATE TABLE stack_git_configs (
     sync_status   TEXT NOT NULL DEFAULT 'synced'
                   CHECK (sync_status IN ('synced', 'behind', 'diverged', 'error', 'syncing'))
 );
+
+-- Docker registry credentials (global + per-stack)
+-- secret_enc is AES-256-GCM via internal/infra/crypto. stack_name='' = global.
+-- UNIQUE(registry, stack_name) lets the same registry have a global row +
+-- per-stack overrides, and prevents duplicate scopes.
+CREATE TABLE registry_credentials (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    registry   TEXT NOT NULL,                    -- e.g. 'ghcr.io', 'docker.io', 'registry.example.com:5000'
+    username   TEXT NOT NULL,
+    secret_enc TEXT NOT NULL,                    -- encrypted password / PAT
+    email      TEXT NOT NULL DEFAULT '',
+    stack_name TEXT NOT NULL DEFAULT '',         -- '' = global; non-empty = per-stack override
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(registry, stack_name)
+);
+CREATE INDEX idx_registry_credentials_stack_name ON registry_credentials(stack_name);
 
 -- Webhook endpoints (inbound)
 CREATE TABLE webhooks (

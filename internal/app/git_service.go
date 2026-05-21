@@ -11,22 +11,52 @@ import (
 	"go.uber.org/zap"
 
 	domevent "github.com/erfianugrah/composer/internal/domain/event"
+	domreg "github.com/erfianugrah/composer/internal/domain/registry"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	"github.com/erfianugrah/composer/internal/infra/git"
+	infreg "github.com/erfianugrah/composer/internal/infra/registry"
 	"github.com/erfianugrah/composer/internal/infra/sops"
 )
 
 // GitService orchestrates git-backed stack operations and webhook processing.
 type GitService struct {
-	stacks    stack.StackRepository
-	gitCfgs   stack.GitConfigRepository
-	gitClient *git.Client
-	compose   *docker.Compose
-	bus       domevent.Bus
-	log       *zap.Logger
-	stacksDir string
-	locks     *StackLocks // shared with StackService — prevents concurrent compose ops
+	stacks       stack.StackRepository
+	gitCfgs      stack.GitConfigRepository
+	registryRepo domreg.Repository // optional; nil disables registry auth
+	gitClient    *git.Client
+	compose      *docker.Compose
+	bus          domevent.Bus
+	log          *zap.Logger
+	stacksDir    string
+	locks        *StackLocks // shared with StackService — prevents concurrent compose ops
+}
+
+// SetRegistryRepo wires an optional registry credentials repository.
+// See StackService.SetRegistryRepo — same semantics.
+func (s *GitService) SetRegistryRepo(r domreg.Repository) { s.registryRepo = r }
+
+// withRegistryAuth materialises a DOCKER_CONFIG dir from global + per-stack
+// credentials. Returns the wrapped ctx and a cleanup func.
+func (s *GitService) withRegistryAuth(ctx context.Context, stackName string) (context.Context, func()) {
+	noop := func() {}
+	if s.registryRepo == nil {
+		return ctx, noop
+	}
+	global, _ := s.registryRepo.ListGlobal(ctx)
+	var perStack []*domreg.Credential
+	if stackName != "" {
+		perStack, _ = s.registryRepo.ListForStack(ctx, stackName)
+	}
+	merged := domreg.Resolve(global, perStack)
+	if len(merged) == 0 {
+		return ctx, noop
+	}
+	dir, cleanup, err := infreg.BuildConfigDir(merged)
+	if err != nil || dir == "" {
+		return ctx, noop
+	}
+	return docker.WithDockerConfigDir(ctx, dir), cleanup
 }
 
 func NewGitService(
@@ -109,13 +139,15 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 			perStackAgeKey = gitCfg.Credentials.AgeKey
 		}
 		ageKey := sops.ResolveAgeKey(perStackAgeKey, s.stacksDir)
-		sops.DecryptEnvFile(stackPath, ageKey)
+		sops.DecryptEnvFile(gitCfg.ResolveEnvPath(stackPath), ageKey)
 		sops.DecryptComposeSecrets(filepath.Join(stackPath, gitCfg.ComposePath), ageKey)
 	}
-	if _, err := s.compose.Up(ctx, stackPath, gitCfg.ComposePath); err != nil {
+	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
+	defer regCleanup()
+	if _, err := s.compose.Up(deployCtx, stackPath, gitCfg.ComposePath); err != nil {
 		s.log.Warn("auto-deploy failed (stack cloned but not running)", zap.String("stack", name), zap.Error(err))
 	} else {
-		sops.ReEncryptEnvFile(stackPath)
+		sops.ReEncryptEnvFile(gitCfg.ResolveEnvPath(stackPath))
 		sops.ReEncryptComposeSecrets(filepath.Join(stackPath, gitCfg.ComposePath))
 		s.publishEvent(domevent.StackDeployed{Name: name, Timestamp: time.Now()})
 	}
@@ -195,23 +227,26 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 			perStackAgeKey = cfg.Credentials.AgeKey
 		}
 		ageKey := sops.ResolveAgeKey(perStackAgeKey, s.stacksDir)
-		sops.DecryptEnvFile(st.Path, ageKey)
+		envFile := cfg.ResolveEnvPath(st.Path)
+		sops.DecryptEnvFile(envFile, ageKey)
 		composePath := filepath.Join(st.Path, cfg.ComposePath)
 		sops.DecryptComposeSecrets(composePath, ageKey)
 		defer func() {
-			sops.ReEncryptEnvFile(st.Path)
-			sops.ReEncryptComposeSecrets(filepath.Join(st.Path, cfg.ComposePath))
+			sops.ReEncryptEnvFile(envFile)
+			sops.ReEncryptComposeSecrets(composePath)
 		}()
 	}
 
 	// Pull latest images before deploying — ensures mutable tags like :latest
 	// are refreshed even when the compose file itself hasn't changed.
-	if _, pullErr := s.compose.Pull(ctx, st.Path, cfg.ComposePath); pullErr != nil {
+	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
+	defer regCleanup()
+	if _, pullErr := s.compose.Pull(deployCtx, st.Path, cfg.ComposePath); pullErr != nil {
 		s.log.Warn("image pull failed, deploying with cached images",
 			zap.String("stack", name), zap.Error(pullErr))
 	}
 
-	_, err = s.compose.Up(ctx, st.Path, cfg.ComposePath)
+	_, err = s.compose.Up(deployCtx, st.Path, cfg.ComposePath)
 	if err != nil {
 		s.publishEvent(domevent.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
 		return "error", fmt.Errorf("redeploying: %w", err)

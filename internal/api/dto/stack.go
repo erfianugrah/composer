@@ -17,6 +17,7 @@ type CreateGitStackInput struct {
 		RepoURL     string `json:"repo_url" minLength:"1" maxLength:"2048" doc:"Git repository URL (HTTPS or SSH)"`
 		Branch      string `json:"branch,omitempty" maxLength:"255" doc:"Branch to track (default: main)"`
 		ComposePath string `json:"compose_path,omitempty" maxLength:"512" doc:"Path to compose file in repo (default: compose.yaml)"`
+		EnvPath     string `json:"env_path,omitempty" maxLength:"512" doc:"Path to .env file in repo, relative to repo root (default: .env at repo root)"`
 		AuthMethod  string `json:"auth_method,omitempty" enum:"none,token,ssh_key,ssh_file,basic" doc:"Auth method"`
 		Token       string `json:"token,omitempty" maxLength:"512" doc:"Access token for token auth"`
 		SSHKey      string `json:"ssh_key,omitempty" maxLength:"16384" doc:"PEM-encoded SSH private key (inline)"`
@@ -101,6 +102,7 @@ type GitSourceOutput struct {
 	RepoURL          string     `json:"repo_url"`
 	Branch           string     `json:"branch"`
 	ComposePath      string     `json:"compose_path"`
+	EnvPath          string     `json:"env_path,omitempty" doc:"Path to .env relative to repo root (empty means default '.env' at repo root)"`
 	AutoSync         bool       `json:"auto_sync"`
 	AuthMethod       string     `json:"auth_method" enum:"none,token,ssh_key,ssh_file,basic"`
 	LastSyncAt       *time.Time `json:"last_sync_at,omitempty"`
@@ -161,14 +163,16 @@ type ImportStacksOutput struct {
 type ConvertToGitInput struct {
 	Name string `path:"name" maxLength:"128" doc:"Stack name"`
 	Body struct {
-		RepoURL    string `json:"repo_url" minLength:"1" maxLength:"2048" doc:"Git repository URL"`
-		Branch     string `json:"branch,omitempty" maxLength:"255" doc:"Branch (default: main)"`
-		Token      string `json:"token,omitempty" maxLength:"512" doc:"Access token for auth"`
-		SSHKey     string `json:"ssh_key,omitempty" maxLength:"16384" doc:"PEM-encoded SSH private key"`
-		SSHKeyFile string `json:"ssh_key_file,omitempty" maxLength:"512" doc:"Path to SSH key file on server"`
-		Username   string `json:"username,omitempty" maxLength:"128" doc:"Username for basic auth"`
-		Password   string `json:"password,omitempty" maxLength:"512" doc:"Password for basic auth"`
-		AgeKey     string `json:"age_key,omitempty" maxLength:"4096" doc:"Per-stack age key for SOPS decryption"`
+		RepoURL     string `json:"repo_url" minLength:"1" maxLength:"2048" doc:"Git repository URL"`
+		Branch      string `json:"branch,omitempty" maxLength:"255" doc:"Branch (default: main)"`
+		ComposePath string `json:"compose_path,omitempty" maxLength:"512" doc:"Path to compose file in repo (default: compose.yaml)"`
+		EnvPath     string `json:"env_path,omitempty" maxLength:"512" doc:"Path to .env file in repo, relative to repo root (default: .env at repo root)"`
+		Token       string `json:"token,omitempty" maxLength:"512" doc:"Access token for auth"`
+		SSHKey      string `json:"ssh_key,omitempty" maxLength:"16384" doc:"PEM-encoded SSH private key"`
+		SSHKeyFile  string `json:"ssh_key_file,omitempty" maxLength:"512" doc:"Path to SSH key file on server"`
+		Username    string `json:"username,omitempty" maxLength:"128" doc:"Username for basic auth"`
+		Password    string `json:"password,omitempty" maxLength:"512" doc:"Password for basic auth"`
+		AgeKey      string `json:"age_key,omitempty" maxLength:"4096" doc:"Per-stack age key for SOPS decryption"`
 	}
 }
 
