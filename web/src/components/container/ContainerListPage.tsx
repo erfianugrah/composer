@@ -6,6 +6,8 @@ import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/dat
 import { apiFetch } from "@/lib/api/errors";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
+import { useSWRFetch } from "@/lib/use-swr-fetch";
+import { StatCard } from "@/components/ui/stat-card";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -43,8 +45,8 @@ const accessors = {
 } satisfies Record<SortKey, (c: ContainerInfo) => string>;
 
 export function ContainerListPage() {
-  const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, error: swrError, loading, refetch } = useSWRFetch<{ containers: ContainerInfo[] }>("/api/v1/containers");
+  const containers = data?.containers ?? [];
   const [error, setError] = useState("");
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
   const [showConsole, setShowConsole] = useState(false);
@@ -67,15 +69,12 @@ export function ContainerListPage() {
     window.history.replaceState({}, "", url);
   }, [filter, statusFilter]);
 
-  function fetchContainers() {
-    apiFetch<{ containers: ContainerInfo[] }>("/api/v1/containers").then(({ data, error: err }) => {
-      if (err) setError(err);
-      else setContainers(data?.containers || []);
-      setLoading(false);
-    });
-  }
+  // Surface SWR fetch errors only on initial load (no cached data yet).
+  useEffect(() => {
+    if (swrError && !data) setError(swrError);
+  }, [swrError, data]);
 
-  useEffect(() => { fetchContainers(); }, []);
+  function fetchContainers() { refetch(); }
 
   function toggleLogs(id: string) {
     setExpandedLogs((prev) => {
@@ -117,10 +116,10 @@ export function ContainerListPage() {
   return (
     <ErrorBoundary>
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card><CardContent className="p-6"><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Total</p><p className="text-2xl font-bold tabular-nums font-data">{containers.length}</p></CardContent></Card>
-        <Card><CardContent className="p-6"><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Running</p><p className="text-2xl font-bold tabular-nums font-data text-cp-green">{running}</p></CardContent></Card>
-        <Card><CardContent className="p-6"><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Stopped</p><p className="text-2xl font-bold tabular-nums font-data text-muted-foreground">{containers.length - running}</p></CardContent></Card>
+      <div className="grid gap-3 md:grid-cols-3">
+        <StatCard label="Total" value={containers.length} />
+        <StatCard label="Running" value={running} color="text-cp-green" />
+        <StatCard label="Stopped" value={containers.length - running} color="text-muted-foreground" />
       </div>
 
       {error && <p className="text-sm text-cp-red">{error}</p>}

@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { useSort } from "@/lib/use-sort";
+import { useSWRFetch } from "@/lib/use-swr-fetch";
+import { useSelection } from "@/lib/use-selection";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
@@ -21,8 +23,8 @@ const accessors = {
 } satisfies Record<SortKey, (n: NetworkInfo) => string | number>;
 
 export function NetworksPage() {
-  const [networks, setNetworks] = useState<NetworkInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refetch } = useSWRFetch<{ networks: NetworkInfo[] }>("/api/v1/networks");
+  const networks = data?.networks ?? [];
   const [name, setName] = useState("");
   const [driver, setDriver] = useState("bridge");
   const [error, setError] = useState("");
@@ -40,13 +42,7 @@ export function NetworksPage() {
     window.history.replaceState({}, "", url);
   }, [filter]);
 
-  function fetch_() {
-    apiFetch<{ networks: NetworkInfo[] }>("/api/v1/networks").then(({ data, error: e }) => {
-      if (e) setError(e); else setNetworks(data?.networks || []);
-      setLoading(false);
-    });
-  }
-  useEffect(() => { fetch_(); }, []);
+  function fetch_() { refetch(); }
 
   const filtered = networks.filter((n) => {
     if (!filter) return true;
@@ -54,6 +50,14 @@ export function NetworksPage() {
     return n.name.toLowerCase().includes(q) || n.driver.toLowerCase().includes(q);
   });
   const { sorted, sortKey, direction, toggle } = useSort<NetworkInfo, SortKey>(filtered, accessors, "name", "asc");
+  const sel = useSelection<NetworkInfo>((n) => n.id);
+
+  async function bulkRemove() {
+    const ids = sorted.filter((n) => sel.isSelected(n.id)).map((n) => n.id);
+    await Promise.all(ids.map((id) => apiFetch(`/api/v1/networks/${id}`, { method: "DELETE" })));
+    sel.clear();
+    fetch_();
+  }
 
   async function handleInspect(id: string) {
     if (inspecting === id) { setInspecting(null); return; }
@@ -102,11 +106,36 @@ export function NetworksPage() {
             <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
           </div>
         </CardHeader>
+        {sel.size > 0 && (
+          <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
+            <span className="text-muted-foreground">{sel.size} selected</span>
+            <span className="flex-1" />
+            <ConfirmButton
+              size="xs"
+              message={`Remove ${sel.size} network${sel.size === 1 ? "" : "s"}?`}
+              onConfirm={bulkRemove}
+            >
+              Remove ({sel.size})
+            </ConfirmButton>
+            <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+          </div>
+        )}
         <CardContent>
           {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : networks.length === 0 ? <p className="text-sm text-muted-foreground">No networks.</p> : sorted.length === 0 ? <p className="text-sm text-muted-foreground">No networks match the current filter.</p> : (
             <Table>
               <THead>
                 <TR>
+                  <TH className="w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible"
+                      checked={sel.allSelected(sorted)}
+                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
+                      onChange={() => sel.toggleAll(sorted)}
+                      className="rounded"
+                      data-testid="select-all-networks"
+                    />
+                  </TH>
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")}>Driver</SortHeader>
                   <SortHeader active={sortKey === "scope"} direction={direction} onSort={() => toggle("scope")}>Scope</SortHeader>
@@ -118,7 +147,17 @@ export function NetworksPage() {
               <TBody>
                 {sorted.map((n) => (
                   <Fragment key={n.id}>
-                    <TR className="cursor-pointer" onClick={() => handleInspect(n.id)} aria-expanded={inspecting === n.id}>
+                    <TR className={`cursor-pointer ${sel.isSelected(n.id) ? "bg-cp-purple/5" : ""}`} onClick={() => handleInspect(n.id)} aria-expanded={inspecting === n.id}>
+                      <TD className="w-8" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={sel.isSelected(n.id)}
+                          onChange={() => sel.toggle(n.id)}
+                          aria-label={`Select ${n.name}`}
+                          className="rounded"
+                          data-testid={`select-network-${n.id.slice(0, 12)}`}
+                        />
+                      </TD>
                       <TD className="font-medium">
                         <span className="flex items-center gap-2">
                           {n.name}
@@ -141,7 +180,7 @@ export function NetworksPage() {
                     </TR>
                     {inspecting === n.id && (
                       <tr className="bg-cp-950/50">
-                        <td colSpan={6} className="px-3 py-3 border-b border-border/40">
+                        <td colSpan={7} className="px-3 py-3 border-b border-border/40">
                           <pre className="text-xs font-data max-h-96 overflow-auto whitespace-pre-wrap">
                             {inspectData[n.id] ? highlightJSON(inspectData[n.id]) : "Loading…"}
                           </pre>

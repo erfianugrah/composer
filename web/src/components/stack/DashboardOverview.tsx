@@ -2,8 +2,13 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
-import { apiFetch } from "@/lib/api/errors";
 import { useSort } from "@/lib/use-sort";
+import { useSWRFetch } from "@/lib/use-swr-fetch";
+import { useSelection } from "@/lib/use-selection";
+import { Button } from "@/components/ui/button";
+import { StatCard } from "@/components/ui/stat-card";
+import { ConfirmButton } from "@/components/ui/confirm-button";
+import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface StackSummary {
@@ -48,9 +53,8 @@ function formatRelative(iso: string): string {
 }
 
 export function DashboardOverview() {
-  const [stacks, setStacks] = useState<StackSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { data, error, loading, stale } = useSWRFetch<{ stacks: StackSummary[] }>("/api/v1/stacks", { pollMs: 30000 });
+  const stacks = data?.stacks ?? [];
   const [filter, setFilter] = useState(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("q") || "";
@@ -70,22 +74,6 @@ export function DashboardOverview() {
     window.history.replaceState({}, "", url);
   }, [filter, statusFilter]);
 
-  useEffect(() => {
-    async function load() {
-      const { data, error: err } = await apiFetch<{ stacks: StackSummary[] }>("/api/v1/stacks");
-      if (err) {
-        setError(err);
-      } else {
-        setStacks(data?.stacks || []);
-      }
-      setLoading(false);
-    }
-    load();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
   const filtered = stacks.filter((s) => {
     if (statusFilter !== "all" && s.status !== statusFilter) return false;
     if (filter && !s.name.toLowerCase().includes(filter.toLowerCase())) return false;
@@ -93,15 +81,27 @@ export function DashboardOverview() {
   });
 
   const { sorted, sortKey, direction, toggle } = useSort<StackSummary, SortKey>(filtered, accessors, "name", "asc");
+  const sel = useSelection<StackSummary>((s) => s.name);
+  const selectedRunning = sorted.filter((s) => sel.isSelected(s.name) && s.status === "running");
+  const selectedStopped = sorted.filter((s) => sel.isSelected(s.name) && s.status !== "running");
 
-  if (loading) {
+  async function bulk(action: "up" | "down" | "restart") {
+    const targets = action === "up" ? selectedStopped : selectedRunning;
+    const names = targets.map((s) => s.name);
+    await Promise.all(names.map((n) => apiFetch(`/api/v1/stacks/${encodeURIComponent(n)}/${action}`, { method: "POST" })));
+    sel.clear();
+  }
+
+  // Show skeletons only when truly empty (no cached data). SWR keeps prior
+  // data on revalidate so the table stays visible.
+  if (loading && !data) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         {[...Array(4)].map((_, i) => (
           <Card key={i} className="animate-pulse">
-            <CardContent className="p-6">
-              <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
-              <div className="h-3 bg-muted rounded w-1/2"></div>
+            <CardContent className="p-3">
+              <div className="h-3 bg-muted rounded w-3/4 mb-2"></div>
+              <div className="h-5 bg-muted rounded w-1/2"></div>
             </CardContent>
           </Card>
         ))}
@@ -109,7 +109,9 @@ export function DashboardOverview() {
     );
   }
 
-  if (error) {
+  // Only block the page when we have no data at all. Background revalidation
+  // failures surface as an inline notice below.
+  if (error && !data) {
     return (
       <Card className="border-cp-red/30">
         <CardContent className="p-6">
@@ -126,7 +128,7 @@ export function DashboardOverview() {
     <ErrorBoundary>
     <div className="space-y-6">
       {/* Stat cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total Stacks" value={stacks.length} />
         <StatCard label="Running" value={running} color="text-cp-green" />
         <StatCard label="Stopped" value={stopped} color="text-muted-foreground" />
@@ -166,6 +168,23 @@ export function DashboardOverview() {
             )}
           </div>
         </CardHeader>
+        {sel.size > 0 && (
+          <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
+            <span className="text-muted-foreground">{sel.size} selected</span>
+            <span className="flex-1" />
+            <Button size="xs" variant="outline" onClick={() => bulk("up")} disabled={selectedStopped.length === 0}>Deploy ({selectedStopped.length})</Button>
+            <Button size="xs" variant="outline" onClick={() => bulk("restart")} disabled={selectedRunning.length === 0}>Restart ({selectedRunning.length})</Button>
+            <ConfirmButton
+              size="xs"
+              message={`Stop ${selectedRunning.length} stack${selectedRunning.length === 1 ? "" : "s"}?`}
+              onConfirm={() => bulk("down")}
+              disabled={selectedRunning.length === 0}
+            >
+              Stop ({selectedRunning.length})
+            </ConfirmButton>
+            <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+          </div>
+        )}
         <CardContent>
           {stacks.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="no-stacks">
@@ -179,6 +198,17 @@ export function DashboardOverview() {
             <Table data-testid="stack-list">
               <THead>
                 <TR>
+                  <TH className="w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible"
+                      checked={sel.allSelected(sorted)}
+                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
+                      onChange={() => sel.toggleAll(sorted)}
+                      className="rounded"
+                      data-testid="select-all-stacks"
+                    />
+                  </TH>
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
                   <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className="text-right">Containers</SortHeader>
@@ -190,12 +220,22 @@ export function DashboardOverview() {
                 {sorted.map((stack) => (
                   <TR
                     key={stack.name}
-                    className="cursor-pointer"
-                    onClick={() => { window.location.href = `/stacks#${stack.name}`; }}
+                    className={`cursor-pointer ${sel.isSelected(stack.name) ? "bg-cp-purple/5" : ""}`}
+                    onClick={() => { window.location.href = `/stacks?stack=${encodeURIComponent(stack.name)}`; }}
                     data-testid={`stack-${stack.name}`}
                   >
+                    <TD className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={sel.isSelected(stack.name)}
+                        onChange={() => sel.toggle(stack.name)}
+                        aria-label={`Select ${stack.name}`}
+                        className="rounded"
+                        data-testid={`select-stack-${stack.name}`}
+                      />
+                    </TD>
                     <TD className="font-medium">
-                      <a href={`/stacks#${stack.name}`} className="hover:text-cp-purple" onClick={(e) => e.stopPropagation()}>
+                      <a href={`/stacks?stack=${encodeURIComponent(stack.name)}`} className="hover:text-cp-purple" onClick={(e) => e.stopPropagation()}>
                         {stack.name}
                       </a>
                     </TD>
@@ -219,13 +259,4 @@ export function DashboardOverview() {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
-  return (
-    <Card>
-      <CardContent className="p-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p className={`text-2xl font-bold tabular-nums font-data ${color || ""}`}>{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
+

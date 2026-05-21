@@ -143,6 +143,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
     } else {
       const url = new URL(window.location.href);
       url.hash = "";
+      url.searchParams.delete("stack");
       url.searchParams.delete("tab");
       window.location.href = url.toString();
     }

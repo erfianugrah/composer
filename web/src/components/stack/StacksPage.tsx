@@ -10,23 +10,28 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 type CreateMode = null | "template" | "git" | "yaml";
 
+function readStackFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const p = new URLSearchParams(window.location.search).get("stack");
+  if (p) return p;
+  // Legacy hash routing — silently migrate any bookmarked /stacks#name URLs.
+  const hash = window.location.hash.slice(1);
+  if (!hash) return null;
+  const url = new URL(window.location.href);
+  url.hash = "";
+  url.searchParams.set("stack", hash);
+  window.history.replaceState({}, "", url);
+  return hash;
+}
+
 export function StacksPage() {
-  const [selectedStack, setSelectedStack] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      const hash = window.location.hash.slice(1);
-      return hash || null;
-    }
-    return null;
-  });
+  const [selectedStack, setSelectedStack] = useState<string | null>(() => readStackFromUrl());
   const [createMode, setCreateMode] = useState<CreateMode>(null);
 
   useEffect(() => {
-    const handler = () => {
-      const hash = window.location.hash.slice(1);
-      setSelectedStack(hash || null);
-    };
-    window.addEventListener("hashchange", handler);
-    return () => window.removeEventListener("hashchange", handler);
+    const sync = () => setSelectedStack(readStackFromUrl());
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
   }, []);
 
   // Drive the optional breadcrumb extra slot rendered by Layout.astro:
@@ -54,7 +59,8 @@ export function StacksPage() {
   function handleCreated(name: string) {
     setCreateMode(null);
     const url = new URL(window.location.href);
-    url.hash = name;
+    url.hash = "";
+    url.searchParams.set("stack", name);
     url.searchParams.delete("tab");
     window.history.pushState({}, "", url);
     setSelectedStack(name);

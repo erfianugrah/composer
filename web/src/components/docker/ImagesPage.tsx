@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
+import { useSWRFetch } from "@/lib/use-swr-fetch";
+import { StatCard } from "@/components/ui/stat-card";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -70,8 +72,8 @@ const accessors = {
 } satisfies Record<SortKey, (i: ImageInfo) => string | number>;
 
 export function ImagesPage() {
-  const [images, setImages] = useState<ImageInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refetch } = useSWRFetch<{ images: ImageInfo[] }>("/api/v1/images");
+  const images = data?.images ?? [];
   const [ref, setRef] = useState("");
   const [pulling, setPulling] = useState(false);
   const [error, setError] = useState("");
@@ -88,13 +90,7 @@ export function ImagesPage() {
     window.history.replaceState({}, "", url);
   }, [filter]);
 
-  function fetch_() {
-    apiFetch<{ images: ImageInfo[] }>("/api/v1/images").then(({ data, error: e }) => {
-      if (e) setError(e); else setImages(data?.images || []);
-      setLoading(false);
-    });
-  }
-  useEffect(() => { fetch_(); }, []);
+  function fetch_() { refetch(); }
 
   const totalSize = images.reduce((sum, img) => sum + img.size, 0);
   const filtered = images.filter((img) => {
@@ -115,9 +111,9 @@ export function ImagesPage() {
   return (
     <ErrorBoundary>
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card><CardContent className="p-6"><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Images</p><p className="text-2xl font-bold tabular-nums font-data">{images.length}</p></CardContent></Card>
-        <Card><CardContent className="p-6"><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Total Size</p><p className="text-2xl font-bold tabular-nums font-data text-cp-peach">{formatSize(totalSize)}</p></CardContent></Card>
+      <div className="grid gap-3 md:grid-cols-2">
+        <StatCard label="Images" value={images.length} />
+        <StatCard label="Total Size" value={formatSize(totalSize)} color="text-cp-peach" />
       </div>
       <Card>
         <CardHeader><CardTitle className="text-sm">Pull Image</CardTitle></CardHeader>

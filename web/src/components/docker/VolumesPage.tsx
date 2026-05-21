@@ -2,6 +2,8 @@ import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { useSort } from "@/lib/use-sort";
+import { useSWRFetch } from "@/lib/use-swr-fetch";
+import { useSelection } from "@/lib/use-selection";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
@@ -18,8 +20,8 @@ const accessors = {
 } satisfies Record<SortKey, (v: VolumeInfo) => string>;
 
 export function VolumesPage() {
-  const [volumes, setVolumes] = useState<VolumeInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refetch } = useSWRFetch<{ volumes: VolumeInfo[] }>("/api/v1/volumes");
+  const volumes = data?.volumes ?? [];
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [inspecting, setInspecting] = useState<string | null>(null);
@@ -37,13 +39,7 @@ export function VolumesPage() {
     window.history.replaceState({}, "", url);
   }, [filter]);
 
-  function fetch_() {
-    apiFetch<{ volumes: VolumeInfo[] }>("/api/v1/volumes").then(({ data, error: e }) => {
-      if (e) setError(e); else setVolumes(data?.volumes || []);
-      setLoading(false);
-    });
-  }
-  useEffect(() => { fetch_(); }, []);
+  function fetch_() { refetch(); }
 
   const filtered = volumes.filter((v) => {
     if (!filter) return true;
@@ -51,6 +47,14 @@ export function VolumesPage() {
     return v.name.toLowerCase().includes(q) || v.mountpoint.toLowerCase().includes(q) || v.driver.toLowerCase().includes(q);
   });
   const { sorted, sortKey, direction, toggle } = useSort<VolumeInfo, SortKey>(filtered, accessors, "name", "asc");
+  const sel = useSelection<VolumeInfo>((v) => v.name);
+
+  async function bulkRemove() {
+    const names = sorted.filter((v) => sel.isSelected(v.name)).map((v) => v.name);
+    await Promise.all(names.map((n) => apiFetch(`/api/v1/volumes/${encodeURIComponent(n)}`, { method: "DELETE" })));
+    sel.clear();
+    fetch_();
+  }
 
   async function handleInspect(volName: string) {
     if (inspecting === volName) { setInspecting(null); return; }
@@ -116,11 +120,36 @@ export function VolumesPage() {
             <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
           </div>
         </CardHeader>
+        {sel.size > 0 && (
+          <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
+            <span className="text-muted-foreground">{sel.size} selected</span>
+            <span className="flex-1" />
+            <ConfirmButton
+              size="xs"
+              message={`Remove ${sel.size} volume${sel.size === 1 ? "" : "s"}?`}
+              onConfirm={bulkRemove}
+            >
+              Remove ({sel.size})
+            </ConfirmButton>
+            <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+          </div>
+        )}
         <CardContent>
           {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : volumes.length === 0 ? <p className="text-sm text-muted-foreground">No volumes.</p> : sorted.length === 0 ? <p className="text-sm text-muted-foreground">No volumes match the current filter.</p> : (
             <Table>
               <THead>
                 <TR>
+                  <TH className="w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible"
+                      checked={sel.allSelected(sorted)}
+                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
+                      onChange={() => sel.toggleAll(sorted)}
+                      className="rounded"
+                      data-testid="select-all-volumes"
+                    />
+                  </TH>
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "driver"} direction={direction} onSort={() => toggle("driver")}>Driver</SortHeader>
                   <TH>Mountpoint</TH>
@@ -130,7 +159,17 @@ export function VolumesPage() {
               <TBody>
                 {sorted.map((v) => (
                   <Fragment key={v.name}>
-                    <TR className="cursor-pointer" onClick={() => handleInspect(v.name)} aria-expanded={inspecting === v.name}>
+                    <TR className={`cursor-pointer ${sel.isSelected(v.name) ? "bg-cp-purple/5" : ""}`} onClick={() => handleInspect(v.name)} aria-expanded={inspecting === v.name}>
+                      <TD className="w-8" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={sel.isSelected(v.name)}
+                          onChange={() => sel.toggle(v.name)}
+                          aria-label={`Select ${v.name}`}
+                          className="rounded"
+                          data-testid={`select-volume-${v.name}`}
+                        />
+                      </TD>
                       <TD className="font-medium">{v.name}</TD>
                       <TD className="font-data text-muted-foreground">{v.driver}</TD>
                       <TD className="font-data text-muted-foreground truncate max-w-[420px]" title={v.mountpoint}>{v.mountpoint}</TD>
@@ -146,7 +185,7 @@ export function VolumesPage() {
                     </TR>
                     {inspecting === v.name && (
                       <tr className="bg-cp-950/50">
-                        <td colSpan={4} className="px-3 py-3 border-b border-border/40">
+                        <td colSpan={5} className="px-3 py-3 border-b border-border/40">
                           <pre className="text-xs font-data max-h-96 overflow-auto whitespace-pre-wrap">
                             {inspectData[v.name] ? highlightJSON(inspectData[v.name]) : "Loading…"}
                           </pre>
