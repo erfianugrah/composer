@@ -8,6 +8,7 @@ import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { useSelection } from "@/lib/use-selection";
 import { clickableRow } from "@/lib/row-interactions";
 import { useBusy } from "@/lib/use-busy";
+import { BulkBar } from "@/components/ui/bulk-bar";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
@@ -112,22 +113,16 @@ export function NetworksPage() {
             <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
           </div>
         </CardHeader>
-        {sel.size > 0 && (
-          <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
-            <span className="text-muted-foreground">{sel.size} selected</span>
-            <span className="flex-1" />
-            {busy && <span className="text-muted-foreground">working…</span>}
-            <ConfirmButton
-              size="xs"
-              message={`Remove ${sel.size} network${sel.size === 1 ? "" : "s"}?`}
-              onConfirm={bulkRemove}
-              disabled={busy}
-            >
-              Remove ({sel.size})
-            </ConfirmButton>
-            <Button size="xs" variant="ghost" onClick={sel.clear} disabled={busy}>Clear</Button>
-          </div>
-        )}
+        <BulkBar count={sel.size} onClear={sel.clear} busy={busy}>
+          <ConfirmButton
+            size="xs"
+            message={`Remove ${sel.size} network${sel.size === 1 ? "" : "s"}?`}
+            onConfirm={bulkRemove}
+            disabled={busy}
+          >
+            Remove ({sel.size})
+          </ConfirmButton>
+        </BulkBar>
         <CardContent>
           {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : networks.length === 0 ? <p className="text-sm text-muted-foreground">No networks.</p> : sorted.length === 0 ? <p className="text-sm text-muted-foreground">No networks match the current filter.</p> : (
             <Table>

@@ -9,6 +9,7 @@ import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy } from "@/lib/use-busy";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
+import { BulkBar } from "@/components/ui/bulk-bar";
 import { StatCard } from "@/components/ui/stat-card";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -161,24 +162,18 @@ export function ContainerListPage() {
             <Button size="xs" variant="outline" onClick={fetchContainers}>Refresh</Button>
           </div>
         </CardHeader>
-        {sel.size > 0 && (
-          <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
-            <span className="text-muted-foreground">{sel.size} selected</span>
-            <span className="flex-1" />
-            {busy && <span className="text-muted-foreground">working…</span>}
-            <Button size="xs" variant="outline" onClick={() => bulk("start")} disabled={busy || selectedStopped.length === 0}>Start ({selectedStopped.length})</Button>
-            <Button size="xs" variant="outline" onClick={() => bulk("restart")} disabled={busy || selectedRunning.length === 0}>Restart ({selectedRunning.length})</Button>
-            <ConfirmButton
-              size="xs"
-              message={`Stop ${selectedRunning.length} running container${selectedRunning.length === 1 ? "" : "s"}?`}
-              onConfirm={() => bulk("stop")}
-              disabled={busy || selectedRunning.length === 0}
-            >
-              Stop ({selectedRunning.length})
-            </ConfirmButton>
-            <Button size="xs" variant="ghost" onClick={sel.clear} disabled={busy}>Clear</Button>
-          </div>
-        )}
+        <BulkBar count={sel.size} onClear={sel.clear} busy={busy}>
+          <Button size="xs" variant="outline" onClick={() => bulk("start")} disabled={busy || selectedStopped.length === 0}>Start ({selectedStopped.length})</Button>
+          <Button size="xs" variant="outline" onClick={() => bulk("restart")} disabled={busy || selectedRunning.length === 0}>Restart ({selectedRunning.length})</Button>
+          <ConfirmButton
+            size="xs"
+            message={`Stop ${selectedRunning.length} running container${selectedRunning.length === 1 ? "" : "s"}?`}
+            onConfirm={() => bulk("stop")}
+            disabled={busy || selectedRunning.length === 0}
+          >
+            Stop ({selectedRunning.length})
+          </ConfirmButton>
+        </BulkBar>
         <CardContent>
           {containers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No containers found.</p>

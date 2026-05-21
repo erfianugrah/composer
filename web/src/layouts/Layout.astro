@@ -32,8 +32,8 @@ const navItems = [
   </head>
   <body class="min-h-screen bg-background text-foreground antialiased">
     <div class="flex h-screen overflow-hidden">
-      <!-- Mobile sidebar overlay -->
-      <div id="mobile-overlay" class="fixed inset-0 z-40 bg-black/50 hidden md:hidden" onclick="document.getElementById('sidebar').classList.add('hidden');document.getElementById('mobile-overlay').classList.add('hidden');"></div>
+      <!-- Mobile sidebar overlay. Click handler wired up in /mobile-menu-init.js (no inline JS, CSP-friendly). -->
+      <div id="mobile-overlay" class="fixed inset-0 z-40 bg-black/50 hidden md:hidden"></div>
 
       <!-- Sidebar -->
       <aside id="sidebar" class="hidden md:flex w-60 flex-col border-r border-border bg-cp-950 fixed md:static inset-y-0 left-0 z-50">
@@ -78,7 +78,6 @@ const navItems = [
             id="mobile-menu-btn"
             class="md:hidden p-1 rounded hover:bg-accent"
             aria-label="Open navigation"
-            onclick="document.getElementById('sidebar').classList.remove('hidden');document.getElementById('mobile-overlay').classList.remove('hidden');"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
@@ -107,6 +106,7 @@ const navItems = [
             </div>
             <AccountMenu client:load />
             <script is:inline src="/layout-init.js"></script>
+            <script is:inline src="/mobile-menu-init.js"></script>
           </div>
         </header>
 
