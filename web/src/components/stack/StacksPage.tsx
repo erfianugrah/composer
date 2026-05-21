@@ -29,6 +29,28 @@ export function StacksPage() {
     return () => window.removeEventListener("hashchange", handler);
   }, []);
 
+  // Drive the optional breadcrumb extra slot rendered by Layout.astro:
+  //   Dashboard / Stacks / {selectedStack}
+  // The parent crumb ("Stacks") becomes a link when a stack is selected.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const parent = document.getElementById("breadcrumb-parent");
+    const sep = document.getElementById("breadcrumb-extra-sep");
+    const extra = document.getElementById("breadcrumb-extra");
+    if (!parent || !sep || !extra) return;
+    if (selectedStack) {
+      parent.innerHTML = `<a href="/stacks" class="text-muted-foreground hover:text-foreground transition-colors">Stacks</a>`;
+      sep.classList.remove("hidden");
+      extra.classList.remove("hidden");
+      extra.innerHTML = `<span class="font-medium font-data" data-testid="breadcrumb-stack">${selectedStack.replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c] || c))}</span>`;
+    } else {
+      parent.innerHTML = `<span class="font-medium" data-testid="page-title">Stacks</span>`;
+      sep.classList.add("hidden");
+      extra.classList.add("hidden");
+      extra.innerHTML = "";
+    }
+  }, [selectedStack]);
+
   function handleCreated(name: string) {
     setCreateMode(null);
     const url = new URL(window.location.href);
@@ -48,26 +70,11 @@ export function StacksPage() {
   }
 
   if (selectedStack) {
+    // Breadcrumb now shows "Dashboard / Stacks / <name>" so the explicit
+    // back button is redundant.
     return (
       <ErrorBoundary>
-      <div>
-        <div className="mb-4">
-          <Button
-            variant="ghost" size="sm"
-            onClick={() => {
-              const url = new URL(window.location.href);
-              url.hash = "";
-              url.searchParams.delete("tab");
-              window.history.pushState({}, "", url);
-              setSelectedStack(null);
-            }}
-            data-testid="back-to-stacks"
-          >
-            &larr; Back to Stacks
-          </Button>
-        </div>
         <StackDetail stackName={selectedStack} />
-      </div>
       </ErrorBoundary>
     );
   }

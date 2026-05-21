@@ -2,6 +2,7 @@
 import "@/styles/globals.css";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { JobsDrawer } from "@/components/layout/JobsDrawer";
+import { AccountMenu } from "@/components/layout/AccountMenu";
 
 interface Props {
   title: string;
@@ -81,7 +82,21 @@ const navItems = [
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
-          <h1 class="text-lg font-semibold" data-testid="page-title">{title}</h1>
+          <nav aria-label="Breadcrumb" class="text-sm" data-testid="breadcrumb">
+            <ol class="flex items-center gap-1.5" id="breadcrumb-list">
+              {title === "Dashboard" ? (
+                <li><span class="font-medium" data-testid="page-title">Dashboard</span></li>
+              ) : (
+                <>
+                  <li><a href="/" class="text-muted-foreground hover:text-foreground transition-colors">Dashboard</a></li>
+                  <li class="text-muted-foreground" aria-hidden="true">/</li>
+                  <li id="breadcrumb-parent"><span class="font-medium" data-testid="page-title">{title}</span></li>
+                  <li id="breadcrumb-extra-sep" class="text-muted-foreground hidden" aria-hidden="true">/</li>
+                  <li id="breadcrumb-extra" class="hidden"></li>
+                </>
+              )}
+            </ol>
+          </nav>
           <div class="ml-auto flex items-center gap-3">
             <JobsDrawer client:load />
             <div class="flex items-center gap-2" id="health-indicator">
@@ -90,13 +105,7 @@ const navItems = [
               </span>
               <span class="text-xs text-muted-foreground">Checking...</span>
             </div>
-            <button
-              id="logout-btn"
-              class="text-xs text-muted-foreground hover:text-cp-red transition-colors px-2 py-1 rounded border border-transparent hover:border-cp-red/30"
-              title="Sign out"
-            >
-              Sign out
-            </button>
+            <AccountMenu client:load />
             <script is:inline src="/layout-init.js"></script>
           </div>
         </header>
