@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
+import { FilterInput } from "@/components/ui/filter-input";
+import { cn } from "@/lib/utils";
+import { useSort } from "@/lib/use-sort";
+import { useSWRFetch } from "@/lib/use-swr-fetch";
+import { navigableRow } from "@/lib/row-interactions";
+import { useSelection } from "@/lib/use-selection";
+import { useBusy, runBulk } from "@/lib/use-busy";
+import { BulkBar } from "@/components/ui/bulk-bar";
+import { Button } from "@/components/ui/button";
+import { StatCard } from "@/components/ui/stat-card";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -14,42 +26,95 @@ interface StackSummary {
   updated_at: string;
 }
 
+// Reserve red for true alert states. "stopped" is steady-state, not alarming.
 const statusColor: Record<string, string> = {
   running: "bg-cp-green/20 text-cp-green border-cp-green/30",
-  stopped: "bg-cp-red/20 text-cp-red border-cp-red/30",
+  stopped: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
   partial: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
   unknown: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
 };
 
+type StatusFilter = "all" | "running" | "stopped" | "partial";
+type SortKey = "name" | "status" | "containers" | "source" | "updated";
+
+const accessors = {
+  name: (s: StackSummary) => s.name.toLowerCase(),
+  status: (s: StackSummary) => s.status,
+  containers: (s: StackSummary) => s.container_count,
+  source: (s: StackSummary) => s.source,
+  updated: (s: StackSummary) => s.updated_at || "",
+} satisfies Record<SortKey, (s: StackSummary) => string | number>;
+
+function formatRelative(iso: string): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const diff = (Date.now() - then) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export function DashboardOverview() {
-  const [stacks, setStacks] = useState<StackSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { data, error, loading, stale } = useSWRFetch<{ stacks: StackSummary[] }>("/api/v1/stacks", { pollMs: 30000 });
+  const stacks = data?.stacks ?? [];
+  const [filter, setFilter] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("q") || "";
+  });
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    if (typeof window === "undefined") return "all";
+    const s = new URLSearchParams(window.location.search).get("status");
+    return (s === "running" || s === "stopped" || s === "partial") ? s : "all";
+  });
 
+  // Persist filter state in URL so refresh/bookmarks survive.
   useEffect(() => {
-    async function load() {
-      const { data, error: err } = await apiFetch<{ stacks: StackSummary[] }>("/api/v1/stacks");
-      if (err) {
-        setError(err);
-      } else {
-        setStacks(data?.stacks || []);
-      }
-      setLoading(false);
-    }
-    load();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (filter) url.searchParams.set("q", filter); else url.searchParams.delete("q");
+    if (statusFilter !== "all") url.searchParams.set("status", statusFilter); else url.searchParams.delete("status");
+    window.history.replaceState({}, "", url);
+  }, [filter, statusFilter]);
 
-  if (loading) {
+  const filtered = stacks.filter((s) => {
+    if (statusFilter !== "all" && s.status !== statusFilter) return false;
+    if (filter && !s.name.toLowerCase().includes(filter.toLowerCase())) return false;
+    return true;
+  });
+
+  const { sorted, sortKey, direction, toggle } = useSort<StackSummary, SortKey>(filtered, accessors, "name", "asc", { urlParam: "sort" });
+  const sel = useSelection<StackSummary>((s) => s.name, { persistKey: "stacks" });
+  // Drop any persisted selections whose row no longer exists.
+  useEffect(() => { sel.prune(stacks); }, [stacks, sel.prune]);
+  const { busy, run } = useBusy();
+  const selectedRunning = sorted.filter((s) => sel.isSelected(s.name) && s.status === "running");
+  const selectedStopped = sorted.filter((s) => sel.isSelected(s.name) && s.status !== "running");
+
+  async function bulk(action: "up" | "down" | "restart") {
+    const targets = action === "up" ? selectedStopped : selectedRunning;
+    const names = targets.map((s) => s.name);
+    const verb = action === "up" ? "Deploy" : action === "down" ? "Stopp" : "Restart";
+    await run(async () => {
+      await runBulk(names, (n) => apiFetch(`/api/v1/stacks/${encodeURIComponent(n)}/${action}`, { method: "POST" }), {
+        verb, noun: "stack",
+      });
+      sel.clear();
+    });
+  }
+
+  // Show skeletons only when truly empty (no cached data). SWR keeps prior
+  // data on revalidate so the table stays visible.
+  if (loading && !data) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         {[...Array(4)].map((_, i) => (
           <Card key={i} className="animate-pulse">
-            <CardContent className="p-6">
-              <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
-              <div className="h-3 bg-muted rounded w-1/2"></div>
+            <CardContent className="p-3">
+              <div className="h-3 bg-muted rounded w-3/4 mb-2"></div>
+              <div className="h-5 bg-muted rounded w-1/2"></div>
             </CardContent>
           </Card>
         ))}
@@ -57,7 +122,9 @@ export function DashboardOverview() {
     );
   }
 
-  if (error) {
+  // Only block the page when we have no data at all. Background revalidation
+  // failures surface as an inline notice below.
+  if (error && !data) {
     return (
       <Card className="border-cp-red/30">
         <CardContent className="p-6">
@@ -74,53 +141,107 @@ export function DashboardOverview() {
     <ErrorBoundary>
     <div className="space-y-6">
       {/* Stat cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total Stacks" value={stacks.length} />
         <StatCard label="Running" value={running} color="text-cp-green" />
-        <StatCard label="Stopped" value={stopped} color="text-cp-red" />
+        <StatCard label="Stopped" value={stopped} color="text-muted-foreground" />
         <StatCard label="Git-backed" value={stacks.filter((s) => s.source === "git").length} color="text-cp-blue" />
       </div>
 
-      {/* Stack list */}
+      {/* Stack table */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Stacks</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-sm shrink-0">
+              Stacks <span className="text-muted-foreground font-normal">({sorted.length}{sorted.length !== stacks.length ? ` of ${stacks.length}` : ""})</span>
+            </CardTitle>
+            {stacks.length > 0 && (
+              <>
+                <FilterInput value={filter} onChange={setFilter} placeholder="Filter by name…" testId="stack-filter" />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                  className="h-7 rounded border border-input bg-transparent px-2 text-xs font-data"
+                  aria-label="Filter by status"
+                  data-testid="stack-status-filter"
+                >
+                  <option value="all">All status</option>
+                  <option value="running">Running</option>
+                  <option value="stopped">Stopped</option>
+                  <option value="partial">Partial</option>
+                </select>
+              </>
+            )}
+          </div>
         </CardHeader>
+        <BulkBar count={sel.size} onClear={sel.clear} busy={busy}>
+          <Button size="xs" variant="outline" onClick={() => bulk("up")} disabled={busy || selectedStopped.length === 0}>Deploy ({selectedStopped.length})</Button>
+          <Button size="xs" variant="outline" onClick={() => bulk("restart")} disabled={busy || selectedRunning.length === 0}>Restart ({selectedRunning.length})</Button>
+          <ConfirmButton
+            size="xs"
+            message={`Stop ${selectedRunning.length} stack${selectedRunning.length === 1 ? "" : "s"}?`}
+            onConfirm={() => bulk("down")}
+            disabled={busy || selectedRunning.length === 0}
+          >
+            Stop ({selectedRunning.length})
+          </ConfirmButton>
+        </BulkBar>
         <CardContent>
           {stacks.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="no-stacks">
               No stacks yet. Create your first stack to get started.
             </p>
+          ) : sorted.length === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="no-stacks-match">
+              No stacks match the current filter.
+            </p>
           ) : (
-            <div className="space-y-2" data-testid="stack-list">
-              {stacks.map((stack) => (
-                <a
-                  key={stack.name}
-                  href={`/stacks#${stack.name}`}
-                  className="flex items-center justify-between rounded-lg border border-border p-3 hover:bg-accent/50 transition-colors"
-                  data-testid={`stack-${stack.name}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="font-medium text-sm">{stack.name}</span>
-                    {stack.source === "git" && (
-                      <Badge variant="outline" className="text-cp-blue border-cp-blue/30 text-[10px]">
-                        git
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {stack.container_count > 0 && (
-                      <span className="text-[10px] font-data text-muted-foreground">
-                        {stack.running_count}/{stack.container_count} containers
-                      </span>
-                    )}
-                    <Badge className={statusColor[stack.status] || statusColor.unknown}>
-                      {stack.status}
-                    </Badge>
-                  </div>
-                </a>
-              ))}
-            </div>
+            <Table data-testid="stack-list">
+              <THead>
+                <TR>
+                  <SelectAllTH rows={sorted} selection={sel} testId="select-all-stacks" />
+                  <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
+                  <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
+                  <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className={cn("text-right", hideOnNarrow)}>Containers</SortHeader>
+                  <SortHeader active={sortKey === "source"} direction={direction} onSort={() => toggle("source")} className={hideOnNarrow}>Source</SortHeader>
+                  <SortHeader active={sortKey === "updated"} direction={direction} onSort={() => toggle("updated")} className={hideOnNarrow}>Updated</SortHeader>
+                </TR>
+              </THead>
+              <TBody>
+                {sorted.map((stack) => (
+                  <TR
+                    key={stack.name}
+                    className={`cursor-pointer ${sel.isSelected(stack.name) ? "bg-cp-purple/5" : ""}`}
+                    data-testid={`stack-${stack.name}`}
+                    {...navigableRow(`/stacks/${encodeURIComponent(stack.name)}`)}
+                  >
+                    <TD className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={sel.isSelected(stack.name)}
+                        onChange={() => sel.toggle(stack.name)}
+                        aria-label={`Select ${stack.name}`}
+                        className="rounded"
+                        data-testid={`select-stack-${stack.name}`}
+                      />
+                    </TD>
+                    <TD className="font-medium">
+                      <a href={`/stacks/${encodeURIComponent(stack.name)}`} className="hover:text-cp-purple" onClick={(e) => e.stopPropagation()}>
+                        {stack.name}
+                      </a>
+                    </TD>
+                    <TD>
+                      <Badge className={statusColor[stack.status] || statusColor.unknown}>{stack.status}</Badge>
+                    </TD>
+                    <TD className={cn("text-right font-data tabular-nums text-muted-foreground", hideOnNarrow)}>
+                      {stack.container_count > 0 ? `${stack.running_count}/${stack.container_count}` : "—"}
+                    </TD>
+                    <TD className={cn("font-data text-muted-foreground", hideOnNarrow)}>{stack.source}</TD>
+                    <TD className={cn("font-data text-muted-foreground", hideOnNarrow)} title={stack.updated_at}>{formatRelative(stack.updated_at)}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
           )}
         </CardContent>
       </Card>
@@ -129,13 +250,4 @@ export function DashboardOverview() {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
-  return (
-    <Card className="animate-fade-in-up">
-      <CardContent className="p-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p className={`text-2xl font-bold tabular-nums font-data ${color || ""}`}>{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
+

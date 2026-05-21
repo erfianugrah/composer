@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardOverview } from "./DashboardOverview";
-import { StackDetail } from "./StackDetail";
 import { TemplatePicker } from "./TemplatePicker";
 import { GitCloneForm } from "./GitCloneForm";
 import { RawComposeForm } from "./RawComposeForm";
@@ -10,29 +10,35 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 type CreateMode = null | "template" | "git" | "yaml";
 
+/**
+ * /stacks list view -- creation UI + DashboardOverview.
+ *
+ * The stack-detail view lives at /stacks/:name and is rendered by
+ * StacksRouter; this component handles only the list page.
+ *
+ * Also resets the breadcrumb to the default Stacks title on mount, so
+ * navigating back from a detail view clears the third crumb that
+ * StackDetail had injected.
+ */
 export function StacksPage() {
-  const [selectedStack, setSelectedStack] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      const hash = window.location.hash.slice(1);
-      return hash || null;
-    }
-    return null;
-  });
+  const navigate = useNavigate();
   const [createMode, setCreateMode] = useState<CreateMode>(null);
 
   useEffect(() => {
-    const handler = () => {
-      const hash = window.location.hash.slice(1);
-      setSelectedStack(hash || null);
-    };
-    window.addEventListener("hashchange", handler);
-    return () => window.removeEventListener("hashchange", handler);
+    if (typeof document === "undefined") return;
+    const parent = document.getElementById("breadcrumb-parent");
+    const sep = document.getElementById("breadcrumb-extra-sep");
+    const extra = document.getElementById("breadcrumb-extra");
+    if (!parent || !sep || !extra) return;
+    parent.innerHTML = `<span class="font-medium" data-testid="page-title">Stacks</span>`;
+    sep.classList.add("hidden");
+    extra.classList.add("hidden");
+    extra.innerHTML = "";
   }, []);
 
   function handleCreated(name: string) {
     setCreateMode(null);
-    window.location.hash = name;
-    setSelectedStack(name);
+    navigate(`/${encodeURIComponent(name)}`);
   }
 
   async function handleTemplateCreate(name: string, compose: string) {
@@ -42,25 +48,6 @@ export function StacksPage() {
       body: JSON.stringify({ name: name.trim(), compose }),
     });
     if (!error) handleCreated(name.trim());
-  }
-
-  if (selectedStack) {
-    return (
-      <ErrorBoundary>
-      <div>
-        <div className="mb-4">
-          <Button
-            variant="ghost" size="sm"
-            onClick={() => { window.location.hash = ""; setSelectedStack(null); }}
-            data-testid="back-to-stacks"
-          >
-            &larr; Back to Stacks
-          </Button>
-        </div>
-        <StackDetail stackName={selectedStack} />
-      </div>
-      </ErrorBoundary>
-    );
   }
 
   return (

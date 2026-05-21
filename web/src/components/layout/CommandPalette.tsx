@@ -12,6 +12,7 @@ interface CommandItem {
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [healthResult, setHealthResult] = useState<string | null>(null);
 
   // Cmd+K / Ctrl+K to toggle
   useEffect(() => {
@@ -40,7 +41,13 @@ export function CommandPalette() {
     { id: "settings", label: "Go to Settings", group: "Navigation", action: () => navigate("/settings") },
     { id: "login", label: "Go to Login", group: "Navigation", action: () => navigate("/login") },
     { id: "health", label: "Check Health", description: "/api/v1/system/health", group: "API",
-      action: () => { fetch("/api/v1/system/health").then(r => r.json()).then(d => alert(JSON.stringify(d, null, 2))); setOpen(false); }
+      action: () => {
+        setHealthResult("Checking…");
+        fetch("/api/v1/system/health")
+          .then(r => r.json())
+          .then(d => setHealthResult(JSON.stringify(d, null, 2)))
+          .catch(err => setHealthResult(`Error: ${err}`));
+      }
     },
     { id: "openapi", label: "View OpenAPI Spec", description: "/openapi.json", group: "API",
       action: () => { window.open("/openapi.json", "_blank"); setOpen(false); }
@@ -104,6 +111,15 @@ export function CommandPalette() {
             })}
           </Command.List>
         </Command>
+        {healthResult !== null && (
+          <div className="border-t border-border p-3" data-testid="cmd-k-result">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Health</span>
+              <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setHealthResult(null)}>close</button>
+            </div>
+            <pre className="text-xs font-data text-foreground/80 whitespace-pre-wrap max-h-48 overflow-y-auto">{healthResult}</pre>
+          </div>
+        )}
       </div>
     </div>
   );

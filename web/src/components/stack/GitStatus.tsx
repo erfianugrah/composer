@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api/errors";
 
@@ -164,11 +165,12 @@ export function GitStatus({ stackName }: { stackName: string }) {
                       {commit.author} &middot; {new Date(commit.date).toLocaleDateString()}
                     </p>
                   </div>
-                  <Button
+                  <ConfirmButton
                     size="xs"
                     variant="outline"
-                    onClick={async () => {
-                      if (!confirm(`Rollback to ${commit.short_sha}?`)) return;
+                    message={`Rollback to ${commit.short_sha}?`}
+                    confirmLabel="Rollback"
+                    onConfirm={async () => {
                       const { error: err } = await apiFetch(`/api/v1/stacks/${stackName}/rollback`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -180,7 +182,7 @@ export function GitStatus({ stackName }: { stackName: string }) {
                     data-testid={`rollback-${commit.short_sha}`}
                   >
                     Rollback
-                  </Button>
+                  </ConfirmButton>
                 </div>
               ))}
             </div>

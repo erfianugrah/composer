@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 
@@ -110,11 +111,14 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
                         const { data } = await apiFetch<{ deliveries: Delivery[] }>(`/api/v1/webhooks/${w.id}/deliveries`);
                         setDeliveries(data?.deliveries || []);
                       }}>Deliveries</Button>
-                      <Button size="xs" variant="destructive" onClick={async () => {
-                        if (!confirm("Delete this webhook?")) return;
-                        await apiFetch(`/api/v1/webhooks/${w.id}`, { method: "DELETE" });
-                        fetchWebhooks();
-                      }}>Delete</Button>
+                      <ConfirmButton
+                        size="xs"
+                        message="Delete this webhook?"
+                        onConfirm={async () => {
+                          await apiFetch(`/api/v1/webhooks/${w.id}`, { method: "DELETE" });
+                          fetchWebhooks();
+                        }}
+                      >Delete</ConfirmButton>
                     </div>
                   </div>
                   {deliveriesFor === w.id && (

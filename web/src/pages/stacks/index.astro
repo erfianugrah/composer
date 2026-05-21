@@ -1,8 +1,10 @@
 ---
 import Layout from "@/layouts/Layout.astro";
-import { StacksPage } from "@/components/stack/StacksPage";
+import { StacksRouter } from "@/components/stack/StacksRouter";
 ---
 
 <Layout title="Stacks" active="stacks">
-  <StacksPage client:load />
+  <!-- client:only because BrowserRouter touches window during init,
+       which Astro's SSR step can't supply. -->
+  <StacksRouter client:only="react" />
 </Layout>

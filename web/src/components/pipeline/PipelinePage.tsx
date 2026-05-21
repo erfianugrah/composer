@@ -1,8 +1,18 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
+import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
+import { FilterInput } from "@/components/ui/filter-input";
+import { StepEditor, newStep, type PipelineStep } from "@/components/pipeline/StepEditor";
+import { useSort } from "@/lib/use-sort";
+import { useSelection } from "@/lib/use-selection";
+import { useBusy, runBulk } from "@/lib/use-busy";
+import { clickableRow } from "@/lib/row-interactions";
+import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -77,6 +87,25 @@ type RunOrder = "desc" | "asc";
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 type PageSize = typeof PAGE_SIZES[number];
 
+type SortKey = "name" | "steps" | "created";
+const accessors = {
+  name: (p: PipelineSummary) => p.name.toLowerCase(),
+  steps: (p: PipelineSummary) => p.step_count,
+  created: (p: PipelineSummary) => p.created_at,
+} satisfies Record<SortKey, (p: PipelineSummary) => string | number>;
+
+function formatRelative(iso: string): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const diff = (Date.now() - then) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export function PipelinePage() {
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
   const [selectedPipeline, setSelectedPipeline] = useState<string | null>(null);
@@ -92,9 +121,20 @@ export function PipelinePage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDesc, setCreateDesc] = useState("");
-  const [createStepStack, setCreateStepStack] = useState("");
+  const [createSteps, setCreateSteps] = useState<PipelineStep[]>(() => [newStep(0)]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("q") || "";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (filter) url.searchParams.set("q", filter); else url.searchParams.delete("q");
+    window.history.replaceState({}, "", url);
+  }, [filter]);
 
   function fetchPipelines() {
     apiFetch<{ pipelines: PipelineSummary[] }>("/api/v1/pipelines").then(({ data, error: err }) => {
@@ -185,18 +225,20 @@ export function PipelinePage() {
     e.preventDefault();
     setCreating(true);
     setError("");
+    // Normalize: assign step-N ids in order, fall back to type as name if empty.
+    const steps = createSteps.map((s, i) => ({
+      id: `step-${i + 1}`,
+      name: s.name.trim() || s.type,
+      type: s.type,
+      config: s.config,
+    }));
     const { error: err } = await apiFetch("/api/v1/pipelines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: createName.trim(),
         description: createDesc.trim(),
-        steps: [{
-          id: "step-1",
-          name: createStepStack.trim() ? `Deploy ${createStepStack.trim()}` : "Deploy",
-          type: createStepStack.trim() ? "compose_up" : "shell_command",
-          config: createStepStack.trim() ? { stack: createStepStack.trim() } : { command: "echo hello" },
-        }],
+        steps,
         triggers: [{ type: "manual", config: {} }],
       }),
     });
@@ -206,14 +248,32 @@ export function PipelinePage() {
       setShowCreate(false);
       setCreateName("");
       setCreateDesc("");
-      setCreateStepStack("");
+      setCreateSteps([newStep(0)]);
       fetchPipelines();
     }
     setCreating(false);
   }
 
+  function updateStep(index: number, next: PipelineStep) {
+    setCreateSteps((steps) => steps.map((s, i) => (i === index ? next : s)));
+  }
+  function removeStep(index: number) {
+    setCreateSteps((steps) => steps.filter((_, i) => i !== index));
+  }
+  function moveStep(index: number, dir: -1 | 1) {
+    setCreateSteps((steps) => {
+      const next = [...steps];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return steps;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+  function addStep() {
+    setCreateSteps((steps) => [...steps, newStep(steps.length)]);
+  }
+
   async function handleDelete(pipelineId: string) {
-    if (!confirm("Delete this pipeline?")) return;
     const { error: err } = await apiFetch(`/api/v1/pipelines/${pipelineId}`, { method: "DELETE" });
     if (err) { setError(`Delete failed: ${err}`); return; }
     if (selectedPipeline === pipelineId) setSelectedPipeline(null);
@@ -249,73 +309,46 @@ export function PipelinePage() {
                 <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Pipeline name" required data-testid="pipeline-name" />
                 <Input value={createDesc} onChange={(e) => setCreateDesc(e.target.value)} placeholder="Description (optional)" data-testid="pipeline-desc" />
               </div>
-              <Input value={createStepStack} onChange={(e) => setCreateStepStack(e.target.value)} placeholder="Stack name to deploy (optional -- leave empty for shell step)" data-testid="pipeline-stack" />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-medium text-muted-foreground">Steps</h4>
+                  <span className="text-[10px] text-muted-foreground font-data">{createSteps.length} step{createSteps.length === 1 ? "" : "s"}</span>
+                </div>
+                {createSteps.map((step, i) => (
+                  <StepEditor
+                    key={i}
+                    step={step}
+                    index={i}
+                    total={createSteps.length}
+                    onChange={(next) => updateStep(i, next)}
+                    onRemove={() => removeStep(i)}
+                    onMoveUp={() => moveStep(i, -1)}
+                    onMoveDown={() => moveStep(i, 1)}
+                  />
+                ))}
+                <Button type="button" variant="outline" size="sm" onClick={addStep} data-testid="step-add">
+                  + Add step
+                </Button>
+              </div>
               {error && <p className="text-sm text-cp-red">{error}</p>}
               <Button type="submit" disabled={creating || !createName} className="w-full" data-testid="pipeline-create-btn">
-                {creating ? "Creating..." : "Create Pipeline"}
+                {creating ? "Creating..." : `Create Pipeline (${createSteps.length} step${createSteps.length === 1 ? "" : "s"})`}
               </Button>
             </form>
           </CardContent>
         </Card>
       )}
 
-      {/* Pipeline list */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Pipelines</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {pipelines.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="no-pipelines">
-              No pipelines yet. Create your first pipeline above.
-            </p>
-          ) : (
-            <div className="space-y-2" data-testid="pipeline-list">
-              {pipelines.map((pl) => (
-                <div
-                  key={pl.id}
-                  className={`flex items-center justify-between rounded-lg border p-3 cursor-pointer transition-colors ${
-                    selectedPipeline === pl.id
-                      ? "border-cp-purple bg-cp-purple/5"
-                      : "border-border hover:bg-accent/50"
-                  }`}
-                  // Click toggles selection — clicking the already-selected
-                  // pipeline collapses the Run History panel. Previously only
-                  // ever set the selection so the panel could never be hidden
-                  // again without picking another pipeline.
-                  onClick={() => setSelectedPipeline((cur) => (cur === pl.id ? null : pl.id))}
-                  data-testid={`pipeline-${pl.id}`}
-                >
-                  <div>
-                    <div className="font-medium text-sm">{pl.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {pl.description || `${pl.step_count} steps`}
-                    </div>
-                  </div>
-                    <div className="flex gap-1">
-                    <Button
-                      size="xs"
-                      onClick={(e) => { e.stopPropagation(); handleRun(pl.id); }}
-                      disabled={running === pl.id}
-                      data-testid={`run-${pl.id}`}
-                    >
-                      {running === pl.id ? "Running..." : "Run"}
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="destructive"
-                      onClick={(e) => { e.stopPropagation(); handleDelete(pl.id); }}
-                      data-testid={`delete-${pl.id}`}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <PipelineTable
+        pipelines={pipelines}
+        selectedPipeline={selectedPipeline}
+        setSelectedPipeline={setSelectedPipeline}
+        running={running}
+        handleRun={handleRun}
+        handleDelete={handleDelete}
+        filter={filter}
+        setFilter={setFilter}
+      />
 
       {/* Run history for selected pipeline */}
       {selectedPipeline && (
@@ -476,5 +509,169 @@ export function PipelinePage() {
       )}
     </div>
     </ErrorBoundary>
+  );
+}
+
+interface PipelineTableProps {
+  pipelines: PipelineSummary[];
+  selectedPipeline: string | null;
+  setSelectedPipeline: (fn: (cur: string | null) => string | null) => void;
+  running: string;
+  handleRun: (id: string) => void;
+  handleDelete: (id: string) => Promise<void>;
+  filter: string;
+  setFilter: (v: string) => void;
+}
+
+function PipelineTable({
+  pipelines,
+  selectedPipeline,
+  setSelectedPipeline,
+  running,
+  handleRun,
+  handleDelete,
+  filter,
+  setFilter,
+}: PipelineTableProps) {
+  const sel = useSelection<PipelineSummary>((p) => p.id, { persistKey: "pipelines" });
+  useEffect(() => { sel.prune(pipelines); }, [pipelines, sel.prune]);
+  const { busy, run } = useBusy();
+  const filtered = pipelines.filter((p) => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return p.name.toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q);
+  });
+  const { sorted, sortKey, direction, toggle } = useSort<PipelineSummary, SortKey>(
+    filtered,
+    accessors,
+    "created",
+    "desc",
+    { urlParam: "sort" },
+  );
+
+  async function bulkDelete() {
+    const ids = sorted.filter((p) => sel.isSelected(p.id)).map((p) => p.id);
+    await run(async () => {
+      await runBulk(
+        ids,
+        (id) => apiFetch(`/api/v1/pipelines/${id}`, { method: "DELETE" }),
+        { verb: "Delet", noun: "pipeline" },
+      );
+      sel.clear();
+      fetchPipelines();
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-sm shrink-0">
+            Pipelines{" "}
+            <span className="text-muted-foreground font-normal">
+              ({sorted.length}{sorted.length !== pipelines.length ? ` of ${pipelines.length}` : ""})
+            </span>
+          </CardTitle>
+          {pipelines.length > 0 && (
+            <FilterInput value={filter} onChange={setFilter} placeholder="Filter by name or description…" testId="pipeline-filter" width="w-56" />
+          )}
+        </div>
+      </CardHeader>
+      <BulkBar count={sel.size} onClear={sel.clear} busy={busy}>
+        <ConfirmButton
+          size="xs"
+          message={`Delete ${sel.size} pipeline${sel.size === 1 ? "" : "s"}?`}
+          onConfirm={bulkDelete}
+          disabled={busy}
+        >
+          Delete ({sel.size})
+        </ConfirmButton>
+      </BulkBar>
+      <CardContent>
+        {pipelines.length === 0 ? (
+          <p className="text-sm text-muted-foreground" data-testid="no-pipelines">
+            No pipelines yet. Create your first pipeline above.
+          </p>
+        ) : sorted.length === 0 ? (
+          <p className="text-sm text-muted-foreground" data-testid="no-pipelines-match">
+            No pipelines match the current filter.
+          </p>
+        ) : (
+          <Table data-testid="pipeline-list">
+            <THead>
+              <TR>
+                <SelectAllTH rows={sorted} selection={sel} testId="select-all-pipelines" />
+                <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
+                <TH>Description</TH>
+                <SortHeader active={sortKey === "steps"} direction={direction} onSort={() => toggle("steps")} className="text-right">Steps</SortHeader>
+                <SortHeader active={sortKey === "created"} direction={direction} onSort={() => toggle("created")}>Created</SortHeader>
+                <TH className="text-right">Actions</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {sorted.map((pl) => (
+                <TR
+                  key={pl.id}
+                  className={`cursor-pointer ${
+                    selectedPipeline === pl.id
+                      ? "bg-cp-purple/5"
+                      : sel.isSelected(pl.id) ? "bg-cp-purple/5" : ""
+                  }`}
+                  data-testid={`pipeline-${pl.id}`}
+                  {...clickableRow(
+                    () => setSelectedPipeline((cur) => (cur === pl.id ? null : pl.id)),
+                    selectedPipeline === pl.id ? `Deselect ${pl.name}` : `Select ${pl.name}`,
+                  )}
+                >
+                  <TD className="w-8" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={sel.isSelected(pl.id)}
+                      onChange={() => sel.toggle(pl.id)}
+                      aria-label={`Select ${pl.name}`}
+                      className="rounded"
+                      data-testid={`select-pipeline-${pl.id}`}
+                    />
+                  </TD>
+                  <TD className="font-medium">
+                    <span className="flex items-center gap-2">
+                      {pl.name}
+                      {selectedPipeline === pl.id && (
+                        <Badge variant="outline" className="text-[10px] text-cp-purple border-cp-purple/30">selected</Badge>
+                      )}
+                    </span>
+                  </TD>
+                  <TD className="text-muted-foreground truncate max-w-[320px]" title={pl.description}>
+                    {pl.description || <span className="italic">no description</span>}
+                  </TD>
+                  <TD className="text-right font-data tabular-nums">{pl.step_count}</TD>
+                  <TD className="font-data text-muted-foreground" title={pl.created_at}>{formatRelative(pl.created_at)}</TD>
+                  <TD className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1 justify-end">
+                      <Button
+                        size="xs"
+                        onClick={() => handleRun(pl.id)}
+                        disabled={running === pl.id}
+                        data-testid={`run-${pl.id}`}
+                      >
+                        {running === pl.id ? "Running…" : "Run"}
+                      </Button>
+                      <ConfirmButton
+                        size="xs"
+                        message="Delete this pipeline?"
+                        onConfirm={() => handleDelete(pl.id)}
+                        data-testid={`delete-${pl.id}`}
+                      >
+                        Delete
+                      </ConfirmButton>
+                    </div>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }

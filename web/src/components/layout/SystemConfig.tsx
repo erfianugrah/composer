@@ -2,7 +2,12 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
+import { Table, THead, TBody, TR, TH, TD, SelectAllTH } from "@/components/ui/data-table";
+import { useSelection } from "@/lib/use-selection";
+import { useBusy, runBulk } from "@/lib/use-busy";
+import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -123,69 +128,21 @@ export function SystemConfig() {
     <ErrorBoundary>
     <div className="space-y-4">
       {/* SSH Keys */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">SSH Keys</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {config.ssh_keys && config.ssh_keys.length > 0 && (
-            <div className="space-y-1">
-              {config.ssh_keys.map((key) => (
-                <div key={key.path} className="flex items-center gap-3 rounded-lg border border-border p-2">
-                  <code className="text-xs font-data flex-1">{key.path}</code>
-                  {statusBadge(key.encrypted, key.encrypted ? "Encrypted" : "Plaintext")}
-                  <Button size="xs" variant="destructive" onClick={async () => {
-                    if (!confirm(`Delete ${key.name}?`)) return;
-                    await apiFetch(`/api/v1/system/config/ssh-keys/${key.name}`, { method: "DELETE" });
-                    const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
-                    if (r) setConfig(r);
-                  }}>Delete</Button>
-                </div>
-              ))}
-            </div>
-          )}
-          {(!config.ssh_keys || config.ssh_keys.length === 0) && (
-            <p className="text-xs text-muted-foreground">No SSH keys. Add one below or mount keys to <code className="font-data">/home/composer/.ssh/</code></p>
-          )}
-          <div className="border-t border-border pt-3 space-y-2">
-            <p className="text-xs text-muted-foreground">Add SSH private key (encrypted at rest after save)</p>
-            <div className="flex gap-2">
-              <Input
-                value={sshKeyName}
-                onChange={(e) => setSSHKeyName(e.target.value)}
-                placeholder="id_github"
-                className="w-40 font-data text-xs"
-              />
-              <Button size="sm" onClick={async () => {
-                if (!sshKeyName.trim() || !sshKeyContent.trim()) return;
-                setSSHKeySaving(true); setSSHKeyMsg("");
-                const { error: err } = await apiFetch("/api/v1/system/config/ssh-keys", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name: sshKeyName.trim(), content: sshKeyContent.trim() }),
-                });
-                if (err) { setSSHKeyMsg(err); }
-                else { setSSHKeyMsg("Saved + encrypted"); setSSHKeyName(""); setSSHKeyContent("");
-                  const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
-                  if (r) setConfig(r);
-                }
-                setSSHKeySaving(false);
-              }} disabled={sshKeySaving || !sshKeyName || !sshKeyContent}>
-                {sshKeySaving ? "..." : "Add Key"}
-              </Button>
-            </div>
-            <textarea
-              value={sshKeyContent}
-              onChange={(e) => setSSHKeyContent(e.target.value)}
-              placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
-              rows={4}
-              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs font-data resize-none"
-              spellCheck={false}
-            />
-            {sshKeyMsg && <p className={`text-xs ${sshKeyMsg.includes("Saved") ? "text-cp-green" : "text-cp-red"}`}>{sshKeyMsg}</p>}
-          </div>
-        </CardContent>
-      </Card>
+      <SSHKeysCard
+        keys={config.ssh_keys || []}
+        refresh={async () => {
+          const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
+          if (r) setConfig(r);
+        }}
+        sshKeyName={sshKeyName}
+        setSSHKeyName={setSSHKeyName}
+        sshKeyContent={sshKeyContent}
+        setSSHKeyContent={setSSHKeyContent}
+        sshKeySaving={sshKeySaving}
+        setSSHKeySaving={setSSHKeySaving}
+        sshKeyMsg={sshKeyMsg}
+        setSSHKeyMsg={setSSHKeyMsg}
+      />
 
       {/* Global Git Token */}
       <Card>
@@ -337,5 +294,175 @@ export function SystemConfig() {
       </Card>
     </div>
     </ErrorBoundary>
+  );
+}
+
+interface SSHKeysCardProps {
+  keys: SSHKeyInfo[];
+  refresh: () => Promise<void>;
+  sshKeyName: string;
+  setSSHKeyName: (v: string) => void;
+  sshKeyContent: string;
+  setSSHKeyContent: (v: string) => void;
+  sshKeySaving: boolean;
+  setSSHKeySaving: (v: boolean) => void;
+  sshKeyMsg: string;
+  setSSHKeyMsg: (v: string) => void;
+}
+
+function SSHKeysCard({
+  keys,
+  refresh,
+  sshKeyName,
+  setSSHKeyName,
+  sshKeyContent,
+  setSSHKeyContent,
+  sshKeySaving,
+  setSSHKeySaving,
+  sshKeyMsg,
+  setSSHKeyMsg,
+}: SSHKeysCardProps) {
+  const sel = useSelection<SSHKeyInfo>((k) => k.name, { persistKey: "ssh-keys" });
+  useEffect(() => { sel.prune(keys); }, [keys, sel.prune]);
+  const { busy, run } = useBusy();
+
+  async function bulkDelete() {
+    const names = keys.filter((k) => sel.isSelected(k.name)).map((k) => k.name);
+    await run(async () => {
+      await runBulk(
+        names,
+        (n) => apiFetch(`/api/v1/system/config/ssh-keys/${n}`, { method: "DELETE" }),
+        { verb: "Delet", noun: "SSH key" },
+      );
+      sel.clear();
+      await refresh();
+    });
+  }
+
+  async function addKey() {
+    if (!sshKeyName.trim() || !sshKeyContent.trim()) return;
+    setSSHKeySaving(true);
+    setSSHKeyMsg("");
+    const { error: err } = await apiFetch("/api/v1/system/config/ssh-keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: sshKeyName.trim(), content: sshKeyContent.trim() }),
+    });
+    if (err) {
+      setSSHKeyMsg(err);
+    } else {
+      setSSHKeyMsg("Saved + encrypted");
+      setSSHKeyName("");
+      setSSHKeyContent("");
+      await refresh();
+    }
+    setSSHKeySaving(false);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">
+          SSH Keys{" "}
+          <span className="text-muted-foreground font-normal">({keys.length})</span>
+        </CardTitle>
+      </CardHeader>
+      <BulkBar count={sel.size} onClear={sel.clear} busy={busy}>
+        <ConfirmButton
+          size="xs"
+          message={`Delete ${sel.size} SSH key${sel.size === 1 ? "" : "s"}?`}
+          onConfirm={bulkDelete}
+          disabled={busy}
+        >
+          Delete ({sel.size})
+        </ConfirmButton>
+      </BulkBar>
+      <CardContent className="space-y-3">
+        {keys.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No SSH keys. Add one below or mount keys to{" "}
+            <code className="font-data">/home/composer/.ssh/</code>
+          </p>
+        ) : (
+          <Table data-testid="ssh-keys-list">
+            <THead>
+              <TR>
+                <SelectAllTH rows={keys} selection={sel} testId="select-all-ssh-keys" />
+                <TH>Name</TH>
+                <TH>Path</TH>
+                <TH>Status</TH>
+                <TH className="text-right">Actions</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {keys.map((key) => (
+                <TR key={key.name} className={sel.isSelected(key.name) ? "bg-cp-purple/5" : ""}>
+                  <TD className="w-8">
+                    <input
+                      type="checkbox"
+                      checked={sel.isSelected(key.name)}
+                      onChange={() => sel.toggle(key.name)}
+                      aria-label={`Select ${key.name}`}
+                      className="rounded"
+                      data-testid={`select-ssh-key-${key.name}`}
+                    />
+                  </TD>
+                  <TD className="font-medium font-data">{key.name}</TD>
+                  <TD className="font-data text-muted-foreground truncate max-w-[280px]" title={key.path}>
+                    <code className="text-[10px]">{key.path}</code>
+                  </TD>
+                  <TD>
+                    <Badge className={key.encrypted
+                      ? "bg-cp-green/20 text-cp-green border-cp-green/30"
+                      : "bg-cp-600/20 text-muted-foreground border-cp-600/30"}>
+                      {key.encrypted ? "Encrypted" : "Plaintext"}
+                    </Badge>
+                  </TD>
+                  <TD className="text-right">
+                    <ConfirmButton
+                      size="xs"
+                      message={`Delete ${key.name}?`}
+                      onConfirm={async () => {
+                        await apiFetch(`/api/v1/system/config/ssh-keys/${key.name}`, { method: "DELETE" });
+                        await refresh();
+                      }}
+                    >
+                      Delete
+                    </ConfirmButton>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )}
+        <div className="border-t border-border pt-3 space-y-2">
+          <p className="text-xs text-muted-foreground">Add SSH private key (encrypted at rest after save)</p>
+          <div className="flex gap-2">
+            <Input
+              value={sshKeyName}
+              onChange={(e) => setSSHKeyName(e.target.value)}
+              placeholder="id_github"
+              className="w-40 font-data text-xs"
+            />
+            <Button size="sm" onClick={addKey} disabled={sshKeySaving || !sshKeyName || !sshKeyContent}>
+              {sshKeySaving ? "…" : "Add Key"}
+            </Button>
+          </div>
+          <textarea
+            value={sshKeyContent}
+            onChange={(e) => setSSHKeyContent(e.target.value)}
+            placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
+            rows={4}
+            className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs font-data resize-none"
+            spellCheck={false}
+          />
+          {sshKeyMsg && (
+            <p className={`text-xs ${sshKeyMsg.includes("Saved") ? "text-cp-green" : "text-cp-red"}`}>
+              {sshKeyMsg}
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

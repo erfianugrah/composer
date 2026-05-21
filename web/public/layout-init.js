@@ -1,4 +1,5 @@
-// Health check
+// Health check — runs inline before React hydrates so the indicator
+// resolves to Healthy / Unhealthy / Offline without waiting for JS bundles.
 fetch("/api/v1/system/health").then(function(r){
   var el=document.getElementById("health-indicator");
   if(!el)return;
@@ -11,9 +12,4 @@ fetch("/api/v1/system/health").then(function(r){
   var el=document.getElementById("health-indicator");
   if(el)el.innerHTML='<span class="relative flex h-2 w-2"><span class="relative inline-flex rounded-full h-2 w-2 bg-cp-red"></span></span><span class="text-xs text-cp-red">Offline</span>';
 });
-// Logout
-document.getElementById("logout-btn")?.addEventListener("click",function(){
-  fetch("/api/v1/auth/logout",{method:"POST",credentials:"include",headers:{"X-Requested-With":"XMLHttpRequest"}})
-    .then(function(){window.location.href="/login"})
-    .catch(function(){window.location.href="/login"});
-});
+// Sign-out is now handled by the AccountMenu React component.
