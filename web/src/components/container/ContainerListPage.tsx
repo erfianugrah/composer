@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { apiFetch } from "@/lib/api/errors";
 import { useSort } from "@/lib/use-sort";
+import { useSelection } from "@/lib/use-selection";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 const LogViewer = lazy(() => import("./LogViewer").then(m => ({ default: m.LogViewer })));
@@ -96,6 +98,17 @@ export function ContainerListPage() {
   });
 
   const { sorted, sortKey, direction, toggle } = useSort<ContainerInfo, SortKey>(filtered, accessors, "name", "asc");
+  const sel = useSelection<ContainerInfo>((c) => c.id);
+  const selectedRunning = sorted.filter((c) => sel.isSelected(c.id) && c.status === "running");
+  const selectedStopped = sorted.filter((c) => sel.isSelected(c.id) && c.status !== "running");
+
+  async function bulk(action: "start" | "stop" | "restart") {
+    const targets = action === "start" ? selectedStopped : selectedRunning;
+    const ids = targets.map((c) => c.id);
+    await Promise.all(ids.map((id) => apiFetch(`/api/v1/containers/${id}/${action}`, { method: "POST" })));
+    sel.clear();
+    setTimeout(fetchContainers, 1000);
+  }
 
   if (loading) {
     return <div className="animate-pulse space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-muted rounded" />)}</div>;
@@ -144,6 +157,23 @@ export function ContainerListPage() {
             <Button size="xs" variant="outline" onClick={fetchContainers}>Refresh</Button>
           </div>
         </CardHeader>
+        {sel.size > 0 && (
+          <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
+            <span className="text-muted-foreground">{sel.size} selected</span>
+            <span className="flex-1" />
+            <Button size="xs" variant="outline" onClick={() => bulk("start")} disabled={selectedStopped.length === 0}>Start ({selectedStopped.length})</Button>
+            <Button size="xs" variant="outline" onClick={() => bulk("restart")} disabled={selectedRunning.length === 0}>Restart ({selectedRunning.length})</Button>
+            <ConfirmButton
+              size="xs"
+              message={`Stop ${selectedRunning.length} running container${selectedRunning.length === 1 ? "" : "s"}?`}
+              onConfirm={() => bulk("stop")}
+              disabled={selectedRunning.length === 0}
+            >
+              Stop ({selectedRunning.length})
+            </ConfirmButton>
+            <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+          </div>
+        )}
         <CardContent>
           {containers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No containers found.</p>
@@ -153,6 +183,17 @@ export function ContainerListPage() {
             <Table data-testid="global-container-list">
               <THead>
                 <TR>
+                  <TH className="w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible"
+                      checked={sel.allSelected(sorted)}
+                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
+                      onChange={() => sel.toggleAll(sorted)}
+                      className="rounded"
+                      data-testid="select-all-containers"
+                    />
+                  </TH>
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
                   <SortHeader active={sortKey === "image"} direction={direction} onSort={() => toggle("image")}>Image</SortHeader>
@@ -166,7 +207,17 @@ export function ContainerListPage() {
                   const expanded = expandedLogs.has(c.id);
                   return (
                     <Fragment key={c.id}>
-                      <TR data-testid={`container-row-${c.id}`}>
+                      <TR data-testid={`container-row-${c.id}`} className={sel.isSelected(c.id) ? "bg-cp-purple/5" : ""}>
+                        <TD className="w-8" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={sel.isSelected(c.id)}
+                            onChange={() => sel.toggle(c.id)}
+                            aria-label={`Select ${c.name}`}
+                            className="rounded"
+                            data-testid={`select-container-${c.id}`}
+                          />
+                        </TD>
                         <TD className="font-medium truncate max-w-[260px]" title={c.name}>{c.name}</TD>
                         <TD>
                           <div className="flex items-center gap-1">
@@ -214,7 +265,7 @@ export function ContainerListPage() {
                       </TR>
                       {expanded && (
                         <tr className="bg-cp-950/50">
-                          <td colSpan={6} className="px-3 py-3 border-b border-border/40">
+                          <td colSpan={7} className="px-3 py-3 border-b border-border/40">
                             <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
                               <LogViewer containerId={c.id} tail="50" maxLines={200} />
                             </Suspense>

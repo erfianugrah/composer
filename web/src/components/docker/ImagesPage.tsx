@@ -5,6 +5,7 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { useSort } from "@/lib/use-sort";
+import { useSelection } from "@/lib/use-selection";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -102,6 +103,14 @@ export function ImagesPage() {
     return img.tags.some((t) => t.toLowerCase().includes(q)) || img.id.toLowerCase().includes(q);
   });
   const { sorted, sortKey, direction, toggle } = useSort<ImageInfo, SortKey>(filtered, accessors, "tag", "asc");
+  const sel = useSelection<ImageInfo>((i) => i.id);
+
+  async function bulkRemove() {
+    const ids = sorted.filter((i) => sel.isSelected(i.id)).map((i) => i.id);
+    await Promise.all(ids.map((id) => apiFetch(`/api/v1/images/${id}`, { method: "DELETE" })));
+    sel.clear();
+    fetch_();
+  }
 
   return (
     <ErrorBoundary>
@@ -152,11 +161,36 @@ export function ImagesPage() {
             <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
           </div>
         </CardHeader>
+        {sel.size > 0 && (
+          <div className="flex items-center gap-2 border-t border-border bg-cp-purple/5 px-6 py-2 text-xs" data-testid="bulk-bar">
+            <span className="text-muted-foreground">{sel.size} selected</span>
+            <span className="flex-1" />
+            <ConfirmButton
+              size="xs"
+              message={`Remove ${sel.size} image${sel.size === 1 ? "" : "s"}?`}
+              onConfirm={bulkRemove}
+            >
+              Remove ({sel.size})
+            </ConfirmButton>
+            <Button size="xs" variant="ghost" onClick={sel.clear}>Clear</Button>
+          </div>
+        )}
         <CardContent>
           {loading ? <div className="animate-pulse h-20 bg-muted rounded" /> : images.length === 0 ? <p className="text-sm text-muted-foreground">No images.</p> : sorted.length === 0 ? <p className="text-sm text-muted-foreground">No images match the current filter.</p> : (
             <Table>
               <THead>
                 <TR>
+                  <TH className="w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible"
+                      checked={sel.allSelected(sorted)}
+                      ref={(el) => { if (el) el.indeterminate = sel.someSelected(sorted); }}
+                      onChange={() => sel.toggleAll(sorted)}
+                      className="rounded"
+                      data-testid="select-all-images"
+                    />
+                  </TH>
                   <SortHeader active={sortKey === "tag"} direction={direction} onSort={() => toggle("tag")}>Tag</SortHeader>
                   <TH>ID</TH>
                   <SortHeader active={sortKey === "size"} direction={direction} onSort={() => toggle("size")} className="text-right">Size</SortHeader>
@@ -166,7 +200,17 @@ export function ImagesPage() {
               </THead>
               <TBody>
                 {sorted.map((img) => (
-                  <TR key={img.id}>
+                  <TR key={img.id} className={sel.isSelected(img.id) ? "bg-cp-purple/5" : ""}>
+                    <TD className="w-8">
+                      <input
+                        type="checkbox"
+                        checked={sel.isSelected(img.id)}
+                        onChange={() => sel.toggle(img.id)}
+                        aria-label={`Select ${img.tags?.[0] || img.id.slice(0, 12)}`}
+                        className="rounded"
+                        data-testid={`select-image-${img.id.replace(/^sha256:/, "").slice(0, 12)}`}
+                      />
+                    </TD>
                     <TD className="font-data">
                       <div className="font-medium truncate max-w-[320px]" title={img.tags.join(", ") || "<untagged>"}>
                         {img.tags?.length > 0 ? img.tags[0] : "<untagged>"}
