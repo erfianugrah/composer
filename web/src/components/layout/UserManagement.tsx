@@ -7,7 +7,7 @@ import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH } from "@/comp
 import { FilterInput } from "@/components/ui/filter-input";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
-import { useBusy } from "@/lib/use-busy";
+import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -124,7 +124,9 @@ export function UserManagement() {
   async function bulkDelete() {
     const ids = sorted.filter((u) => sel.isSelected(u.id)).map((u) => u.id);
     await run(async () => {
-      await Promise.all(ids.map((id) => apiFetch(`/api/v1/users/${id}`, { method: "DELETE" })));
+      await runBulk(ids, (id) => apiFetch(`/api/v1/users/${id}`, { method: "DELETE" }), {
+        verb: "Delet", noun: "user",
+      });
       sel.clear();
       fetchUsers();
     });

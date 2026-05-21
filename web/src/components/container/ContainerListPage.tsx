@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api/errors";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
-import { useBusy } from "@/lib/use-busy";
+import { useBusy, runBulk } from "@/lib/use-busy";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { StatCard } from "@/components/ui/stat-card";
@@ -110,8 +110,11 @@ export function ContainerListPage() {
   async function bulk(action: "start" | "stop" | "restart") {
     const targets = action === "start" ? selectedStopped : selectedRunning;
     const ids = targets.map((c) => c.id);
+    const verb = action === "start" ? "Start" : action === "stop" ? "Stopp" : "Restart";
     await run(async () => {
-      await Promise.all(ids.map((id) => apiFetch(`/api/v1/containers/${id}/${action}`, { method: "POST" })));
+      await runBulk(ids, (id) => apiFetch(`/api/v1/containers/${id}/${action}`, { method: "POST" }), {
+        verb, noun: "container",
+      });
       sel.clear();
       setTimeout(fetchContainers, 1000);
     });

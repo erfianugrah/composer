@@ -7,7 +7,7 @@ import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { useSelection } from "@/lib/use-selection";
 import { clickableRow } from "@/lib/row-interactions";
-import { useBusy } from "@/lib/use-busy";
+import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -59,7 +59,9 @@ export function VolumesPage() {
   async function bulkRemove() {
     const names = sorted.filter((v) => sel.isSelected(v.name)).map((v) => v.name);
     await run(async () => {
-      await Promise.all(names.map((n) => apiFetch(`/api/v1/volumes/${encodeURIComponent(n)}`, { method: "DELETE" })));
+      await runBulk(names, (n) => apiFetch(`/api/v1/volumes/${encodeURIComponent(n)}`, { method: "DELETE" }), {
+        verb: "Remov", noun: "volume",
+      });
       sel.clear();
       fetch_();
     });

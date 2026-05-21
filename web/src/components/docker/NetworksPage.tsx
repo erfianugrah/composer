@@ -8,7 +8,7 @@ import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { useSelection } from "@/lib/use-selection";
 import { clickableRow } from "@/lib/row-interactions";
-import { useBusy } from "@/lib/use-busy";
+import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -62,7 +62,9 @@ export function NetworksPage() {
   async function bulkRemove() {
     const ids = sorted.filter((n) => sel.isSelected(n.id)).map((n) => n.id);
     await run(async () => {
-      await Promise.all(ids.map((id) => apiFetch(`/api/v1/networks/${id}`, { method: "DELETE" })));
+      await runBulk(ids, (id) => apiFetch(`/api/v1/networks/${id}`, { method: "DELETE" }), {
+        verb: "Remov", noun: "network",
+      });
       sel.clear();
       fetch_();
     });

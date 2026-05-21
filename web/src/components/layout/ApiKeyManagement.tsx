@@ -8,7 +8,7 @@ import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH } from "@/comp
 import { FilterInput } from "@/components/ui/filter-input";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
-import { useBusy } from "@/lib/use-busy";
+import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -122,7 +122,9 @@ export function ApiKeyManagement() {
   async function bulkRevoke() {
     const ids = sorted.filter((k) => sel.isSelected(k.id)).map((k) => k.id);
     await run(async () => {
-      await Promise.all(ids.map((id) => apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" })));
+      await runBulk(ids, (id) => apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" }), {
+        verb: "Revok", noun: "key",
+      });
       sel.clear();
       fetchKeys();
     });

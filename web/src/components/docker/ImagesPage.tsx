@@ -8,7 +8,7 @@ import { FilterInput } from "@/components/ui/filter-input";
 import { cn } from "@/lib/utils";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
-import { useBusy } from "@/lib/use-busy";
+import { useBusy, runBulk } from "@/lib/use-busy";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { StatCard } from "@/components/ui/stat-card";
@@ -110,7 +110,9 @@ export function ImagesPage() {
   async function bulkRemove() {
     const ids = sorted.filter((i) => sel.isSelected(i.id)).map((i) => i.id);
     await run(async () => {
-      await Promise.all(ids.map((id) => apiFetch(`/api/v1/images/${id}`, { method: "DELETE" })));
+      await runBulk(ids, (id) => apiFetch(`/api/v1/images/${id}`, { method: "DELETE" }), {
+        verb: "Remov", noun: "image",
+      });
       sel.clear();
       fetch_();
     });

@@ -9,7 +9,7 @@ import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow 
 import { FilterInput } from "@/components/ui/filter-input";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
-import { useBusy } from "@/lib/use-busy";
+import { useBusy, runBulk } from "@/lib/use-busy";
 import { clickableRow } from "@/lib/row-interactions";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
@@ -510,8 +510,13 @@ function PipelineTable({
   async function bulkDelete() {
     const ids = sorted.filter((p) => sel.isSelected(p.id)).map((p) => p.id);
     await run(async () => {
-      await Promise.all(ids.map((id) => handleDelete(id)));
+      await runBulk(
+        ids,
+        (id) => apiFetch(`/api/v1/pipelines/${id}`, { method: "DELETE" }),
+        { verb: "Delet", noun: "pipeline" },
+      );
       sel.clear();
+      fetchPipelines();
     });
   }
 

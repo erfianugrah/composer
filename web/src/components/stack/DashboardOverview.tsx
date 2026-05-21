@@ -8,7 +8,7 @@ import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { navigableRow } from "@/lib/row-interactions";
 import { useSelection } from "@/lib/use-selection";
-import { useBusy } from "@/lib/use-busy";
+import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
@@ -96,8 +96,11 @@ export function DashboardOverview() {
   async function bulk(action: "up" | "down" | "restart") {
     const targets = action === "up" ? selectedStopped : selectedRunning;
     const names = targets.map((s) => s.name);
+    const verb = action === "up" ? "Deploy" : action === "down" ? "Stopp" : "Restart";
     await run(async () => {
-      await Promise.all(names.map((n) => apiFetch(`/api/v1/stacks/${encodeURIComponent(n)}/${action}`, { method: "POST" })));
+      await runBulk(names, (n) => apiFetch(`/api/v1/stacks/${encodeURIComponent(n)}/${action}`, { method: "POST" }), {
+        verb, noun: "stack",
+      });
       sel.clear();
     });
   }

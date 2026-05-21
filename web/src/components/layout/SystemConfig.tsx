@@ -6,7 +6,7 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD, SelectAllTH } from "@/components/ui/data-table";
 import { useSelection } from "@/lib/use-selection";
-import { useBusy } from "@/lib/use-busy";
+import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -329,8 +329,10 @@ function SSHKeysCard({
   async function bulkDelete() {
     const names = keys.filter((k) => sel.isSelected(k.name)).map((k) => k.name);
     await run(async () => {
-      await Promise.all(
-        names.map((n) => apiFetch(`/api/v1/system/config/ssh-keys/${n}`, { method: "DELETE" })),
+      await runBulk(
+        names,
+        (n) => apiFetch(`/api/v1/system/config/ssh-keys/${n}`, { method: "DELETE" }),
+        { verb: "Delet", noun: "SSH key" },
       );
       sel.clear();
       await refresh();

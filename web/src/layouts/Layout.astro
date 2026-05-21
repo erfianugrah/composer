@@ -3,6 +3,7 @@ import "@/styles/globals.css";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { JobsDrawer } from "@/components/layout/JobsDrawer";
 import { AccountMenu } from "@/components/layout/AccountMenu";
+import { Toaster } from "@/components/ui/toast";
 
 interface Props {
   title: string;
@@ -116,6 +117,8 @@ const navItems = [
         </main>
       </div>
     </div>
+    <!-- Global toast notifications (top-right stack) -->
+    <Toaster client:load />
     <!-- Command Palette (Cmd+K) -->
     <CommandPalette client:load />
   </body>
