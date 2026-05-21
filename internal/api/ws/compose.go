@@ -182,20 +182,22 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		opCancel()
 	}()
 
-	// ANSI sequence: clear screen + home cursor. Sent between phases so
-	// docker compose's progress renderer starts with a clean terminal.
-	// Previous output remains in xterm.js scrollback (scrollback: 5000).
-	clearScreen := []byte("\033[2J\033[H")
+	// Phase transitions print only a blank line to detach docker compose's
+	// next progress renderer from the previous one. We deliberately do NOT
+	// clear the screen between phases (\033[2J would wipe the per-layer pull
+	// progress the user wanted to follow when the 'up' phase starts). The
+	// client also writes a visible "--- UP ---" separator on the 'phase'
+	// status message, so the user always has a landmark.
+	phaseSep := []byte("\r\n")
 
 	// Run each phase
 	var lastErr error
 	for i, args := range phases {
 		phase := args[0] // "pull", "up", "down", etc.
 
-		// Clear terminal between phases (not before the first one)
 		if i > 0 {
 			writeCtx, writeCancel := context.WithTimeout(ctx, 5*time.Second)
-			conn.Write(writeCtx, websocket.MessageBinary, clearScreen)
+			conn.Write(writeCtx, websocket.MessageBinary, phaseSep)
 			writeCancel()
 		}
 

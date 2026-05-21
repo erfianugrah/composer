@@ -70,6 +70,21 @@ func (m *JobManager) Start(id string) {
 	}
 }
 
+// AppendOutput appends a line to a job's Output. Used by long-running jobs
+// to publish incremental progress while still running, so polling clients
+// (e.g. the Jobs drawer) can render a live tail. A trailing newline is added
+// when missing so callers can hand in plain status lines without bookkeeping.
+func (m *JobManager) AppendOutput(id, line string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if j, ok := m.jobs[id]; ok {
+		if line != "" && line[len(line)-1] != '\n' {
+			line += "\n"
+		}
+		j.Output += line
+	}
+}
+
 // Complete marks a job as completed with output.
 func (m *JobManager) Complete(id, output, errOutput string) {
 	m.mu.Lock()
