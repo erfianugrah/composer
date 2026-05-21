@@ -588,3 +588,4 @@ test.describe("URL state persistence", () => {
     await expect(page).toHaveURL(/\/$/);
   });
 });
+
