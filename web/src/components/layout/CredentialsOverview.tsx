@@ -79,7 +79,7 @@ export function CredentialsOverview() {
               {gitStacks.map((s) => (
                 <tr key={s.name} className="border-b border-border/50 hover:bg-accent/20">
                   <td className="py-2 pr-4 font-medium">
-                    <a href={`/stacks?stack=${encodeURIComponent(s.name)}`} className="text-cp-purple hover:underline">{s.name}</a>
+                    <a href={`/stacks/${encodeURIComponent(s.name)}`} className="text-cp-purple hover:underline">{s.name}</a>
                   </td>
                   <td className="py-2 pr-4 font-data">{s.creds?.auth_method || (s.loading ? "..." : "--")}</td>
                   <td className="py-2 pr-4">{s.creds ? srcBadge(s.creds.resolved.ssh_source) : s.loading ? "..." : "--"}</td>

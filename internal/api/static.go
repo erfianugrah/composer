@@ -11,12 +11,21 @@ import (
 
 // RegisterStaticFiles serves the embedded Astro frontend from the Go binary.
 // Handles Astro's static output format (path/index.html) and SPA fallback.
+//
+// Accepts an embed.FS rooted at the repo (so that the //go:embed directive
+// can stay at the top-level package); internally subs into web/dist.
 func RegisterStaticFiles(router chi.Router, distFS embed.FS) {
 	sub, err := fs.Sub(distFS, "web/dist")
 	if err != nil {
 		return
 	}
+	registerStaticFilesFS(router, sub)
+}
 
+// registerStaticFilesFS is the inner implementation that takes any fs.FS
+// rooted at the dist directory. Exposed for tests that don't want to embed
+// at the repo root.
+func registerStaticFilesFS(router chi.Router, sub fs.FS) {
 	entries, err := fs.ReadDir(sub, ".")
 	if err != nil || len(entries) == 0 {
 		return
@@ -39,13 +48,31 @@ func RegisterStaticFiles(router chi.Router, distFS embed.FS) {
 			cleanPath = "index.html"
 		}
 
-		// Try in order: exact file, path/index.html, path.html, SPA fallback
-		for _, candidate := range []string{
+		// Try in order: exact file, path/index.html, path.html, walk-up
+		// SPA fallback to closest ancestor's index.html.
+		//
+		// The walk-up fallback exists so React-Router-driven sub-routes like
+		// /stacks/myapp/logs serve /stacks/index.html on refresh -- otherwise
+		// they'd hit the root index.html and render the Dashboard instead of
+		// the Stacks SPA shell that owns those routes.
+		candidates := []string{
 			cleanPath,
 			cleanPath + "/index.html",
 			cleanPath + ".html",
-			"index.html", // SPA fallback
-		} {
+		}
+		// Walk up directory ancestors looking for an index.html (e.g.
+		// stacks/foo/logs -> stacks/foo/index.html -> stacks/index.html).
+		for p := cleanPath; p != ""; {
+			slash := strings.LastIndex(p, "/")
+			if slash < 0 {
+				break
+			}
+			p = p[:slash]
+			candidates = append(candidates, p+"/index.html")
+		}
+		candidates = append(candidates, "index.html") // root SPA fallback
+
+		for _, candidate := range candidates {
 			data, err := fs.ReadFile(sub, candidate)
 			if err != nil {
 				continue

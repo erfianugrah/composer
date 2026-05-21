@@ -213,7 +213,7 @@ export function DashboardOverview() {
                     key={stack.name}
                     className={`cursor-pointer ${sel.isSelected(stack.name) ? "bg-cp-purple/5" : ""}`}
                     data-testid={`stack-${stack.name}`}
-                    {...navigableRow(`/stacks?stack=${encodeURIComponent(stack.name)}`)}
+                    {...navigableRow(`/stacks/${encodeURIComponent(stack.name)}`)}
                   >
                     <TD className="w-8" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -226,7 +226,7 @@ export function DashboardOverview() {
                       />
                     </TD>
                     <TD className="font-medium">
-                      <a href={`/stacks?stack=${encodeURIComponent(stack.name)}`} className="hover:text-cp-purple" onClick={(e) => e.stopPropagation()}>
+                      <a href={`/stacks/${encodeURIComponent(stack.name)}`} className="hover:text-cp-purple" onClick={(e) => e.stopPropagation()}>
                         {stack.name}
                       </a>
                     </TD>

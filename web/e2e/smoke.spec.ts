@@ -575,10 +575,15 @@ test.describe("Account Menu", () => {
 });
 
 test.describe("URL state persistence", () => {
-  test("legacy /stacks#name hash auto-migrates to ?stack=name", async ({ page }) => {
+  test("legacy /stacks#name hash auto-migrates to /stacks/name", async ({ page }) => {
     await page.goto("/stacks#myapp");
-    // After mount, the StacksPage should rewrite the URL
-    await expect(page).toHaveURL(/\/stacks\?stack=myapp/);
+    // The StacksRouter LegacyQueryRedirect should rewrite to the path form.
+    await expect(page).toHaveURL(/\/stacks\/myapp(\/|$)/);
+  });
+
+  test("legacy /stacks?stack=foo&tab=logs auto-migrates to /stacks/foo/logs", async ({ page }) => {
+    await page.goto("/stacks?stack=myapp&tab=logs");
+    await expect(page).toHaveURL(/\/stacks\/myapp\/logs/);
   });
 
   test("dashboard URL has no sort param by default", async ({ page }) => {

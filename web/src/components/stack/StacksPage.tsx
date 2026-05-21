@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardOverview } from "./DashboardOverview";
-import { StackDetail } from "./StackDetail";
 import { TemplatePicker } from "./TemplatePicker";
 import { GitCloneForm } from "./GitCloneForm";
 import { RawComposeForm } from "./RawComposeForm";
@@ -10,60 +10,35 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 type CreateMode = null | "template" | "git" | "yaml";
 
-function readStackFromUrl(): string | null {
-  if (typeof window === "undefined") return null;
-  const p = new URLSearchParams(window.location.search).get("stack");
-  if (p) return p;
-  // Legacy hash routing — silently migrate any bookmarked /stacks#name URLs.
-  const hash = window.location.hash.slice(1);
-  if (!hash) return null;
-  const url = new URL(window.location.href);
-  url.hash = "";
-  url.searchParams.set("stack", hash);
-  window.history.replaceState({}, "", url);
-  return hash;
-}
-
+/**
+ * /stacks list view -- creation UI + DashboardOverview.
+ *
+ * The stack-detail view lives at /stacks/:name and is rendered by
+ * StacksRouter; this component handles only the list page.
+ *
+ * Also resets the breadcrumb to the default Stacks title on mount, so
+ * navigating back from a detail view clears the third crumb that
+ * StackDetail had injected.
+ */
 export function StacksPage() {
-  const [selectedStack, setSelectedStack] = useState<string | null>(() => readStackFromUrl());
+  const navigate = useNavigate();
   const [createMode, setCreateMode] = useState<CreateMode>(null);
 
-  useEffect(() => {
-    const sync = () => setSelectedStack(readStackFromUrl());
-    window.addEventListener("popstate", sync);
-    return () => window.removeEventListener("popstate", sync);
-  }, []);
-
-  // Drive the optional breadcrumb extra slot rendered by Layout.astro:
-  //   Dashboard / Stacks / {selectedStack}
-  // The parent crumb ("Stacks") becomes a link when a stack is selected.
   useEffect(() => {
     if (typeof document === "undefined") return;
     const parent = document.getElementById("breadcrumb-parent");
     const sep = document.getElementById("breadcrumb-extra-sep");
     const extra = document.getElementById("breadcrumb-extra");
     if (!parent || !sep || !extra) return;
-    if (selectedStack) {
-      parent.innerHTML = `<a href="/stacks" class="text-muted-foreground hover:text-foreground transition-colors">Stacks</a>`;
-      sep.classList.remove("hidden");
-      extra.classList.remove("hidden");
-      extra.innerHTML = `<span class="font-medium font-data" data-testid="breadcrumb-stack">${selectedStack.replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c] || c))}</span>`;
-    } else {
-      parent.innerHTML = `<span class="font-medium" data-testid="page-title">Stacks</span>`;
-      sep.classList.add("hidden");
-      extra.classList.add("hidden");
-      extra.innerHTML = "";
-    }
-  }, [selectedStack]);
+    parent.innerHTML = `<span class="font-medium" data-testid="page-title">Stacks</span>`;
+    sep.classList.add("hidden");
+    extra.classList.add("hidden");
+    extra.innerHTML = "";
+  }, []);
 
   function handleCreated(name: string) {
     setCreateMode(null);
-    const url = new URL(window.location.href);
-    url.hash = "";
-    url.searchParams.set("stack", name);
-    url.searchParams.delete("tab");
-    window.history.pushState({}, "", url);
-    setSelectedStack(name);
+    navigate(`/${encodeURIComponent(name)}`);
   }
 
   async function handleTemplateCreate(name: string, compose: string) {
@@ -73,16 +48,6 @@ export function StacksPage() {
       body: JSON.stringify({ name: name.trim(), compose }),
     });
     if (!error) handleCreated(name.trim());
-  }
-
-  if (selectedStack) {
-    // Breadcrumb now shows "Dashboard / Stacks / <name>" so the explicit
-    // back button is redundant.
-    return (
-      <ErrorBoundary>
-        <StackDetail stackName={selectedStack} />
-      </ErrorBoundary>
-    );
   }
 
   return (

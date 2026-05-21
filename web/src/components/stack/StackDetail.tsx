@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,28 +78,23 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [attachGitUrl, setAttachGitUrl] = useState<string | null>(null);
   type TabId = "containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "git";
   const VALID_TABS: readonly TabId[] = ["containers", "compose", "dockerfiles", "env", "diff", "logs", "console", "terminal", "stats", "webhooks", "credentials", "git"];
-  const [activeTab, setActiveTabState] = useState<TabId>(() => {
-    if (typeof window === "undefined") return "containers";
-    const t = new URLSearchParams(window.location.search).get("tab");
-    return (t && (VALID_TABS as readonly string[]).includes(t)) ? (t as TabId) : "containers";
-  });
+  // Tab state is driven by the React Router :tab URL param. The router
+  // (StacksRouter) maps /stacks/:name/:tab here; setActiveTab navigates
+  // which updates :tab and re-renders. Default to "containers" when no
+  // tab segment is present (i.e. /stacks/:name).
+  const navigate = useNavigate();
+  const params = useParams();
+  const urlTab = params.tab as string | undefined;
+  const activeTab: TabId = (urlTab && (VALID_TABS as readonly string[]).includes(urlTab))
+    ? (urlTab as TabId)
+    : "containers";
   const setActiveTab = (tab: TabId) => {
-    setActiveTabState(tab);
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    if (tab === "containers") url.searchParams.delete("tab");
-    else url.searchParams.set("tab", tab);
-    window.history.replaceState({}, "", url);
+    if (tab === "containers") {
+      navigate(`/${encodeURIComponent(stackName)}`, { replace: true });
+    } else {
+      navigate(`/${encodeURIComponent(stackName)}/${tab}`, { replace: true });
+    }
   };
-  // Sync tab when navigating between stacks (hash changes) or back/forward.
-  useEffect(() => {
-    const sync = () => {
-      const t = new URLSearchParams(window.location.search).get("tab");
-      setActiveTabState((t && (VALID_TABS as readonly string[]).includes(t)) ? (t as TabId) : "containers");
-    };
-    window.addEventListener("popstate", sync);
-    return () => window.removeEventListener("popstate", sync);
-  }, []);
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
   const [streamingAction, setStreamingAction] = useState<string | null>(null);
 
@@ -120,6 +116,29 @@ export function StackDetail({ stackName }: { stackName: string }) {
   };
 
   useEffect(() => { fetchStack(); }, [stackName]);
+
+  // Drive the breadcrumb extra slot rendered by Layout.astro:
+  //   Dashboard / Stacks / {stackName}
+  // The parent crumb ("Stacks") becomes a link back to /stacks/.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const parent = document.getElementById("breadcrumb-parent");
+    const sep = document.getElementById("breadcrumb-extra-sep");
+    const extra = document.getElementById("breadcrumb-extra");
+    if (!parent || !sep || !extra) return;
+    parent.innerHTML = `<a href="/stacks" class="text-muted-foreground hover:text-foreground transition-colors">Stacks</a>`;
+    sep.classList.remove("hidden");
+    extra.classList.remove("hidden");
+    const safe = stackName.replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c] || c));
+    extra.innerHTML = `<span class="font-medium font-data" data-testid="breadcrumb-stack">${safe}</span>`;
+    return () => {
+      // Reset on unmount so the list view's effect can take over cleanly.
+      parent.innerHTML = `<span class="font-medium" data-testid="page-title">Stacks</span>`;
+      sep.classList.add("hidden");
+      extra.classList.add("hidden");
+      extra.innerHTML = "";
+    };
+  }, [stackName]);
 
   async function doAction(action: string) {
     setActionLoading(action);
@@ -149,11 +168,8 @@ export function StackDetail({ stackName }: { stackName: string }) {
       setActionError(`Delete failed: ${error}`);
       setActionLoading("");
     } else {
-      const url = new URL(window.location.href);
-      url.hash = "";
-      url.searchParams.delete("stack");
-      url.searchParams.delete("tab");
-      window.location.href = url.toString();
+      // Stack deleted -- navigate back to the list view.
+      navigate("/");
     }
   }
 
