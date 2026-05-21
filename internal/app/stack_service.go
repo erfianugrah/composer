@@ -890,22 +890,32 @@ func (s *StackService) publishEvent(evt event.Event) {
 }
 
 // ActionContext holds the resolved context for a streaming compose action.
-// The caller must call Cleanup() when done (releases lock, re-encrypts SOPS).
+// The caller must call Cleanup() when done (releases lock, re-encrypts SOPS,
+// removes the ephemeral DOCKER_CONFIG tempdir).
 type ActionContext struct {
 	StackPath   string
 	ComposeFile string
-	cleanup     func()
+	// DockerConfigDir is the path to an ephemeral directory containing a
+	// config.json with the stack's resolved registry credentials. Empty when
+	// no creds are registered for this stack. The caller MUST plumb this
+	// into the compose command's context via docker.WithDockerConfigDir(),
+	// otherwise `docker compose pull/up` runs with the host's bare
+	// ~/.docker/config.json and private-registry pulls fail with 'unauthorized'.
+	DockerConfigDir string
+	cleanup         func()
 }
 
-// Cleanup releases the stack lock and re-encrypts SOPS secrets.
+// Cleanup releases the stack lock, re-encrypts SOPS secrets, and removes
+// the ephemeral DOCKER_CONFIG dir.
 func (ac *ActionContext) Cleanup() {
 	if ac.cleanup != nil {
 		ac.cleanup()
 	}
 }
 
-// PrepareAction locks the stack, resolves the compose file, decrypts SOPS secrets,
-// and returns an ActionContext for the caller to run compose commands against.
+// PrepareAction locks the stack, resolves the compose file, decrypts SOPS
+// secrets, materialises the DOCKER_CONFIG tempdir, and returns an
+// ActionContext for the caller to run compose commands against.
 // The caller MUST call ActionContext.Cleanup() when done.
 func (s *StackService) PrepareAction(ctx context.Context, name string) (*ActionContext, error) {
 	s.locks.Lock(name)
@@ -923,10 +933,20 @@ func (s *StackService) PrepareAction(ctx context.Context, name string) (*ActionC
 	cf := s.resolveComposeFile(ctx, name)
 	s.decryptSopsSecrets(ctx, name, st.Path)
 
+	// Materialise a DOCKER_CONFIG with the resolved global + per-stack creds.
+	// withRegistryAuth returns ctx + cleanup; we don't need the ctx (the WS
+	// handler builds its own background ctx with a longer deadline) but the
+	// dir is the bit we need to surface. Pull it back out of the augmented
+	// ctx and store it on the ActionContext.
+	regCtx, regCleanup := s.withRegistryAuth(ctx, name)
+	dockerCfgDir := docker.DockerConfigDirFromCtx(regCtx)
+
 	return &ActionContext{
-		StackPath:   st.Path,
-		ComposeFile: cf,
+		StackPath:       st.Path,
+		ComposeFile:     cf,
+		DockerConfigDir: dockerCfgDir,
 		cleanup: func() {
+			regCleanup()
 			s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
 			s.locks.Unlock(name)
 		},

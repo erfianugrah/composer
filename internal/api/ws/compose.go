@@ -170,9 +170,16 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Use a background context with timeout for compose commands so a WS
 	// disconnect doesn't SIGKILL docker compose mid-operation (same pattern
-	// as the non-streaming handlers in stack.go).
+	// as the non-streaming handlers in stack.go). Plumb the stack's
+	// resolved DOCKER_CONFIG into this context so `docker compose pull/up`
+	// can authenticate against private registries — without this the WS
+	// path silently falls back to the host's bare ~/.docker/config.json and
+	// pulls of ghcr.io/<private>/... return 'unauthorized'.
 	opCtx, opCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer opCancel()
+	if ac.DockerConfigDir != "" {
+		opCtx = docker.WithDockerConfigDir(opCtx, ac.DockerConfigDir)
+	}
 
 	// If WS context is cancelled, propagate to compose after a grace period
 	go func() {

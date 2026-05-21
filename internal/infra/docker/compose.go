@@ -30,6 +30,13 @@ func WithDockerConfigDir(ctx context.Context, dir string) context.Context {
 	return context.WithValue(ctx, dockerConfigDirCtxKey{}, dir)
 }
 
+// DockerConfigDirFromCtx extracts a DOCKER_CONFIG override from ctx, or "".
+// Exported so other packages (e.g. app.StackService) can read back the dir
+// that was attached via WithDockerConfigDir without re-resolving credentials.
+func DockerConfigDirFromCtx(ctx context.Context) string {
+	return dockerConfigDirFromCtx(ctx)
+}
+
 // dockerConfigDirFromCtx extracts a DOCKER_CONFIG override from ctx, or "".
 func dockerConfigDirFromCtx(ctx context.Context) string {
 	if v, ok := ctx.Value(dockerConfigDirCtxKey{}).(string); ok {
