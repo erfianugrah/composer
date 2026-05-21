@@ -117,7 +117,8 @@ export function UserManagement() {
     return u.email.toLowerCase().includes(q) || u.role.toLowerCase().includes(q);
   });
   const { sorted, sortKey, direction, toggle } = useSort<UserSummary, SortKey>(filtered, accessors, "email", "asc", { urlParam: "userSort" });
-  const sel = useSelection<UserSummary>((u) => u.id);
+  const sel = useSelection<UserSummary>((u) => u.id, { persistKey: "users" });
+  useEffect(() => { sel.prune(users); }, [users, sel.prune]);
   const { busy, run } = useBusy();
 
   async function bulkDelete() {

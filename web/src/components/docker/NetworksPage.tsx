@@ -55,7 +55,8 @@ export function NetworksPage() {
     return n.name.toLowerCase().includes(q) || n.driver.toLowerCase().includes(q);
   });
   const { sorted, sortKey, direction, toggle } = useSort<NetworkInfo, SortKey>(filtered, accessors, "name", "asc", { urlParam: "sort" });
-  const sel = useSelection<NetworkInfo>((n) => n.id);
+  const sel = useSelection<NetworkInfo>((n) => n.id, { persistKey: "networks" });
+  useEffect(() => { sel.prune(networks); }, [networks, sel.prune]);
   const { busy, run } = useBusy();
 
   async function bulkRemove() {

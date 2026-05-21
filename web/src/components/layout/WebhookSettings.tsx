@@ -131,7 +131,8 @@ export function WebhookSettings() {
     return w.stack_name.toLowerCase().includes(q) || w.provider.toLowerCase().includes(q) || (w.branch_filter || "").toLowerCase().includes(q);
   });
   const { sorted, sortKey, direction, toggle } = useSort<WebhookSummary, SortKey>(filtered, accessors, "stack", "asc", { urlParam: "webhookSort" });
-  const sel = useSelection<WebhookSummary>((w) => w.id);
+  const sel = useSelection<WebhookSummary>((w) => w.id, { persistKey: "webhooks" });
+  useEffect(() => { sel.prune(webhooks); }, [webhooks, sel.prune]);
   const { busy, run } = useBusy();
 
   async function bulkDelete() {

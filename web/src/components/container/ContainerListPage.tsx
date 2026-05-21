@@ -101,7 +101,8 @@ export function ContainerListPage() {
   });
 
   const { sorted, sortKey, direction, toggle } = useSort<ContainerInfo, SortKey>(filtered, accessors, "name", "asc", { urlParam: "sort" });
-  const sel = useSelection<ContainerInfo>((c) => c.id);
+  const sel = useSelection<ContainerInfo>((c) => c.id, { persistKey: "containers" });
+  useEffect(() => { sel.prune(containers); }, [containers, sel.prune]);
   const { busy, run } = useBusy();
   const selectedRunning = sorted.filter((c) => sel.isSelected(c.id) && c.status === "running");
   const selectedStopped = sorted.filter((c) => sel.isSelected(c.id) && c.status !== "running");

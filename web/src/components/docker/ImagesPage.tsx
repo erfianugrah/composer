@@ -103,7 +103,8 @@ export function ImagesPage() {
     return img.tags.some((t) => t.toLowerCase().includes(q)) || img.id.toLowerCase().includes(q);
   });
   const { sorted, sortKey, direction, toggle } = useSort<ImageInfo, SortKey>(filtered, accessors, "tag", "asc", { urlParam: "sort" });
-  const sel = useSelection<ImageInfo>((i) => i.id);
+  const sel = useSelection<ImageInfo>((i) => i.id, { persistKey: "images" });
+  useEffect(() => { sel.prune(images); }, [images, sel.prune]);
   const { busy, run } = useBusy();
 
   async function bulkRemove() {

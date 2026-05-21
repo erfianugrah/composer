@@ -115,7 +115,8 @@ export function ApiKeyManagement() {
     return k.name.toLowerCase().includes(q) || k.role.toLowerCase().includes(q);
   });
   const { sorted, sortKey, direction, toggle } = useSort<KeySummary, SortKey>(filtered, accessors, "name", "asc", { urlParam: "keySort" });
-  const sel = useSelection<KeySummary>((k) => k.id);
+  const sel = useSelection<KeySummary>((k) => k.id, { persistKey: "keys" });
+  useEffect(() => { sel.prune(keys); }, [keys, sel.prune]);
   const { busy, run } = useBusy();
 
   async function bulkRevoke() {

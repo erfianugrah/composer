@@ -52,7 +52,8 @@ export function VolumesPage() {
     return v.name.toLowerCase().includes(q) || v.mountpoint.toLowerCase().includes(q) || v.driver.toLowerCase().includes(q);
   });
   const { sorted, sortKey, direction, toggle } = useSort<VolumeInfo, SortKey>(filtered, accessors, "name", "asc", { urlParam: "sort" });
-  const sel = useSelection<VolumeInfo>((v) => v.name);
+  const sel = useSelection<VolumeInfo>((v) => v.name, { persistKey: "volumes" });
+  useEffect(() => { sel.prune(volumes); }, [volumes, sel.prune]);
   const { busy, run } = useBusy();
 
   async function bulkRemove() {

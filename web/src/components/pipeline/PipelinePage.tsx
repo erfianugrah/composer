@@ -490,7 +490,8 @@ function PipelineTable({
   filter,
   setFilter,
 }: PipelineTableProps) {
-  const sel = useSelection<PipelineSummary>((p) => p.id);
+  const sel = useSelection<PipelineSummary>((p) => p.id, { persistKey: "pipelines" });
+  useEffect(() => { sel.prune(pipelines); }, [pipelines, sel.prune]);
   const { busy, run } = useBusy();
   const filtered = pipelines.filter((p) => {
     if (!filter) return true;

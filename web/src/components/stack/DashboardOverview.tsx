@@ -86,7 +86,9 @@ export function DashboardOverview() {
   });
 
   const { sorted, sortKey, direction, toggle } = useSort<StackSummary, SortKey>(filtered, accessors, "name", "asc", { urlParam: "sort" });
-  const sel = useSelection<StackSummary>((s) => s.name);
+  const sel = useSelection<StackSummary>((s) => s.name, { persistKey: "stacks" });
+  // Drop any persisted selections whose row no longer exists.
+  useEffect(() => { sel.prune(stacks); }, [stacks, sel.prune]);
   const { busy, run } = useBusy();
   const selectedRunning = sorted.filter((s) => sel.isSelected(s.name) && s.status === "running");
   const selectedStopped = sorted.filter((s) => sel.isSelected(s.name) && s.status !== "running");

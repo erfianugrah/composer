@@ -322,7 +322,8 @@ function SSHKeysCard({
   sshKeyMsg,
   setSSHKeyMsg,
 }: SSHKeysCardProps) {
-  const sel = useSelection<SSHKeyInfo>((k) => k.name);
+  const sel = useSelection<SSHKeyInfo>((k) => k.name, { persistKey: "ssh-keys" });
+  useEffect(() => { sel.prune(keys); }, [keys, sel.prune]);
   const { busy, run } = useBusy();
 
   async function bulkDelete() {
