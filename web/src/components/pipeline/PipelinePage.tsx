@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
 import { FilterInput } from "@/components/ui/filter-input";
+import { StepEditor, newStep, type PipelineStep } from "@/components/pipeline/StepEditor";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy, runBulk } from "@/lib/use-busy";
@@ -120,7 +121,7 @@ export function PipelinePage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDesc, setCreateDesc] = useState("");
-  const [createStepStack, setCreateStepStack] = useState("");
+  const [createSteps, setCreateSteps] = useState<PipelineStep[]>(() => [newStep(0)]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState(() => {
@@ -224,18 +225,20 @@ export function PipelinePage() {
     e.preventDefault();
     setCreating(true);
     setError("");
+    // Normalize: assign step-N ids in order, fall back to type as name if empty.
+    const steps = createSteps.map((s, i) => ({
+      id: `step-${i + 1}`,
+      name: s.name.trim() || s.type,
+      type: s.type,
+      config: s.config,
+    }));
     const { error: err } = await apiFetch("/api/v1/pipelines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: createName.trim(),
         description: createDesc.trim(),
-        steps: [{
-          id: "step-1",
-          name: createStepStack.trim() ? `Deploy ${createStepStack.trim()}` : "Deploy",
-          type: createStepStack.trim() ? "compose_up" : "shell_command",
-          config: createStepStack.trim() ? { stack: createStepStack.trim() } : { command: "echo hello" },
-        }],
+        steps,
         triggers: [{ type: "manual", config: {} }],
       }),
     });
@@ -245,10 +248,29 @@ export function PipelinePage() {
       setShowCreate(false);
       setCreateName("");
       setCreateDesc("");
-      setCreateStepStack("");
+      setCreateSteps([newStep(0)]);
       fetchPipelines();
     }
     setCreating(false);
+  }
+
+  function updateStep(index: number, next: PipelineStep) {
+    setCreateSteps((steps) => steps.map((s, i) => (i === index ? next : s)));
+  }
+  function removeStep(index: number) {
+    setCreateSteps((steps) => steps.filter((_, i) => i !== index));
+  }
+  function moveStep(index: number, dir: -1 | 1) {
+    setCreateSteps((steps) => {
+      const next = [...steps];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return steps;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+  function addStep() {
+    setCreateSteps((steps) => [...steps, newStep(steps.length)]);
   }
 
   async function handleDelete(pipelineId: string) {
@@ -287,10 +309,30 @@ export function PipelinePage() {
                 <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Pipeline name" required data-testid="pipeline-name" />
                 <Input value={createDesc} onChange={(e) => setCreateDesc(e.target.value)} placeholder="Description (optional)" data-testid="pipeline-desc" />
               </div>
-              <Input value={createStepStack} onChange={(e) => setCreateStepStack(e.target.value)} placeholder="Stack name to deploy (optional -- leave empty for shell step)" data-testid="pipeline-stack" />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-medium text-muted-foreground">Steps</h4>
+                  <span className="text-[10px] text-muted-foreground font-data">{createSteps.length} step{createSteps.length === 1 ? "" : "s"}</span>
+                </div>
+                {createSteps.map((step, i) => (
+                  <StepEditor
+                    key={i}
+                    step={step}
+                    index={i}
+                    total={createSteps.length}
+                    onChange={(next) => updateStep(i, next)}
+                    onRemove={() => removeStep(i)}
+                    onMoveUp={() => moveStep(i, -1)}
+                    onMoveDown={() => moveStep(i, 1)}
+                  />
+                ))}
+                <Button type="button" variant="outline" size="sm" onClick={addStep} data-testid="step-add">
+                  + Add step
+                </Button>
+              </div>
               {error && <p className="text-sm text-cp-red">{error}</p>}
               <Button type="submit" disabled={creating || !createName} className="w-full" data-testid="pipeline-create-btn">
-                {creating ? "Creating..." : "Create Pipeline"}
+                {creating ? "Creating..." : `Create Pipeline (${createSteps.length} step${createSteps.length === 1 ? "" : "s"})`}
               </Button>
             </form>
           </CardContent>
