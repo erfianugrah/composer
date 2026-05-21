@@ -31,7 +31,8 @@ type Container struct {
 	Name          string
 	StackName     string // compose project name
 	ServiceName   string // compose service name
-	Image         string
+	Image         string // human image reference (e.g. ghcr.io/foo:latest)
+	ImageID       string // resolved local image digest (sha256:...) — changes when a mutable tag is repulled
 	Status        ContainerStatus
 	Health        HealthStatus
 	ExitCode      int    // exit code (only meaningful when Status == exited)

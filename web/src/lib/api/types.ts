@@ -1927,6 +1927,8 @@ export interface components {
             health: "healthy" | "unhealthy" | "starting" | "none";
             id: string;
             image: string;
+            /** @description Resolved local image digest (sha256:...). Changes when a mutable tag like :latest is repulled, so a stable mismatch between two containers on the same tag means at least one of them was recreated from a newer image. */
+            image_id?: string;
             name: string;
             restart_policy?: string;
             service_name: string;

@@ -42,6 +42,7 @@ interface StackData {
     name: string;
     service_name: string;
     image: string;
+    image_id?: string;
     status: string;
     health: string;
     exit_code?: number;
@@ -68,6 +69,16 @@ const statusColor: Record<string, string> = {
   unhealthy: "bg-cp-red/20 text-cp-red border-cp-red/30",
   none: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
 };
+
+// shortDigest renders a docker image digest as a stable 12-char tag, matching
+// the convention `docker images --no-trunc` uses for image IDs. Accepts the
+// raw `sha256:<64 hex>` form or just `<hex>`; falls back to whatever the input
+// is when the shape is unrecognised so we don't silently swallow a non-empty
+// id from a future Docker API version.
+function shortDigest(id: string): string {
+  const hex = id.startsWith("sha256:") ? id.slice(7) : id;
+  return hex.length > 12 ? hex.slice(0, 12) : hex;
+}
 
 export function StackDetail({ stackName }: { stackName: string }) {
   const [stack, setStack] = useState<StackData | null>(null);
@@ -98,6 +109,15 @@ export function StackDetail({ stackName }: { stackName: string }) {
   };
   const [statsContainerId, setStatsContainerId] = useState<string | null>(null);
   const [streamingAction, setStreamingAction] = useState<string | null>(null);
+  // Tracks whether the active streaming action has finished. When true the
+  // Update/Deploy/More/Stop/Delete buttons re-enable even while the terminal
+  // is still on screen, so the user can immediately run another action
+  // without having to click the terminal's close link first.
+  const [streamingDone, setStreamingDone] = useState(false);
+  // Re-enable verbs as soon as the stream finishes, even though the terminal
+  // is still on screen for the user to read. Without this the buttons stay
+  // greyed out until the user clicks the terminal's "close" link.
+  const streamingBusy = !!actionLoading || (!!streamingAction && !streamingDone);
 
   // Master/detail state for the Containers tab. When set, the inspector
   // panel below the table reveals Logs / Stats / Terminal for that container.
@@ -246,17 +266,17 @@ export function StackDetail({ stackName }: { stackName: string }) {
         </div>
         <div className="flex flex-wrap items-center gap-2" data-testid="stack-actions">
           {/* Primary verbs */}
-          <Button size="sm" onClick={() => { setStreamingAction("update"); setActionOutput(""); setActionError(""); }} disabled={!!actionLoading || !!streamingAction} data-testid="btn-update">
+          <Button size="sm" onClick={() => { setStreamingAction("update"); setStreamingDone(false); setActionOutput(""); setActionError(""); }} disabled={streamingBusy} data-testid="btn-update">
             Update
           </Button>
-          <Button size="sm" variant="outline" onClick={() => doAction("up")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-deploy">
+          <Button size="sm" variant="outline" onClick={() => doAction("up")} disabled={streamingBusy} data-testid="btn-deploy">
             {actionLoading === "up" ? "Deploying…" : "Deploy"}
           </Button>
           {/* Secondary verbs collapsed into an overflow menu */}
-          <MoreActions disabled={!!actionLoading || !!streamingAction} actionLoading={actionLoading} doAction={doAction} />
+          <MoreActions disabled={streamingBusy} actionLoading={actionLoading} doAction={doAction} />
           {/* Destructive actions, grouped at the end */}
           <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-          <Button size="sm" variant="destructive" onClick={() => doAction("down")} disabled={!!actionLoading || !!streamingAction} data-testid="btn-stop">
+          <Button size="sm" variant="destructive" onClick={() => doAction("down")} disabled={streamingBusy} data-testid="btn-stop">
             {actionLoading === "down" ? "Stopping…" : "Stop"}
           </Button>
           <ConfirmButton
@@ -264,7 +284,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
             message={`Delete stack "${stackName}"? Stops containers and removes all files.`}
             confirmLabel="Delete"
             onConfirm={handleDelete}
-            disabled={!!actionLoading || !!streamingAction}
+            disabled={streamingBusy}
             data-testid="btn-delete"
           >
             {actionLoading === "delete" ? "Deleting…" : "Delete"}
@@ -286,8 +306,8 @@ export function StackDetail({ stackName }: { stackName: string }) {
           <ActionTerminal
             stackName={stackName}
             action={streamingAction}
-            onClose={() => setStreamingAction(null)}
-            onDone={(code) => { setTimeout(fetchStack, 1000); }}
+            onClose={() => { setStreamingAction(null); setStreamingDone(false); }}
+            onDone={(code) => { setStreamingDone(true); setTimeout(fetchStack, 1000); }}
           />
         </Suspense>
       )}
@@ -369,7 +389,20 @@ export function StackDetail({ stackName }: { stackName: string }) {
                         )}
                       </div>
                     </TD>
-                    <TD className="font-data text-muted-foreground truncate max-w-[280px]" title={c.image}>{c.image}</TD>
+                    <TD className="font-data text-muted-foreground max-w-[360px]">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="truncate" title={c.image}>{c.image}</span>
+                        {c.image_id && (
+                          <span
+                            className="shrink-0 rounded border border-border bg-cp-950/60 px-1.5 py-0.5 text-[10px] font-data text-muted-foreground"
+                            title={`Resolved local image digest:\n${c.image_id}`}
+                            data-testid={`image-digest-${c.id}`}
+                          >
+                            {shortDigest(c.image_id)}
+                          </span>
+                        )}
+                      </div>
+                    </TD>
                     <TD onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1 justify-end">
                         {c.status !== "running" && !c.completed_one_off && (

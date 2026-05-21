@@ -96,7 +96,8 @@ func (h *ContainerHandler) List(ctx context.Context, input *struct{}) (*dto.Cont
 	for _, c := range containers {
 		out.Body.Containers = append(out.Body.Containers, dto.ContainerOutput{
 			ID: c.ID, Name: c.Name, ServiceName: c.ServiceName,
-			Image: c.Image, Status: string(c.Status), Health: string(c.Health),
+			Image: c.Image, ImageID: c.ImageID,
+			Status: string(c.Status), Health: string(c.Health),
 		})
 	}
 	return out, nil
@@ -115,7 +116,8 @@ func (h *ContainerHandler) Get(ctx context.Context, input *dto.ContainerIDInput)
 	out := &dto.ContainerDetailOutput{}
 	out.Body = dto.ContainerOutput{
 		ID: c.ID, Name: c.Name, ServiceName: c.ServiceName,
-		Image: c.Image, Status: string(c.Status), Health: string(c.Health),
+		Image: c.Image, ImageID: c.ImageID,
+		Status: string(c.Status), Health: string(c.Health),
 	}
 	return out, nil
 }

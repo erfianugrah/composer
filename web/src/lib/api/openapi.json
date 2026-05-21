@@ -482,6 +482,10 @@
           "image": {
             "type": "string"
           },
+          "image_id": {
+            "description": "Resolved local image digest (sha256:...). Changes when a mutable tag like :latest is repulled, so a stable mismatch between two containers on the same tag means at least one of them was recreated from a newer image.",
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -4508,7 +4512,7 @@
       "name": "MIT"
     },
     "title": "Composer",
-    "version": "0.11.2"
+    "version": "0.12.0"
   },
   "openapi": "3.1.0",
   "paths": {

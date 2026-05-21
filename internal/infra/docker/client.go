@@ -206,6 +206,7 @@ func toDomainContainer(c container.Summary) domcontainer.Container {
 		ID:          c.ID[:12],
 		Name:        strings.TrimPrefix(firstOrEmpty(c.Names), "/"),
 		Image:       c.Image,
+		ImageID:     c.ImageID,
 		Status:      mapStatus(c.State),
 		StackName:   c.Labels["com.docker.compose.project"],
 		ServiceName: c.Labels["com.docker.compose.service"],
@@ -248,6 +249,7 @@ func inspectToDomain(c container.InspectResponse) domcontainer.Container {
 		ID:            c.ID[:12],
 		Name:          strings.TrimPrefix(c.Name, "/"),
 		Image:         c.Config.Image,
+		ImageID:       c.Image, // inspect's top-level Image field is the resolved sha256 digest
 		Status:        mapStatus(c.State.Status),
 		ExitCode:      c.State.ExitCode,
 		RestartPolicy: string(c.HostConfig.RestartPolicy.Name),
