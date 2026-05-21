@@ -8,6 +8,40 @@ import (
 	"time"
 )
 
+// Content Security Policy for composer.
+//
+// Composer is an Astro static site whose <head> contains a small inline
+// hydration bootstrap (the `<script>(()=>{...})()</script>` block that
+// defines the astro-island custom element). For that script to run we must
+// allow inline scripts, so script-src includes 'unsafe-inline'.
+//
+// 'unsafe-inline' is the McMaster-pragmatic trade-off: hashing every
+// auto-emitted hydration script per-page on the Go side would require
+// either parsing the served HTML or matching Astro's build-time hashes
+// (both fragile). For details see web/docs/csp.md.
+//
+// style-src 'unsafe-inline' is similarly required: TanStack Virtual's row
+// positioning, ContainerStats progress bars, and xterm container heights
+// all set element.style.* at runtime with values that aren't knowable at
+// build time.
+//
+// Everything else is strict: no 'unsafe-eval', no wildcards, no third-party
+// origins. object-src 'none' blocks <embed>/<object> entirely. frame-
+// ancestors 'none' is the canonical clickjacking guard (works only as an
+// HTTP header, not as a <meta> directive). form-action 'self' blocks
+// exfiltration via form rewriting; base-uri 'self' blocks <base href>
+// injection.
+const cspPolicy = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"connect-src 'self'; " +
+	"img-src 'self' data:; " +
+	"font-src 'self' data:; " +
+	"object-src 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'; " +
+	"frame-ancestors 'none'"
+
 // SecurityHeaders adds standard security headers to all responses.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -16,7 +50,7 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-XSS-Protection", "0") // S31: obsolete header, set to 0 per modern guidance
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self' data:; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", cspPolicy)
 
 		// Prevent browser/proxy caching of API responses so mutations
 		// (sync, deploy, etc.) are immediately reflected on subsequent GETs.
