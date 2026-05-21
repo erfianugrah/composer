@@ -49,9 +49,16 @@ type composeStatusMsg struct {
 
 // Allowed actions and their compose args.
 var composeActions = map[string][][]string{
+	// 'update' = fetch the newest image from the registry + recreate
+	// the container against it. --force-recreate is the critical flag:
+	// without it, `docker compose up` only recreates services whose
+	// resolved config hash differs. Pulling a new image under the same
+	// ':latest' tag doesn't change the YAML's image field, so the hash
+	// is unchanged and the existing container keeps running on the OLD
+	// image. --force-recreate makes the pull actually take effect.
 	"update": {
 		{"pull"},
-		{"up", "-d", "--remove-orphans", "--no-build"},
+		{"up", "-d", "--remove-orphans", "--no-build", "--force-recreate"},
 	},
 	"pull": {
 		{"pull"},
