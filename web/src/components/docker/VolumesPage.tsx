@@ -4,6 +4,7 @@ import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/dat
 import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { useSelection } from "@/lib/use-selection";
+import { clickableRow } from "@/lib/row-interactions";
 import { useBusy } from "@/lib/use-busy";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -165,7 +166,11 @@ export function VolumesPage() {
               <TBody>
                 {sorted.map((v) => (
                   <Fragment key={v.name}>
-                    <TR className={`cursor-pointer ${sel.isSelected(v.name) ? "bg-cp-purple/5" : ""}`} onClick={() => handleInspect(v.name)} aria-expanded={inspecting === v.name}>
+                    <TR
+                      className={`cursor-pointer ${sel.isSelected(v.name) ? "bg-cp-purple/5" : ""}`}
+                      aria-expanded={inspecting === v.name}
+                      {...clickableRow(() => handleInspect(v.name), `Inspect ${v.name}`)}
+                    >
                       <TD className="w-8" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"

@@ -8,6 +8,7 @@ import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/dat
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy } from "@/lib/use-busy";
+import { clickableRow } from "@/lib/row-interactions";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
@@ -588,8 +589,11 @@ function PipelineTable({
                       ? "bg-cp-purple/5"
                       : sel.isSelected(pl.id) ? "bg-cp-purple/5" : ""
                   }`}
-                  onClick={() => setSelectedPipeline((cur) => (cur === pl.id ? null : pl.id))}
                   data-testid={`pipeline-${pl.id}`}
+                  {...clickableRow(
+                    () => setSelectedPipeline((cur) => (cur === pl.id ? null : pl.id)),
+                    selectedPipeline === pl.id ? `Deselect ${pl.name}` : `Select ${pl.name}`,
+                  )}
                 >
                   <TD className="w-8" onClick={(e) => e.stopPropagation()}>
                     <input

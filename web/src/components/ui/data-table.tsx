@@ -32,6 +32,8 @@ export function TR({ className, ...rest }: React.HTMLAttributes<HTMLTableRowElem
     <tr
       className={cn(
         "border-b border-border/40 last:border-b-0 hover:bg-accent/30 transition-colors",
+        // Focus ring for keyboard navigation on rows with role=link or role=button.
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cp-purple focus-visible:bg-accent/30",
         className,
       )}
       {...rest}

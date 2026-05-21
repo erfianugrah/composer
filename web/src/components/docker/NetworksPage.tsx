@@ -5,6 +5,7 @@ import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/dat
 import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { useSelection } from "@/lib/use-selection";
+import { clickableRow } from "@/lib/row-interactions";
 import { useBusy } from "@/lib/use-busy";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -153,7 +154,11 @@ export function NetworksPage() {
               <TBody>
                 {sorted.map((n) => (
                   <Fragment key={n.id}>
-                    <TR className={`cursor-pointer ${sel.isSelected(n.id) ? "bg-cp-purple/5" : ""}`} onClick={() => handleInspect(n.id)} aria-expanded={inspecting === n.id}>
+                    <TR
+                      className={`cursor-pointer ${sel.isSelected(n.id) ? "bg-cp-purple/5" : ""}`}
+                      aria-expanded={inspecting === n.id}
+                      {...clickableRow(() => handleInspect(n.id), `Inspect ${n.name}`)}
+                    >
                       <TD className="w-8" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, THead, TBody, TR, TH, TD, SortHeader } from "@/components/ui/data-table";
 import { useSort } from "@/lib/use-sort";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
+import { navigableRow } from "@/lib/row-interactions";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy } from "@/lib/use-busy";
 import { Button } from "@/components/ui/button";
@@ -226,8 +227,8 @@ export function DashboardOverview() {
                   <TR
                     key={stack.name}
                     className={`cursor-pointer ${sel.isSelected(stack.name) ? "bg-cp-purple/5" : ""}`}
-                    onClick={() => { window.location.href = `/stacks?stack=${encodeURIComponent(stack.name)}`; }}
                     data-testid={`stack-${stack.name}`}
+                    {...navigableRow(`/stacks?stack=${encodeURIComponent(stack.name)}`)}
                   >
                     <TD className="w-8" onClick={(e) => e.stopPropagation()}>
                       <input
