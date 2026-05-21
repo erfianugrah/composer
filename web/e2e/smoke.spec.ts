@@ -517,3 +517,74 @@ test.describe("Static Assets", () => {
     }
   });
 });
+
+test.describe("Breadcrumb", () => {
+  test("dashboard shows single 'Dashboard' crumb", async ({ page }) => {
+    await page.goto("/");
+    const breadcrumb = page.getByTestId("breadcrumb");
+    await expect(breadcrumb).toBeVisible();
+    // Just the leaf, no parent link
+    const title = page.getByTestId("page-title");
+    await expect(title).toHaveText("Dashboard");
+  });
+
+  test("non-root pages show 'Dashboard / <title>'", async ({ page }) => {
+    await page.goto("/stacks");
+    const breadcrumb = page.getByTestId("breadcrumb");
+    await expect(breadcrumb).toBeVisible();
+    // Parent link
+    const parentLink = breadcrumb.getByRole("link", { name: "Dashboard" });
+    await expect(parentLink).toBeVisible();
+    await expect(parentLink).toHaveAttribute("href", "/");
+    // Leaf
+    const title = page.getByTestId("page-title");
+    await expect(title).toHaveText("Stacks");
+  });
+
+  test("parent crumb link navigates back to dashboard", async ({ page }) => {
+    await page.goto("/stacks");
+    const parentLink = page.getByTestId("breadcrumb").getByRole("link", { name: "Dashboard" });
+    await parentLink.click();
+    await expect(page).toHaveURL(/\/$/);
+  });
+});
+
+test.describe("Account Menu", () => {
+  test("trigger button is visible in header", async ({ page }) => {
+    await page.goto("/");
+    const trigger = page.getByTestId("account-menu-trigger");
+    await expect(trigger).toBeVisible();
+  });
+
+  test("opens dropdown on click", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("account-menu-trigger").click();
+    const menu = page.getByTestId("account-menu");
+    await expect(menu).toBeVisible();
+    // Should expose the sign-out item
+    await expect(page.getByTestId("account-signout")).toBeVisible();
+  });
+
+  test("closes on Escape", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("account-menu-trigger").click();
+    await expect(page.getByTestId("account-menu")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("account-menu")).toBeHidden();
+  });
+});
+
+test.describe("URL state persistence", () => {
+  test("legacy /stacks#name hash auto-migrates to ?stack=name", async ({ page }) => {
+    await page.goto("/stacks#myapp");
+    // After mount, the StacksPage should rewrite the URL
+    await expect(page).toHaveURL(/\/stacks\?stack=myapp/);
+  });
+
+  test("dashboard URL has no sort param by default", async ({ page }) => {
+    await page.goto("/");
+    // Should NOT include ?sort=name even though name is the default sort.
+    // (Mount-time URL writes were a real bug that broke navigation tests.)
+    await expect(page).toHaveURL(/\/$/);
+  });
+});
