@@ -63,6 +63,13 @@ interface TriggerDetail {
 // Mirrors PipelineDetailOutput.Body in internal/api/dto/pipeline.go. Steps
 // arrive snake_case (continue_on_error / depends_on); we translate to the
 // camelCase PipelineStep shape only when entering edit mode.
+//
+// config is `Record<string, unknown>` to match the backend's map[string]any
+// — pipelines created via API may include nested or non-string config (e.g.
+// http_request headers when those land). StepEditor today only supports
+// scalar string config so coerceConfig() drops non-string values before
+// hydrating the form; the original detail is still PUT-back verbatim for
+// step types the editor doesn't touch.
 interface PipelineDetail {
   id: string;
   name: string;
@@ -71,7 +78,7 @@ interface PipelineDetail {
     id: string;
     name: string;
     type: string;
-    config?: Record<string, string>;
+    config?: Record<string, unknown>;
     timeout?: string;
     continue_on_error?: boolean;
     depends_on?: string[];
@@ -120,6 +127,22 @@ const accessors = {
   steps: (p: PipelineSummary) => p.step_count,
   created: (p: PipelineSummary) => p.created_at,
 } satisfies Record<SortKey, (p: PipelineSummary) => string | number>;
+
+// Strip non-string config values so StepEditor (which renders <Input>s)
+// gets the Record<string, string> it expects. Non-string entries from the
+// backend (e.g. nested objects or numbers) are dropped from the editable
+// form; the original detail is still serialized back unchanged on PUT for
+// step types the UI doesn't touch.
+function coerceConfig(
+  config: Record<string, unknown> | undefined,
+): Record<string, string> {
+  if (!config) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(config)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
+}
 
 function formatRelative(iso: string): string {
   if (!iso) return "—";
@@ -278,7 +301,7 @@ export function PipelinePage() {
           id: s.id,
           name: s.name,
           type: s.type as PipelineStep["type"],
-          config: s.config ?? {},
+          config: coerceConfig(s.config),
           timeout: s.timeout,
           continueOnError: s.continue_on_error,
           dependsOn: s.depends_on,
