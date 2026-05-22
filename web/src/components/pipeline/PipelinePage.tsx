@@ -145,6 +145,7 @@ export function PipelinePage() {
   const [runDetails, setRunDetails] = useState<Record<string, RunDetail>>({});
   const [pipelineDetail, setPipelineDetail] = useState<PipelineDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string>("");
   const [editing, setEditing] = useState(false);
   const [editSteps, setEditSteps] = useState<PipelineStep[]>([]);
   const [editName, setEditName] = useState("");
@@ -201,8 +202,10 @@ export function PipelinePage() {
 
   function fetchPipelineDetail(pipelineId: string) {
     setDetailLoading(true);
-    apiFetch<PipelineDetail>(`/api/v1/pipelines/${pipelineId}`).then(({ data }) => {
+    setDetailError("");
+    apiFetch<PipelineDetail>(`/api/v1/pipelines/${pipelineId}`).then(({ data, error: err }) => {
       if (data) setPipelineDetail(data);
+      else if (err) setDetailError(err);
       setDetailLoading(false);
     });
   }
@@ -228,10 +231,12 @@ export function PipelinePage() {
       setExpandedRun(null);
       setRunDetails({});
       setPipelineDetail(null);
+      setDetailError("");
       fetchPipelineDetail(selectedPipeline);
       fetchRuns(selectedPipeline, 0, pageSize, order);
     } else {
       setPipelineDetail(null);
+      setDetailError("");
     }
     setEditing(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -249,7 +254,7 @@ export function PipelinePage() {
           id: s.id,
           name: s.name,
           type: s.type as PipelineStep["type"],
-          config: (s.config as Record<string, string>) || {},
+          config: s.config ?? {},
           timeout: s.timeout,
           continueOnError: s.continue_on_error,
           dependsOn: s.depends_on,
@@ -499,8 +504,14 @@ export function PipelinePage() {
             </div>
           </CardHeader>
           <CardContent>
-            {detailLoading || !pipelineDetail ? (
+            {detailLoading ? (
               <p className="text-sm text-muted-foreground">Loading config…</p>
+            ) : detailError ? (
+              <p className="text-sm text-cp-red" data-testid="pipeline-config-error">
+                Failed to load config: {detailError}
+              </p>
+            ) : !pipelineDetail ? (
+              <p className="text-sm text-muted-foreground">No config loaded.</p>
             ) : editing ? (
               <form onSubmit={handleSaveEdit} className="space-y-3" data-testid="pipeline-edit-form">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
