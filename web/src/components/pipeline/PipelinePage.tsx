@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -147,6 +147,12 @@ export function PipelinePage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string>("");
   const [editing, setEditing] = useState(false);
+  // Set true by handleEdit when the user wants to enter edit mode on a row
+  // that isn't currently selected. The [selectedPipeline] effect resets
+  // `editing` to false on selection change (to discard in-flight edits when
+  // switching rows), which would otherwise no-op the row-level Edit button.
+  // We honour the pending flag once the detail finishes loading.
+  const pendingEditRef = useRef(false);
   const [editSteps, setEditSteps] = useState<PipelineStep[]>([]);
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
@@ -238,9 +244,27 @@ export function PipelinePage() {
       setPipelineDetail(null);
       setDetailError("");
     }
+    // Selection changed: always discard in-flight edit state. If handleEdit
+    // requested edit mode on the new row, the pendingEditRef effect below
+    // re-enables editing once the new pipelineDetail loads.
     setEditing(false);
+    // Deselect (selectedPipeline=null) cancels any pending edit intent.
+    if (!selectedPipeline) pendingEditRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPipeline]);
+
+  // Re-enter edit mode after a row-level Edit click on a different row,
+  // once the new pipelineDetail has loaded. Clears the flag whether the
+  // fetch succeeded or errored so it doesn't linger across selections.
+  useEffect(() => {
+    if (!pendingEditRef.current) return;
+    if (pipelineDetail) {
+      pendingEditRef.current = false;
+      setEditing(true);
+    } else if (detailError) {
+      pendingEditRef.current = false;
+    }
+  }, [pipelineDetail, detailError]);
 
   // Hydrate edit-mode form from the loaded detail when entering edit mode.
   // continue_on_error / depends_on are snake_case on the wire but camelCase
@@ -479,7 +503,17 @@ export function PipelinePage() {
         setSelectedPipeline={setSelectedPipeline}
         running={running}
         handleRun={handleRun}
-        handleEdit={(id) => { setSelectedPipeline(() => id); setEditing(true); }}
+        handleEdit={(id) => {
+          if (selectedPipeline === id) {
+            setEditing(true);
+            return;
+          }
+          // Different row: switching selection clears editing + detail in
+          // the [selectedPipeline] effect. We re-enter edit mode in the
+          // [pipelineDetail] effect once the new detail finishes loading.
+          pendingEditRef.current = true;
+          setSelectedPipeline(() => id);
+        }}
         handleDelete={handleDelete}
         refresh={fetchPipelines}
         filter={filter}

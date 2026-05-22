@@ -172,11 +172,36 @@ test.describe("Pipelines Page", () => {
       test.skip(true, "no pipelines seeded — skipping selection check");
     }
     // Click the first row.
-    await list.locator("tr[data-testid^=pipeline-]").first().click();
+    const firstRow = list.locator("tr[data-testid^=pipeline-]").first();
+    await firstRow.click();
     // Config card should render.
     await expect(page.getByTestId("pipeline-config-card")).toBeVisible();
     // Edit button should be enabled once detail loads.
     await expect(page.getByTestId("pipeline-edit-btn")).toBeEnabled({ timeout: 5000 });
+  });
+
+  test("row-level Edit button enters edit mode", async ({ page }) => {
+    await page.goto("/pipelines");
+    const list = page.getByTestId("pipeline-list");
+    const empty = page.getByTestId("no-pipelines");
+    await Promise.race([
+      list.waitFor({ state: "visible", timeout: 5000 }).catch(() => null),
+      empty.waitFor({ state: "visible", timeout: 5000 }).catch(() => null),
+    ]);
+    if (await empty.isVisible().catch(() => false)) {
+      test.skip(true, "no pipelines seeded — skipping edit-mode check");
+    }
+    // Find the first row's Edit button (matches data-testid="edit-<id>").
+    const firstRow = list.locator("tr[data-testid^=pipeline-]").first();
+    const editBtn = firstRow.locator("[data-testid^=edit-]");
+    await editBtn.click();
+    // The edit form should appear (Save button is unique to edit mode).
+    await expect(page.getByTestId("pipeline-edit-save")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId("pipeline-edit-cancel")).toBeVisible();
+    // Cancel returns to view mode.
+    await page.getByTestId("pipeline-edit-cancel").click();
+    await expect(page.getByTestId("pipeline-edit-save")).toBeHidden();
+    await expect(page.getByTestId("pipeline-edit-btn")).toBeVisible();
   });
 });
 
