@@ -1,0 +1,18 @@
+# Redocly OpenAPI lint config for the Composer API spec.
+#
+# Run via: make generate-lint
+#
+# We silence `no-invalid-schema-examples` because Huma auto-generates a
+# `$schema` property on every output DTO with example values like
+# `//schemas/Foo.json` (relative, JSON-Schema convention). The `format: uri`
+# constraint is satisfied for absolute callers but redocly flags the example
+# itself. Not actionable on our end; it's a Huma library convention.
+#
+# We deliberately omit an `apis:` block here because openapi-typescript also
+# reads this config and chokes on it (wants `x-openapi-ts.output` keys).
+# Pass the spec path explicitly to redocly: `redocly lint src/lib/api/openapi.json`.
+extends:
+  - recommended
+
+rules:
+  no-invalid-schema-examples: off

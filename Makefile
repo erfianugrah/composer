@@ -53,8 +53,12 @@ docker-run: docker ## Build and run Docker image (needs Postgres + Valkey)
 
 generate: ## Dump OpenAPI spec + regenerate TypeScript client
 	go run ./cmd/dumpopenapi/ > web/src/lib/api/openapi.json
+	go run ./cmd/dumpopenapi/ -yaml > web/src/lib/api/openapi.yaml
 	cd web && bunx openapi-typescript src/lib/api/openapi.json -o src/lib/api/types.ts
-	@echo "Regenerated web/src/lib/api/{openapi.json,types.ts}"
+	@echo "Regenerated web/src/lib/api/{openapi.json,openapi.yaml,types.ts}"
+
+generate-lint: generate ## Regenerate + lint the OpenAPI spec (catches missing op IDs, undocumented response codes, etc.)
+	cd web && bunx --bun @redocly/cli@latest lint src/lib/api/openapi.json --config redocly.yaml
 
 # ── Clean ────────────────────────────────────────────────────────
 

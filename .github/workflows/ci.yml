@@ -34,10 +34,13 @@ jobs:
       - name: Verify TS client is up to date
         run: |
           make generate
-          git diff --exit-code -- web/src/lib/api/openapi.json web/src/lib/api/types.ts || (
+          git diff --exit-code -- web/src/lib/api/openapi.json web/src/lib/api/openapi.yaml web/src/lib/api/types.ts || (
             echo "::error::Generated OpenAPI spec / TS types are out of date. Run 'make generate' and commit the result."
             exit 1
           )
+      - name: Lint OpenAPI spec
+        run: bunx --bun @redocly/cli@latest lint src/lib/api/openapi.json --config redocly.yaml
+        working-directory: web
 
   test-unit:
     name: Unit Tests

@@ -88,6 +88,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/oauth/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Begin OAuth/OIDC login
+         * @description Redirects the browser to the configured identity provider's authorise URL. Served by a raw chi handler (gothic state machine); not callable from typed API clients. Documented here so consumers can discover the endpoint.
+         */
+        get: operations["oauthBegin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/{provider}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * OAuth/OIDC callback
+         * @description Receives the authorisation code from the identity provider, exchanges it for tokens, creates or links the local user, and sets the `composer_session` cookie. Served by a raw chi handler; not directly callable from typed API clients.
+         */
+        get: operations["oauthCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/session": {
         parameters: {
             query?: never;
@@ -322,6 +362,26 @@ export interface paths {
          * @description Equivalent to `docker system prune`. Removes stopped containers, unused networks, dangling images, and build cache. Pass `?all=true` for all unused images, `?volumes=true` to also prune volumes. Admin only.
          */
         post: operations["systemPrune"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/hooks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inbound git webhook receiver
+         * @description Receives push events from a configured git host (GitHub, Gitea, Forgejo). Validates the HMAC signature against the per-webhook secret and enqueues the configured sync / deploy / pipeline action. Served by a raw chi handler so the raw request body is available for signature validation; not callable from typed API clients.
+         */
+        post: operations["receiveWebhook"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3664,6 +3724,61 @@ export interface operations {
             };
         };
     };
+    oauthBegin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description OAuth provider name (e.g. `google`, `github`, `generic`) */
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to provider authorise URL */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Provider not configured */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthCallback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the frontend after successful login */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication failed */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     getSession: {
         parameters: {
             query?: never;
@@ -4448,6 +4563,48 @@ export interface operations {
                 content: {
                     "application/problem+json": components["schemas"]["ErrorModel"];
                 };
+            };
+        };
+    };
+    receiveWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Webhook ID created via POST /api/v1/webhooks */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook accepted; job enqueued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Signature validation failed */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown webhook ID */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
