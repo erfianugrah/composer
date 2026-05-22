@@ -1,10 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StepEditor, newStep, type PipelineStep } from "@/components/pipeline/StepEditor";
 import { apiFetch } from "@/lib/api/errors";
+import { useCurrentUser } from "@/lib/use-current-user";
+
+// Step types that can execute arbitrary code on the host and therefore
+// require the admin role to add or edit. Mirrors the check in
+// internal/api/handler/pipeline.go Update().
+const ADMIN_ONLY_STEP_TYPES = new Set(["shell_command", "docker_exec"]);
+
+function hasAdminOnlyStep(steps: { type: string }[]): boolean {
+  return steps.some((s) => ADMIN_ONLY_STEP_TYPES.has(s.type));
+}
 
 interface TriggerDetail {
   type: string;
@@ -77,6 +87,9 @@ export function PipelineConfigCard({
   initialEditing,
   onSaved,
 }: PipelineConfigCardProps) {
+  const { user } = useCurrentUser();
+  const isAdmin = user?.role === "admin";
+
   const [detail, setDetail] = useState<PipelineDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -87,13 +100,34 @@ export function PipelineConfigCard({
   const [editDesc, setEditDesc] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  // Snapshot of edit-state at hydration time. handleCancel uses it to
+  // detect whether the form has unsaved changes — only prompts if yes.
+  const pristineSnapshot = useRef<string>("");
+
+  // Pipelines whose steps include shell_command / docker_exec require admin.
+  // Non-admins can still view but the Edit button is disabled with an
+  // explanatory tooltip instead of letting them hit a 403 at save time.
+  const requiresAdmin = detail ? hasAdminOnlyStep(detail.steps) : false;
+  const editLocked = requiresAdmin && !isAdmin;
+  const editLockReason = editLocked
+    ? "This pipeline contains shell_command or docker_exec steps and requires admin role to edit."
+    : undefined;
+
+  // Track the latest fetch so a stale response (e.g. from a previous
+  // pipelineId before parent passed key={pipelineId}) can't overwrite the
+  // current one. With key= the component remounts on pipelineId change so
+  // this is belt-and-braces — still useful if a save triggers a refetch and
+  // pipelineId happens to change in the same tick.
+  const requestSeq = useRef(0);
 
   // Fetch detail on mount / pipelineId change.
   useEffect(() => {
+    const mySeq = ++requestSeq.current;
     setLoading(true);
     setError("");
     apiFetch<PipelineDetail>(`/api/v1/pipelines/${pipelineId}`).then(
       ({ data, error: err }) => {
+        if (mySeq !== requestSeq.current) return; // superseded by newer request
         if (data) setDetail(data);
         else if (err) setError(err);
         setLoading(false);
@@ -101,26 +135,56 @@ export function PipelineConfigCard({
     );
   }, [pipelineId]);
 
+  // Browser-level unsaved-changes guard. The page-internal switch case
+  // (parent unmounts us via key change when selectedPipeline changes) is
+  // handled by the unmount itself — see beforeunload + the cleanup below.
+  useEffect(() => {
+    if (!editing) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isDirty()) return;
+      e.preventDefault();
+      // Modern browsers ignore the custom message but require setting one.
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
   // Hydrate edit form from the loaded detail when entering edit mode.
   // continue_on_error / depends_on are snake_case on the wire but camelCase
   // on PipelineStep — translate here, translate back in handleSave.
   useEffect(() => {
     if (editing && detail) {
+      const hydratedSteps = detail.steps.map((s) => ({
+        id: s.id,
+        name: s.name,
+        type: s.type as PipelineStep["type"],
+        config: coerceConfig(s.config),
+        timeout: s.timeout,
+        continueOnError: s.continue_on_error,
+        dependsOn: s.depends_on,
+      }));
       setEditName(detail.name);
       setEditDesc(detail.description);
-      setEditSteps(
-        detail.steps.map((s) => ({
-          id: s.id,
-          name: s.name,
-          type: s.type as PipelineStep["type"],
-          config: coerceConfig(s.config),
-          timeout: s.timeout,
-          continueOnError: s.continue_on_error,
-          dependsOn: s.depends_on,
-        })),
-      );
+      setEditSteps(hydratedSteps);
+      pristineSnapshot.current = JSON.stringify({
+        name: detail.name,
+        description: detail.description,
+        steps: hydratedSteps,
+      });
     }
   }, [editing, detail]);
+
+  function isDirty(): boolean {
+    if (!pristineSnapshot.current) return false;
+    const current = JSON.stringify({
+      name: editName,
+      description: editDesc,
+      steps: editSteps,
+    });
+    return current !== pristineSnapshot.current;
+  }
 
   function updateEditStep(index: number, next: PipelineStep) {
     setEditSteps((steps) => steps.map((s, i) => (i === index ? next : s)));
@@ -183,6 +247,9 @@ export function PipelineConfigCard({
   }
 
   function handleCancel() {
+    // Only prompt when there's actually something to discard. Avoids the
+    // "are you sure?" annoyance for users who opened Edit by accident.
+    if (isDirty() && !window.confirm("Discard changes?")) return;
     setEditing(false);
     setSaveError("");
   }
@@ -197,8 +264,9 @@ export function PipelineConfigCard({
               size="xs"
               variant="outline"
               onClick={() => setEditing(true)}
-              disabled={loading || !detail || editing}
+              disabled={loading || !detail || editing || editLocked}
               data-testid="pipeline-edit-btn"
+              title={editLockReason}
             >
               Edit
             </Button>
@@ -214,6 +282,16 @@ export function PipelineConfigCard({
           </p>
         ) : !detail ? (
           <p className="text-sm text-muted-foreground">No config loaded.</p>
+        ) : editLocked ? (
+          <div className="space-y-3">
+            <div
+              className="text-xs rounded border border-cp-peach/30 bg-cp-peach/10 text-cp-peach p-2"
+              data-testid="pipeline-edit-locked"
+            >
+              {editLockReason}
+            </div>
+            <PipelineDetailSummary detail={detail} />
+          </div>
         ) : editing ? (
           <form onSubmit={handleSave} className="space-y-3" data-testid="pipeline-edit-form">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -292,51 +370,59 @@ export function PipelineConfigCard({
             </div>
           </form>
         ) : (
-          <div className="space-y-3">
-            <div>
-              <h4 className="text-xs font-medium text-muted-foreground mb-1">Steps</h4>
-              <div className="space-y-1">
-                {detail.steps.map((s, i) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center gap-2 text-xs rounded border border-border bg-cp-950/40 p-2"
-                  >
-                    <span className="font-data text-[10px] text-muted-foreground tabular-nums w-6">
-                      {(i + 1).toString().padStart(2, "0")}
-                    </span>
-                    <span className="font-medium">{s.name || s.type}</span>
-                    <Badge variant="outline" className="text-[10px]">{s.type}</Badge>
-                    {s.config && Object.keys(s.config).length > 0 && (
-                      <code className="font-data text-muted-foreground truncate">
-                        {Object.entries(s.config)
-                          .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
-                          .join(" ")}
-                      </code>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-            {detail.triggers.length > 0 && (
-              <div>
-                <h4 className="text-xs font-medium text-muted-foreground mb-1">Triggers</h4>
-                <div className="flex flex-wrap gap-2">
-                  {detail.triggers.map((t, i) => (
-                    <Badge key={i} variant="outline" className="text-[10px] font-data">
-                      {t.type}
-                      {t.config && Object.keys(t.config).length > 0
-                        ? `(${Object.entries(t.config)
-                            .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
-                            .join(", ")})`
-                        : ""}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <PipelineDetailSummary detail={detail} />
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Read-only summary of a pipeline's steps + triggers. Shared by the
+ *  default view branch and the admin-locked branch. */
+function PipelineDetailSummary({ detail }: { detail: PipelineDetail }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <h4 className="text-xs font-medium text-muted-foreground mb-1">Steps</h4>
+        <div className="space-y-1">
+          {detail.steps.map((s, i) => (
+            <div
+              key={s.id}
+              className="flex items-center gap-2 text-xs rounded border border-border bg-cp-950/40 p-2"
+            >
+              <span className="font-data text-[10px] text-muted-foreground tabular-nums w-6">
+                {(i + 1).toString().padStart(2, "0")}
+              </span>
+              <span className="font-medium">{s.name || s.type}</span>
+              <Badge variant="outline" className="text-[10px]">{s.type}</Badge>
+              {s.config && Object.keys(s.config).length > 0 && (
+                <code className="font-data text-muted-foreground truncate">
+                  {Object.entries(s.config)
+                    .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
+                    .join(" ")}
+                </code>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      {detail.triggers.length > 0 && (
+        <div>
+          <h4 className="text-xs font-medium text-muted-foreground mb-1">Triggers</h4>
+          <div className="flex flex-wrap gap-2">
+            {detail.triggers.map((t, i) => (
+              <Badge key={i} variant="outline" className="text-[10px] font-data">
+                {t.type}
+                {t.config && Object.keys(t.config).length > 0
+                  ? `(${Object.entries(t.config)
+                      .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
+                      .join(", ")})`
+                  : ""}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
