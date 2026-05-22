@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
 import { FilterInput } from "@/components/ui/filter-input";
 import { StepEditor, newStep, type PipelineStep } from "@/components/pipeline/StepEditor";
+import { PipelineConfigCard } from "@/components/pipeline/PipelineConfigCard";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy, runBulk } from "@/lib/use-busy";
@@ -116,6 +117,10 @@ export function PipelinePage() {
   const [order, setOrder] = useState<RunOrder>("desc");
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const [runDetails, setRunDetails] = useState<Record<string, RunDetail>>({});
+  // editingPipelineId is set to the pipeline ID the user clicked "Edit" on
+  // from a row that wasn't selected yet. PipelineConfigCard reads it via the
+  // `initialEditing` prop on mount; the parent clears it after.
+  const [editingPipelineId, setEditingPipelineId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -143,15 +148,24 @@ export function PipelinePage() {
     });
   }
 
+  // Monotonic request IDs so a stale response (e.g. from a previous
+  // selectedPipeline or paging state) can't overwrite the current view.
+  // Each fetch captures the seq at call-time and bails on apply if a newer
+  // request has since started.
+  const runsRequestSeq = useRef(0);
+  const runDetailRequestSeq = useRef<Record<string, number>>({});
+
   function fetchRuns(pipelineId: string, p = page, sz = pageSize, ord = order) {
     const params = new URLSearchParams({
       limit: String(sz),
       offset: String(p * sz),
       order: ord,
     });
+    const mySeq = ++runsRequestSeq.current;
     apiFetch<{ runs: RunSummary[]; has_more: boolean }>(
       `/api/v1/pipelines/${pipelineId}/runs?${params}`,
     ).then(({ data }) => {
+      if (mySeq !== runsRequestSeq.current) return;
       if (data) {
         setRuns(data.runs || []);
         setHasMore(Boolean(data.has_more));
@@ -160,7 +174,11 @@ export function PipelinePage() {
   }
 
   function fetchRunDetail(pipelineId: string, runId: string) {
+    const prev = runDetailRequestSeq.current[runId] || 0;
+    const mySeq = prev + 1;
+    runDetailRequestSeq.current[runId] = mySeq;
     apiFetch<RunDetail>(`/api/v1/pipelines/${pipelineId}/runs/${runId}`).then(({ data }) => {
+      if (mySeq !== runDetailRequestSeq.current[runId]) return;
       if (data) setRunDetails((prev) => ({ ...prev, [runId]: data }));
     });
   }
@@ -185,8 +203,15 @@ export function PipelinePage() {
       setPage(0);
       setExpandedRun(null);
       setRunDetails({});
+      // Drop the per-run seq map so a slow response from the previous
+      // pipeline can't apply to a run on the new one.
+      runDetailRequestSeq.current = {};
       fetchRuns(selectedPipeline, 0, pageSize, order);
     }
+    // Selection changed via any path (deselect, switch, click): clear any
+    // pending row-level edit intent so it doesn't leak into the next
+    // selection.
+    setEditingPipelineId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPipeline]);
 
@@ -345,10 +370,28 @@ export function PipelinePage() {
         setSelectedPipeline={setSelectedPipeline}
         running={running}
         handleRun={handleRun}
+        handleEdit={(id) => {
+          // Set the editing intent before changing selection. The Config card
+          // remounts when selectedPipeline (its key) changes and reads
+          // editingPipelineId via initialEditing on first render.
+          setEditingPipelineId(id);
+          setSelectedPipeline(() => id);
+        }}
         handleDelete={handleDelete}
+        refresh={fetchPipelines}
         filter={filter}
         setFilter={setFilter}
       />
+
+      {/* Pipeline configuration (read-only view + inline edit) */}
+      {selectedPipeline && (
+        <PipelineConfigCard
+          key={selectedPipeline}
+          pipelineId={selectedPipeline}
+          initialEditing={editingPipelineId === selectedPipeline}
+          onSaved={fetchPipelines}
+        />
+      )}
 
       {/* Run history for selected pipeline */}
       {selectedPipeline && (
@@ -518,7 +561,9 @@ interface PipelineTableProps {
   setSelectedPipeline: (fn: (cur: string | null) => string | null) => void;
   running: string;
   handleRun: (id: string) => void;
+  handleEdit: (id: string) => void;
   handleDelete: (id: string) => Promise<void>;
+  refresh: () => void;
   filter: string;
   setFilter: (v: string) => void;
 }
@@ -529,7 +574,9 @@ function PipelineTable({
   setSelectedPipeline,
   running,
   handleRun,
+  handleEdit,
   handleDelete,
+  refresh,
   filter,
   setFilter,
 }: PipelineTableProps) {
@@ -558,7 +605,7 @@ function PipelineTable({
         { verb: "Delet", noun: "pipeline" },
       );
       sel.clear();
-      fetchPipelines();
+      refresh();
     });
   }
 
@@ -648,6 +695,14 @@ function PipelineTable({
                   <TD className="font-data text-muted-foreground" title={pl.created_at}>{formatRelative(pl.created_at)}</TD>
                   <TD className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1 justify-end">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => handleEdit(pl.id)}
+                        data-testid={`edit-${pl.id}`}
+                      >
+                        Edit
+                      </Button>
                       <Button
                         size="xs"
                         onClick={() => handleRun(pl.id)}
