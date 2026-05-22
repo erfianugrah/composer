@@ -158,6 +158,26 @@ test.describe("Pipelines Page", () => {
     const className = await nav.getAttribute("class");
     expect(className).toContain("text-cp-purple");
   });
+
+  test("pipeline config card appears when row is selected", async ({ page }) => {
+    await page.goto("/pipelines");
+    // Wait for either the pipeline list or the "no pipelines" placeholder.
+    const list = page.getByTestId("pipeline-list");
+    const empty = page.getByTestId("no-pipelines");
+    await Promise.race([
+      list.waitFor({ state: "visible", timeout: 5000 }).catch(() => null),
+      empty.waitFor({ state: "visible", timeout: 5000 }).catch(() => null),
+    ]);
+    if (await empty.isVisible().catch(() => false)) {
+      test.skip(true, "no pipelines seeded — skipping selection check");
+    }
+    // Click the first row.
+    await list.locator("tr[data-testid^=pipeline-]").first().click();
+    // Config card should render.
+    await expect(page.getByTestId("pipeline-config-card")).toBeVisible();
+    // Edit button should be enabled once detail loads.
+    await expect(page.getByTestId("pipeline-edit-btn")).toBeEnabled({ timeout: 5000 });
+  });
 });
 
 test.describe("Settings Page", () => {
