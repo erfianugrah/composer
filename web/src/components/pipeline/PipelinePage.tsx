@@ -481,6 +481,7 @@ export function PipelinePage() {
         handleRun={handleRun}
         handleEdit={(id) => { setSelectedPipeline(() => id); setEditing(true); }}
         handleDelete={handleDelete}
+        refresh={fetchPipelines}
         filter={filter}
         setFilter={setFilter}
       />
@@ -767,6 +768,7 @@ interface PipelineTableProps {
   handleRun: (id: string) => void;
   handleEdit: (id: string) => void;
   handleDelete: (id: string) => Promise<void>;
+  refresh: () => void;
   filter: string;
   setFilter: (v: string) => void;
 }
@@ -779,6 +781,7 @@ function PipelineTable({
   handleRun,
   handleEdit,
   handleDelete,
+  refresh,
   filter,
   setFilter,
 }: PipelineTableProps) {
@@ -807,7 +810,7 @@ function PipelineTable({
         { verb: "Delet", noun: "pipeline" },
       );
       sel.clear();
-      fetchPipelines();
+      refresh();
     });
   }
 
