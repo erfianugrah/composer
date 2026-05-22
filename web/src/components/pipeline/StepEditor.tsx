@@ -20,15 +20,22 @@ export const STEP_TYPES = [
 export type StepType = typeof STEP_TYPES[number]["value"];
 
 /**
- * Pipeline step shape sent to POST /api/v1/pipelines. `config` is a free-form
- * object whose required keys depend on `type`; see Go's executor for the
- * authoritative list.
+ * Pipeline step shape sent to POST/PUT /api/v1/pipelines. `config` is a
+ * free-form object whose required keys depend on `type`; see the Go executor
+ * for the authoritative list.
+ *
+ * `timeout`, `continueOnError`, `dependsOn` are carried through from
+ * GET responses on edit so PUT doesn't silently zero them out. The UI
+ * does not expose them yet — extend StepEditor when needed.
  */
 export interface PipelineStep {
   id: string;
   name: string;
   type: StepType;
   config: Record<string, string>;
+  timeout?: string;            // Go duration string, e.g. "5m"
+  continueOnError?: boolean;
+  dependsOn?: string[];
 }
 
 export function newStep(index: number): PipelineStep {
@@ -37,6 +44,7 @@ export function newStep(index: number): PipelineStep {
     name: "",
     type: "compose_up",
     config: { stack: "" },
+    // timeout/continueOnError/dependsOn omitted — backend uses zero values
   };
 }
 
