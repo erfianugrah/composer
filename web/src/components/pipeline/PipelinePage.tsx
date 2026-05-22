@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -148,15 +148,24 @@ export function PipelinePage() {
     });
   }
 
+  // Monotonic request IDs so a stale response (e.g. from a previous
+  // selectedPipeline or paging state) can't overwrite the current view.
+  // Each fetch captures the seq at call-time and bails on apply if a newer
+  // request has since started.
+  const runsRequestSeq = useRef(0);
+  const runDetailRequestSeq = useRef<Record<string, number>>({});
+
   function fetchRuns(pipelineId: string, p = page, sz = pageSize, ord = order) {
     const params = new URLSearchParams({
       limit: String(sz),
       offset: String(p * sz),
       order: ord,
     });
+    const mySeq = ++runsRequestSeq.current;
     apiFetch<{ runs: RunSummary[]; has_more: boolean }>(
       `/api/v1/pipelines/${pipelineId}/runs?${params}`,
     ).then(({ data }) => {
+      if (mySeq !== runsRequestSeq.current) return;
       if (data) {
         setRuns(data.runs || []);
         setHasMore(Boolean(data.has_more));
@@ -165,7 +174,11 @@ export function PipelinePage() {
   }
 
   function fetchRunDetail(pipelineId: string, runId: string) {
+    const prev = runDetailRequestSeq.current[runId] || 0;
+    const mySeq = prev + 1;
+    runDetailRequestSeq.current[runId] = mySeq;
     apiFetch<RunDetail>(`/api/v1/pipelines/${pipelineId}/runs/${runId}`).then(({ data }) => {
+      if (mySeq !== runDetailRequestSeq.current[runId]) return;
       if (data) setRunDetails((prev) => ({ ...prev, [runId]: data }));
     });
   }
@@ -190,6 +203,9 @@ export function PipelinePage() {
       setPage(0);
       setExpandedRun(null);
       setRunDetails({});
+      // Drop the per-run seq map so a slow response from the previous
+      // pipeline can't apply to a run on the new one.
+      runDetailRequestSeq.current = {};
       fetchRuns(selectedPipeline, 0, pageSize, order);
     }
     // Selection changed via any path (deselect, switch, click): clear any
