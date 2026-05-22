@@ -1,8 +1,6 @@
 package api
 
 import (
-	"context"
-	"net/http"
 	"os"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -11,7 +9,6 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
 	composer "github.com/erfianugrah/composer"
-	"github.com/erfianugrah/composer/internal/api/dto"
 	"github.com/erfianugrah/composer/internal/api/handler"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/api/ws"
@@ -74,166 +71,19 @@ func NewServer(deps Deps) *Server {
 		router.Use(authmw.Audit(deps.AuditRepo))
 	}
 
-	// Audit log query (registered below after Huma API is created)
+	// Huma API — config + handler registration live in openapi.go so the
+	// runtime spec and the build-time dump (cmd/dumpopenapi) stay in sync.
+	api := humachi.New(router, HumaConfig(composer.Version))
+	RegisterHumaHandlers(api, deps, false /* register conditionally on deps */)
 
-	// Huma API (auto-generates OpenAPI 3.1)
-	config := huma.DefaultConfig("Composer", composer.Version)
-	config.Info.Description = "A lightweight, self-hosted Docker Compose management platform with GitOps, pipelines, and RBAC."
-	config.Info.License = &huma.License{
-		Name:       "MIT",
-		Identifier: "MIT",
-	}
-	config.Info.Contact = &huma.Contact{
-		Name: "Composer",
-		URL:  "https://github.com/erfianugrah/composer",
-	}
-	config.OpenAPI.Servers = []*huma.Server{
-		{URL: "/", Description: "Current host"},
-	}
-	// Security schemes: session cookie (browser), API key (CLI/CI), Bearer token (alt form)
-	config.OpenAPI.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
-		"cookieAuth": {
-			Type:        "apiKey",
-			In:          "cookie",
-			Name:        "composer_session",
-			Description: "Session cookie set by POST /api/v1/auth/login",
-		},
-		"apiKeyAuth": {
-			Type:        "apiKey",
-			In:          "header",
-			Name:        "X-API-Key",
-			Description: "API key created via POST /api/v1/keys",
-		},
-		"bearerAuth": {
-			Type:         "http",
-			Scheme:       "bearer",
-			BearerFormat: "composer-api-key",
-			Description:  "API key passed as `Authorization: Bearer <key>`",
-		},
-	}
-	// Default: any registered security scheme satisfies requirement
-	config.OpenAPI.Security = []map[string][]string{
-		{"cookieAuth": {}},
-		{"apiKeyAuth": {}},
-		{"bearerAuth": {}},
-	}
-	// Tag descriptions improve grouped rendering in Stoplight / Swagger UI.
-	config.OpenAPI.Tags = []*huma.Tag{
-		{Name: "system", Description: "Server info, version, and global configuration"},
-		{Name: "auth", Description: "Login, logout, session, and bootstrap"},
-		{Name: "users", Description: "User management (admin only)"},
-		{Name: "keys", Description: "API key management (plaintext shown once at creation)"},
-		{Name: "stacks", Description: "Docker Compose stack lifecycle"},
-		{Name: "git", Description: "Git-backed stack sync, rollback, and deploy pipeline"},
-		{Name: "containers", Description: "Container inspection and lifecycle"},
-		{Name: "networks", Description: "Docker network management"},
-		{Name: "volumes", Description: "Docker volume management"},
-		{Name: "images", Description: "Docker image management"},
-		{Name: "docker", Description: "Daemon-wide operations (events, prune, exec)"},
-		{Name: "pipelines", Description: "Multi-step automation pipelines with triggers"},
-		{Name: "webhooks", Description: "Inbound git webhook configuration and delivery history"},
-		{Name: "jobs", Description: "Background job status for async compose operations"},
-		{Name: "audit", Description: "Audit log of mutating operations (admin only)"},
-		{Name: "templates", Description: "Built-in stack template catalog"},
-		{Name: "sse", Description: "Server-Sent Events streams (logs, stats, events, pipeline output)"},
-	}
-	api := humachi.New(router, config)
-
-	// Health check (bypasses auth)
-	huma.Register(api, huma.Operation{
-		OperationID: "healthCheck",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/system/health",
-		Summary:     "Health check",
-		Description: "Public liveness probe. Returns {status, version}. No authentication required.",
-		Tags:        []string{"system"},
-		Security:    []map[string][]string{}, // public
-	}, func(ctx context.Context, input *struct{}) (*dto.HealthCheckOutput, error) {
-		resp := &dto.HealthCheckOutput{}
-		resp.Body.Status = "healthy"
-		resp.Body.Version = composer.Version
-		return resp, nil
-	})
-
-	// System info/version
-	handler.NewSystemHandler(deps.DockerClient, deps.DataDir).Register(api)
+	// Document raw chi routes (OAuth, webhook receiver) in the OpenAPI spec.
+	// These can't be registered via Huma because they need raw http access
+	// (goth state machine, raw body for signature validation) — but adding
+	// them to the spec via AddOperation keeps the API surface discoverable.
+	DocumentRawRoutes(api)
 
 	// /docs is served by the embedded frontend (web/dist/docs/index.html)
 	// Stoplight Elements bundled locally -- no CDN dependency
-
-	// Templates (public, helps onboarding)
-	handler.NewTemplateHandler().Register(api)
-
-	// Auth handlers (always registered)
-	handler.NewAuthHandler(deps.AuthService).Register(api)
-
-	// User management (admin only)
-	if deps.UserRepo != nil {
-		userHandler := handler.NewUserHandler(deps.UserRepo)
-		if deps.SessionRepo != nil {
-			userHandler.SetSessionRepo(deps.SessionRepo)
-		}
-		userHandler.Register(api)
-	}
-
-	// API key management (operator+)
-	handler.NewKeyHandler(deps.AuthService).Register(api)
-
-	// Docker registry credentials (admin mutations, viewer reads)
-	if deps.RegistryService != nil {
-		handler.NewRegistryHandler(deps.RegistryService).Register(api)
-	}
-
-	// Stack handlers (requires Docker)
-	if deps.StackService != nil {
-		handler.NewStackHandler(deps.StackService, deps.Jobs).Register(api)
-	}
-
-	// Container handlers (requires Docker)
-	if deps.DockerClient != nil {
-		handler.NewContainerHandler(deps.DockerClient).Register(api)
-	}
-
-	// SSE handlers (requires event bus and/or Docker)
-	if deps.EventBus != nil || deps.DockerClient != nil {
-		handler.NewSSEHandler(deps.EventBus, deps.DockerClient).Register(api)
-	}
-
-	// Git operation handlers (requires GitService)
-	if deps.GitService != nil {
-		handler.NewGitHandler(deps.GitService, deps.Jobs).Register(api)
-	}
-
-	// Pipeline handlers (requires PipelineService)
-	if deps.PipelineService != nil {
-		handler.NewPipelineHandler(deps.PipelineService).Register(api)
-	}
-
-	// Webhook CRUD (requires WebhookRepo)
-	if deps.WebhookRepo != nil {
-		handler.NewWebhookCRUDHandler(deps.WebhookRepo).Register(api)
-	}
-
-	// Audit log (requires AuditRepo)
-	if deps.AuditRepo != nil {
-		handler.NewAuditHandler(deps.AuditRepo).Register(api)
-	}
-
-	// Background jobs
-	if deps.Jobs != nil {
-		handler.NewJobHandler(deps.Jobs).Register(api)
-	}
-
-	// Docker resource management (networks, volumes, images).
-	// Jobs is optional — when present, prune endpoints honour ?async=true.
-	if deps.DockerClient != nil {
-		handler.NewResourceHandler(deps.DockerClient, deps.Jobs).Register(api)
-	}
-
-	// Global docker command runner (admin only)
-	if deps.Compose != nil {
-		handler.NewDockerExecHandler(deps.Compose).Register(api)
-	}
 
 	// WebSocket terminal (raw HTTP handler with RBAC -- operator+)
 	if deps.DockerClient != nil {

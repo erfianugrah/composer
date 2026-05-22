@@ -39,7 +39,7 @@ make lint               # go vet
 Version bump + tag + push must follow this sequence:
 
 1. Bump `const Version` in `version.go`
-2. Run `make generate` — regenerates `web/src/lib/api/openapi.json` and `types.ts`
+2. Run `make generate` — regenerates `web/src/lib/api/{openapi.json,openapi.yaml,types.ts}`
    (the OpenAPI spec embeds the version string; CI checks it matches)
 3. Run `make build-frontend` — rebuild so `go vet` passes (static.go embed)
 4. Run `make lint` and `make test-unit` — verify locally
@@ -52,6 +52,17 @@ checks `git diff --exit-code` on the generated files. If the spec is stale, lint
 
 Release (`release.yml`) triggers on `v*` tags — builds multi-arch Docker image and
 pushes to `ghcr.io/erfianugrah/composer`.
+
+## OpenAPI spec
+
+One source of truth: `internal/api/openapi.go`.
+- `HumaConfig(version)` — info, servers, security schemes, tag descriptions.
+- `RegisterHumaHandlers(api, deps, registerAll)` — every Huma handler. `registerAll=true` for the dumper, `false` at runtime so degraded-mode boots register only what their deps support.
+- `DocumentRawRoutes(api)` — OpenAPI stubs for routes served by raw chi handlers (OAuth begin/callback, `/api/v1/hooks/{id}` webhook receiver).
+
+Both `internal/api/server.go` (runtime) and `cmd/dumpopenapi/main.go` (build-time) call these three. Do NOT duplicate config or handler lists between them. Tests in `internal/api/openapi_test.go` enforce that the runtime-generated spec matches the committed `web/src/lib/api/openapi.json` and that every declared tag is used.
+
+Lint the spec with `make generate-lint` (uses `web/redocly.yaml`).
 
 ## Architecture
 
