@@ -479,6 +479,7 @@ export function PipelinePage() {
         setSelectedPipeline={setSelectedPipeline}
         running={running}
         handleRun={handleRun}
+        handleEdit={(id) => { setSelectedPipeline(() => id); setEditing(true); }}
         handleDelete={handleDelete}
         filter={filter}
         setFilter={setFilter}
@@ -764,6 +765,7 @@ interface PipelineTableProps {
   setSelectedPipeline: (fn: (cur: string | null) => string | null) => void;
   running: string;
   handleRun: (id: string) => void;
+  handleEdit: (id: string) => void;
   handleDelete: (id: string) => Promise<void>;
   filter: string;
   setFilter: (v: string) => void;
@@ -775,6 +777,7 @@ function PipelineTable({
   setSelectedPipeline,
   running,
   handleRun,
+  handleEdit,
   handleDelete,
   filter,
   setFilter,
@@ -894,6 +897,14 @@ function PipelineTable({
                   <TD className="font-data text-muted-foreground" title={pl.created_at}>{formatRelative(pl.created_at)}</TD>
                   <TD className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1 justify-end">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => handleEdit(pl.id)}
+                        data-testid={`edit-${pl.id}`}
+                      >
+                        Edit
+                      </Button>
                       <Button
                         size="xs"
                         onClick={() => handleRun(pl.id)}
