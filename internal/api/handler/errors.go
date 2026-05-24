@@ -47,3 +47,33 @@ func dockerError(ctx context.Context, err error) error {
 
 	return huma.Error500InternalServerError(msg)
 }
+
+// composeError surfaces docker compose subprocess stderr to authenticated
+// operators when a stack lifecycle command (up / down / restart / pull) fails.
+// Same security profile as dockerError: subprocess output triggered by the
+// operator is operational, not security-sensitive — image pull denials, port
+// conflicts, malformed compose YAML, sops decrypt failures all need to reach
+// the UI to be actionable.
+//
+// Falls back to the generic serverError shape (with chi request ID for log
+// correlation) when the subprocess produced no stderr — e.g. failures inside
+// the StackService wrapper before compose ran (sops, registry auth, lock).
+// The full underlying error is logged server-side regardless.
+func composeError(ctx context.Context, err error, stderr string) error {
+	reqID := chimiddleware.GetReqID(ctx)
+	if err != nil {
+		underlying := err.Error()
+		slog.Error("compose operation failed",
+			"error", underlying,
+			"request_id", reqID,
+			"stderr_len", len(stderr))
+	}
+
+	if msg := strings.TrimSpace(stderr); msg != "" {
+		return huma.Error500InternalServerError(msg)
+	}
+	if reqID != "" {
+		return huma.Error500InternalServerError("an internal error occurred (request_id: " + reqID + ")")
+	}
+	return huma.Error500InternalServerError("an internal error occurred")
+}

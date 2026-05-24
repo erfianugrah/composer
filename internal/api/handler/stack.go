@@ -440,7 +440,7 @@ func (h *StackHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(ctx, err)
+		return nil, composeError(ctx, err, composeStderr(result))
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -463,11 +463,7 @@ func (h *StackHandler) BuildAndDeploy(ctx context.Context, input *dto.StackNameI
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		out := &dto.ComposeOpOutput{}
-		if result != nil {
-			out.Body.Stderr = result.Stderr
-		}
-		return out, nil
+		return nil, composeError(ctx, err, composeStderr(result))
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -490,7 +486,7 @@ func (h *StackHandler) Stop(ctx context.Context, input *dto.StackNameInput) (*dt
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(ctx, err)
+		return nil, composeError(ctx, err, composeStderr(result))
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -513,7 +509,7 @@ func (h *StackHandler) Restart(ctx context.Context, input *dto.StackNameInput) (
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(ctx, err)
+		return nil, composeError(ctx, err, composeStderr(result))
 	}
 
 	out := &dto.ComposeOpOutput{}
@@ -536,13 +532,24 @@ func (h *StackHandler) Pull(ctx context.Context, input *dto.StackNameInput) (*dt
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
-		return nil, serverError(ctx, err)
+		return nil, composeError(ctx, err, composeStderr(result))
 	}
 
 	out := &dto.ComposeOpOutput{}
 	out.Body.Stdout = result.Stdout
 	out.Body.Stderr = result.Stderr
 	return out, nil
+}
+
+// composeStderr returns result.Stderr if result is non-nil, else "".
+// Compose ops can return (nil, err) for failures before the subprocess ran
+// (sops decrypt, registry auth, lock acquisition) — those have no stderr to
+// surface and fall through to composeError's request_id branch.
+func composeStderr(result *docker.ComposeResult) string {
+	if result == nil {
+		return ""
+	}
+	return result.Stderr
 }
 
 func (h *StackHandler) Validate(ctx context.Context, input *dto.StackNameInput) (*dto.ComposeOpOutput, error) {
