@@ -176,7 +176,7 @@ func (h *StackHandler) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/stacks/{name}/diff",
 		Summary:     "Show pending compose changes vs saved version",
-		Description: "Computes a line diff between the on-disk compose.yaml and Docker's resolved config. Useful to preview what a deploy would actually apply.",
+		Description: "Computes a line diff between the on-disk compose.yaml and Docker's normalized config (rendered with `--no-interpolate` so `${VAR}` references are preserved, never expanded against `.env`). Useful to preview what a deploy would actually apply without leaking environment values.",
 		Tags:        []string{"stacks"},
 		Errors:      errsViewerNotFound,
 	}, h.Diff)

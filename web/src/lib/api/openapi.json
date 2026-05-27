@@ -4511,7 +4511,7 @@
       "name": "MIT"
     },
     "title": "Composer",
-    "version": "0.14.2"
+    "version": "0.14.3"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10318,7 +10318,7 @@
     },
     "/api/v1/stacks/{name}/diff": {
       "get": {
-        "description": "Computes a line diff between the on-disk compose.yaml and Docker's resolved config. Useful to preview what a deploy would actually apply.",
+        "description": "Computes a line diff between the on-disk compose.yaml and Docker's normalized config (rendered with `--no-interpolate` so `${VAR}` references are preserved, never expanded against `.env`). Useful to preview what a deploy would actually apply without leaking environment values.",
         "operationId": "diffStack",
         "parameters": [
           {

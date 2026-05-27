@@ -1107,7 +1107,7 @@ export interface paths {
         };
         /**
          * Show pending compose changes vs saved version
-         * @description Computes a line diff between the on-disk compose.yaml and Docker's resolved config. Useful to preview what a deploy would actually apply.
+         * @description Computes a line diff between the on-disk compose.yaml and Docker's normalized config (rendered with `--no-interpolate` so `${VAR}` references are preserved, never expanded against `.env`). Useful to preview what a deploy would actually apply without leaking environment values.
          */
         get: operations["diffStack"];
         put?: never;

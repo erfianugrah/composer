@@ -452,7 +452,10 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 	return result, err
 }
 
-// Config runs docker compose config and returns the normalized YAML.
+// Config runs `docker compose config --no-interpolate` and returns the
+// structurally normalized YAML with ${VAR} references intact. See
+// docker.Compose.Config -- the --no-interpolate flag prevents the /diff
+// endpoint from leaking plaintext .env values to viewers.
 func (s *StackService) Config(ctx context.Context, name string) (*docker.ComposeResult, error) {
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil {

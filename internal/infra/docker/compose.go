@@ -136,9 +136,20 @@ func (c *Compose) Validate(ctx context.Context, stackDir string) (*ComposeResult
 	return c.run(ctx, stackDir, "", "config", "--quiet")
 }
 
-// Config runs `docker compose config` and returns the normalized compose YAML.
+// Config runs `docker compose config --no-interpolate` and returns the
+// structurally normalized compose YAML with environment-variable references
+// preserved as ${VAR} (not expanded against .env / the host environment).
+//
+// The --no-interpolate flag is load-bearing here: the only caller is the
+// /api/v1/stacks/{name}/diff endpoint, which is viewer-role and renders the
+// output back to the client. Without --no-interpolate, plaintext values
+// from the stack's .env file (or any SOPS-decrypted secrets transiently on
+// disk) would be expanded into the response and leaked to any viewer.
+//
+// Use the user-facing exec endpoint with explicit `config` args if you need
+// the interpolated form -- that path is operator+ and the user has opted in.
 func (c *Compose) Config(ctx context.Context, stackDir string) (*ComposeResult, error) {
-	return c.run(ctx, stackDir, "", "config")
+	return c.run(ctx, stackDir, "", "config", "--no-interpolate")
 }
 
 // Exec runs an arbitrary docker compose subcommand in the given stack directory.

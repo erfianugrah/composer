@@ -176,3 +176,51 @@ func TestCompose_ValidateInvalid(t *testing.T) {
 	_, err = comp.Validate(context.Background(), dir)
 	assert.Error(t, err, "expected validation to fail for invalid compose")
 }
+
+// TestCompose_Config_NoInterpolate is the regression test for the /diff
+// secret-leak fix: Compose.Config must call `docker compose config` with
+// --no-interpolate so that ${VAR} references stay verbatim in the output
+// instead of being expanded against the on-disk .env file.
+//
+// The /diff endpoint is viewer-role and renders this stdout back to the
+// client. If the flag regresses, any plaintext .env value (or transiently
+// SOPS-decrypted secret) becomes readable by every viewer-token holder on
+// every diff request.
+func TestCompose_Config_NoInterpolate(t *testing.T) {
+	dir := t.TempDir()
+	compose := `services:
+  app:
+    image: alpine:3
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD}
+      API_TOKEN: ${API_TOKEN}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(compose), 0644))
+
+	const dbSecret = "super-secret-leaked-value-123"
+	const apiSecret = "ghp_pretend_this_is_a_real_pat"
+	env := "DB_PASSWORD=" + dbSecret + "\nAPI_TOKEN=" + apiSecret + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0644))
+
+	c, err := docker.NewClient("")
+	require.NoError(t, err)
+	defer c.Close()
+
+	comp := docker.NewCompose(c.Host(), nil)
+
+	result, err := comp.Config(context.Background(), dir)
+	require.NoError(t, err, "config stderr: %s", result.Stderr)
+
+	// Reference syntax must survive -- this is the actual normalized output
+	// the /diff endpoint serializes back to clients.
+	assert.Contains(t, result.Stdout, "${DB_PASSWORD}",
+		"${DB_PASSWORD} must be preserved verbatim, not interpolated")
+	assert.Contains(t, result.Stdout, "${API_TOKEN}",
+		"${API_TOKEN} must be preserved verbatim, not interpolated")
+
+	// And the secret VALUES must never appear in the output.
+	assert.NotContains(t, result.Stdout, dbSecret,
+		"DB_PASSWORD value leaked into /diff output -- --no-interpolate regressed")
+	assert.NotContains(t, result.Stdout, apiSecret,
+		"API_TOKEN value leaked into /diff output -- --no-interpolate regressed")
+}
