@@ -124,3 +124,39 @@ func TestComposeError_NoRequestID_NoStderr(t *testing.T) {
 	assert.Contains(t, err.Error(), "an internal error occurred")
 	assert.NotContains(t, err.Error(), "request_id")
 }
+
+func TestGitError_SurfacesFilesystemError(t *testing.T) {
+	// Git/filesystem errors should reach authenticated operators so they can
+	// diagnose missing compose files / bad branch refs / sops decrypt failures
+	// from the UI rather than seeing a generic 500.
+	err := gitError(
+		context.Background(),
+		errors.New("open /opt/stacks/mystack/compose.yaml: no such file or directory"),
+	)
+	assert.Contains(t, err.Error(), "open /opt/stacks/mystack/compose.yaml: no such file or directory")
+	assert.NotContains(t, err.Error(), "an internal error occurred")
+	assert.NotContains(t, err.Error(), "request_id")
+}
+
+func TestGitError_SurfacesGitCLIError(t *testing.T) {
+	err := gitError(
+		context.Background(),
+		errors.New("git: reference 'refs/remotes/origin/mian' not found"),
+	)
+	assert.Contains(t, err.Error(), "refs/remotes/origin/mian")
+}
+
+func TestGitError_NilError_FallsBackToRequestID(t *testing.T) {
+	// Defensive: nil err is a caller bug, surface the request_id shape so the
+	// operator can correlate but we don't NPE.
+	ctx := context.WithValue(context.Background(), chimiddleware.RequestIDKey, "req_abc")
+	err := gitError(ctx, nil)
+	assert.Contains(t, err.Error(), "request_id: req_abc")
+	assert.Contains(t, err.Error(), "an internal error occurred")
+}
+
+func TestGitError_NilError_NoRequestID(t *testing.T) {
+	err := gitError(context.Background(), nil)
+	assert.Contains(t, err.Error(), "an internal error occurred")
+	assert.NotContains(t, err.Error(), "request_id")
+}

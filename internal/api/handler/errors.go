@@ -48,6 +48,28 @@ func dockerError(ctx context.Context, err error) error {
 	return huma.Error500InternalServerError(msg)
 }
 
+// gitError surfaces git/filesystem errors to authenticated operators when a
+// stack git operation (sync, clone, attach, deploy) fails. Same security
+// profile as dockerError / composeError: the error message is operational,
+// not security-sensitive — missing compose file, bad branch, auth failure,
+// stale lockfile, dirty working tree all need to reach the UI to be
+// actionable.
+//
+// The underlying error is also logged server-side for log correlation.
+// Falls back to the sanitized + request_id shape only when the error is
+// nil (defensive guard — caller bug).
+func gitError(ctx context.Context, err error) error {
+	reqID := chimiddleware.GetReqID(ctx)
+	if err == nil {
+		if reqID != "" {
+			return huma.Error500InternalServerError("an internal error occurred (request_id: " + reqID + ")")
+		}
+		return huma.Error500InternalServerError("an internal error occurred")
+	}
+	slog.Error("git operation failed", "error", err.Error(), "request_id", reqID)
+	return huma.Error500InternalServerError(err.Error())
+}
+
 // composeError surfaces docker compose subprocess stderr to authenticated
 // operators when a stack lifecycle command (up / down / restart / pull) fails.
 // Same security profile as dockerError: subprocess output triggered by the
