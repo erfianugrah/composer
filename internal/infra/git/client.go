@@ -243,20 +243,50 @@ func (c *Client) Pull(stackDir, composePath string, creds *domstack.GitCredentia
 		RemoteName: "origin",
 		Auth:       auth,
 	}
-	err = wt.Pull(pullOpts)
-	if err == git.NoErrAlreadyUpToDate {
+	pullErr := wt.Pull(pullOpts)
+	if pullErr == git.NoErrAlreadyUpToDate {
 		return false, oldSHA, nil
 	}
-	if err != nil {
-		return false, oldSHA, fmt.Errorf("pulling: %w", err)
-	}
 
-	// Get new HEAD
-	newHead, err := repo.Head()
-	if err != nil {
-		return false, "", fmt.Errorf("getting new HEAD: %w", err)
+	// Read HEAD after Pull regardless of pullErr. go-git can advance refs
+	// (the local branch + remote-tracking ref via Fetch) and then bail out
+	// of the worktree checkout step on a dirty worktree, returning
+	// "worktree contains unstaged changes" as the error. That leaves the
+	// repo in a state where rev-parse HEAD shows the new SHA but the
+	// worktree blob hashes are stale -- silent partial-update path.
+	//
+	// Composer hits this during the SOPS .env decrypt -> deploy ->
+	// re-encrypt cycle: the brief decrypted window dirties the worktree,
+	// any concurrent Pull silently advances HEAD without checking out the
+	// new tree, and subsequent deploys run docker compose against a stale
+	// on-disk file even though the API reports the new SHA.
+	newHead, headErr := repo.Head()
+	if headErr != nil {
+		return false, "", fmt.Errorf("getting HEAD after pull: %w", headErr)
 	}
 	newSHA = newHead.Hash().String()
+	advanced := newHead.Hash() != oldHead.Hash()
+
+	// If HEAD moved, force the worktree to match HEAD. Safe for composer:
+	// its deploy cycle re-decrypts after sync, and the only files that get
+	// dirtied between deploys are SOPS plaintexts that should be reverted
+	// to their committed (encrypted) form anyway. A no-op when the worktree
+	// already matches HEAD (clean Pull success).
+	if advanced {
+		if rerr := wt.Reset(&git.ResetOptions{
+			Mode:   git.HardReset,
+			Commit: newHead.Hash(),
+		}); rerr != nil {
+			return false, newSHA, fmt.Errorf("resetting worktree to new HEAD: %w", rerr)
+		}
+	}
+
+	// Real Pull error AND HEAD did not advance: surface it (network, auth,
+	// non-fast-forward, etc). The dirty-worktree silent-advance case is
+	// already handled above by the hard reset, so we treat it as success.
+	if pullErr != nil && !advanced {
+		return false, oldSHA, fmt.Errorf("pulling: %w", pullErr)
+	}
 
 	// Check if compose file changed between old and new HEAD
 	changed, err = fileChangedBetweenCommits(repo, oldHead.Hash(), newHead.Hash(), composePath)

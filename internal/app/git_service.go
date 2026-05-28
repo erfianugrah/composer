@@ -157,7 +157,25 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 
 // Sync pulls latest changes for a git-backed stack.
 // Returns whether the compose file changed and the new commit SHA.
+//
+// Takes the per-stack lock so a Sync triggered via the API cannot race a
+// Deploy / SyncAndRedeploy that has briefly decrypted SOPS-managed secrets
+// to disk. Without the lock, the concurrent Pull would see the dirty
+// worktree and (per go-git's silent partial-update path) advance HEAD
+// without checking out the new tree -- the next clean Sync then becomes a
+// no-op while compose.yaml on disk stays stale, and docker compose runs
+// against the old file.
 func (s *GitService) Sync(ctx context.Context, name string) (changed bool, newSHA string, err error) {
+	s.locks.Lock(name)
+	defer s.locks.Unlock(name)
+	return s.syncLocked(ctx, name)
+}
+
+// syncLocked is the inner Sync body. Callers MUST already hold s.locks for
+// `name` -- StackLocks uses a non-reentrant sync.Mutex, so the public Sync
+// takes the lock and SyncAndRedeploy (which already holds it) calls this
+// helper directly to avoid a self-deadlock.
+func (s *GitService) syncLocked(ctx context.Context, name string) (changed bool, newSHA string, err error) {
 	s.log.Info("syncing git stack", zap.String("stack", name))
 	st, err := s.stacks.GetByName(ctx, name)
 	if err != nil || st == nil {
@@ -178,7 +196,10 @@ func (s *GitService) Sync(ctx context.Context, name string) (changed bool, newSH
 	changed, newSHA, err = s.gitClient.Pull(st.Path, cfg.ComposePath, cfg.Credentials)
 	if err != nil {
 		errMsg := err.Error()
-		// If dirty working tree causes pull failure, give a clear message
+		// Conflict / non-FF pulls still surface as errors and warrant the
+		// dirty-state diagnostic. The bare "unstaged changes" path is now
+		// handled inside git.Client.Pull (hard-reset to new HEAD), so it
+		// reaches this branch only when HEAD did not advance.
 		if strings.Contains(errMsg, "worktree contains unstaged changes") ||
 			strings.Contains(errMsg, "uncommitted changes") ||
 			strings.Contains(errMsg, "conflict") {
@@ -201,7 +222,9 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 	s.locks.Lock(name)
 	defer s.locks.Unlock(name)
 	s.log.Info("sync+redeploy", zap.String("stack", name))
-	_, _, err = s.Sync(ctx, name)
+	// Already holding the lock -- call syncLocked directly to avoid
+	// re-entering the non-reentrant StackLocks mutex.
+	_, _, err = s.syncLocked(ctx, name)
 	if err != nil {
 		s.log.Error("sync failed", zap.String("stack", name), zap.Error(err))
 		return "error", err

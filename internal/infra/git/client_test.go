@@ -164,3 +164,76 @@ func TestGitClient_CloneInvalidURL(t *testing.T) {
 	err := client.Clone("https://invalid.example.com/nonexistent.git", "main", t.TempDir(), nil)
 	assert.Error(t, err)
 }
+
+// TestGitClient_PullWithDirtyUnrelatedFile reproduces the silent partial-update
+// path that bit composer's SOPS deploy cycle: when the worktree has dirty
+// changes to an UNRELATED file at pull time (e.g. a briefly-decrypted .env),
+// go-git's wt.Pull can advance HEAD without checking out the new tree, leaving
+// the worktree blob hash != HEAD blob hash for the file the incoming commit
+// actually changed.
+//
+// The test uses 'envfile.cfg' rather than '.env' to avoid tripping global
+// git pre-commit hooks that block unencrypted .env paths. The bug is about
+// any tracked file being dirty mid-pull; the filename doesn't matter.
+//
+// Post-fix (hard-reset after Pull), the worktree always matches HEAD. The
+// dirty file is also reset, which is correct for composer: its deploy cycle
+// controls the SOPS decrypt window, and the encrypted version is what should
+// be on disk between deploys anyway.
+func TestGitClient_PullWithDirtyUnrelatedFile(t *testing.T) {
+	bareRepo := setupBareRepo(t)
+	cloneDir := filepath.Join(t.TempDir(), "clone")
+	pushDir := filepath.Join(t.TempDir(), "push")
+
+	client := git.NewClient()
+	require.NoError(t, client.Clone(bareRepo, "main", cloneDir, nil))
+
+	// Seed a baseline tracked file via the pusher clone, so both sides have
+	// it at HEAD before we dirty it.
+	run(t, "", "git", "clone", bareRepo, pushDir)
+	run(t, pushDir, "git", "config", "user.email", "test@example.com")
+	run(t, pushDir, "git", "config", "user.name", "Test")
+	run(t, pushDir, "git", "config", "commit.gpgsign", "false")
+	run(t, pushDir, "git", "config", "core.hooksPath", "/dev/null")
+
+	require.NoError(t, os.WriteFile(filepath.Join(pushDir, "envfile.cfg"), []byte("FOO=encrypted\n"), 0644))
+	run(t, pushDir, "git", "add", "envfile.cfg")
+	run(t, pushDir, "git", "commit", "-m", "add envfile.cfg baseline")
+	run(t, pushDir, "git", "push", "origin", "main")
+
+	// Sync the baseline into the clone.
+	_, _, err := client.Pull(cloneDir, "compose.yaml", nil)
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(cloneDir, "envfile.cfg"))
+
+	// Dirty envfile.cfg in the clone (simulates SOPS decrypt mid-deploy).
+	require.NoError(t, os.WriteFile(filepath.Join(cloneDir, "envfile.cfg"), []byte("FOO=decrypted-plaintext\n"), 0644))
+
+	// Push a compose.yaml change from the pusher clone.
+	newCompose := "services:\n  web:\n    image: caddy:latest\n"
+	require.NoError(t, os.WriteFile(filepath.Join(pushDir, "compose.yaml"), []byte(newCompose), 0644))
+	run(t, pushDir, "git", "add", "compose.yaml")
+	run(t, pushDir, "git", "commit", "-m", "switch to caddy")
+	run(t, pushDir, "git", "push", "origin", "main")
+
+	// Pull on the dirty clone.
+	changed, newSHA, err := client.Pull(cloneDir, "compose.yaml", nil)
+	require.NoError(t, err)
+	assert.True(t, changed, "compose.yaml changed between commits")
+	assert.Len(t, newSHA, 40)
+
+	// Core assertion: worktree blob must match HEAD blob for compose.yaml.
+	// Pre-fix, go-git's wt.Pull could leave the worktree stale here.
+	content, err := os.ReadFile(filepath.Join(cloneDir, "compose.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "caddy:latest",
+		"worktree compose.yaml must reflect the new HEAD after Pull (got: %q)", string(content))
+
+	// Hard-reset side-effect: the dirty file is reverted to the committed
+	// version. Composer's deploy cycle re-decrypts after sync, so this is
+	// the correct post-condition.
+	envContent, err := os.ReadFile(filepath.Join(cloneDir, "envfile.cfg"))
+	require.NoError(t, err)
+	assert.Equal(t, "FOO=encrypted\n", string(envContent),
+		"dirty file should be reset to HEAD's committed version after Pull")
+}
