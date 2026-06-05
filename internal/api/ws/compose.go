@@ -175,7 +175,7 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// can authenticate against private registries — without this the WS
 	// path silently falls back to the host's bare ~/.docker/config.json and
 	// pulls of ghcr.io/<private>/... return 'unauthorized'.
-	opCtx, opCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	opCtx, opCancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer opCancel()
 	if ac.DockerConfigDir != "" {
 		opCtx = docker.WithDockerConfigDir(opCtx, ac.DockerConfigDir)
@@ -268,6 +268,17 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Message: fmt.Sprintf("Pull finished with warnings: %v (continuing to deploy)", cmdErr),
 				})
 				lastErr = nil
+				// A slow pull (large image on a throttled registry) can exhaust
+				// opCtx's deadline. The subsequent up phase would then fail to
+				// even start ("starting compose with pty: context deadline
+				// exceeded"), defeating the cached-image fallback. Refresh the
+				// context — context.WithoutCancel preserves the plumbed
+				// DOCKER_CONFIG value — so the deploy proceeds on a fresh budget.
+				if opCtx.Err() != nil {
+					var freshCancel context.CancelFunc
+					opCtx, freshCancel = context.WithTimeout(context.WithoutCancel(opCtx), 10*time.Minute)
+					defer freshCancel()
+				}
 				continue
 			}
 			sendStatus(ctx, conn, composeStatusMsg{
