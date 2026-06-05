@@ -224,7 +224,7 @@ func (h *GitHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*dt
 		job := h.jobs.Create("deploy", input.Name)
 		h.jobs.Start(job.ID)
 		go func() {
-			opCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			opCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 			defer cancel()
 			action, err := h.git.SyncAndRedeploy(opCtx, input.Name)
 			if err != nil {
@@ -239,7 +239,7 @@ func (h *GitHandler) Deploy(ctx context.Context, input *dto.StackNameInput) (*dt
 		return out, nil
 	}
 	// Synchronous (default)
-	opCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	opCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	action, err := h.git.SyncAndRedeploy(opCtx, input.Name)
 	if err != nil {

@@ -264,12 +264,24 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 	// are refreshed even when the compose file itself hasn't changed.
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
+	upCtx := deployCtx
 	if _, pullErr := s.compose.Pull(deployCtx, st.Path, cfg.ComposePath); pullErr != nil {
 		s.log.Warn("image pull failed, deploying with cached images",
 			zap.String("stack", name), zap.Error(pullErr))
+		// A slow registry can exhaust deployCtx's deadline during the pull
+		// (context deadline exceeded). The subsequent Up would then fail
+		// instantly on the dead context, defeating the cached-image fallback.
+		// Detach from the expired deadline — preserving context values such as
+		// the registry docker-config dir — and give Up its own budget so the
+		// cached images can actually be deployed.
+		if deployCtx.Err() != nil {
+			freshCtx, cancel := context.WithTimeout(context.WithoutCancel(deployCtx), 5*time.Minute)
+			defer cancel()
+			upCtx = freshCtx
+		}
 	}
 
-	_, err = s.compose.Up(deployCtx, st.Path, cfg.ComposePath)
+	_, err = s.compose.Up(upCtx, st.Path, cfg.ComposePath)
 	if err != nil {
 		s.publishEvent(domevent.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
 		return "error", fmt.Errorf("redeploying: %w", err)
