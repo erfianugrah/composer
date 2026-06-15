@@ -55,10 +55,16 @@ func (c *Container) IsRunning() bool {
 	return c.Status == StatusRunning
 }
 
+// IsOneOff returns true if this container is configured as a non-persistent
+// task — i.e., it has no long-running restart policy ("always" / "unless-stopped").
+// This covers init containers, migration runners, restore jobs, etc., regardless
+// of whether they exited successfully.
+func (c *Container) IsOneOff() bool {
+	return c.RestartPolicy == "no" || c.RestartPolicy == "" || c.RestartPolicy == "on-failure"
+}
+
 // IsCompletedOneOff returns true if this container exited successfully (code 0)
-// and is not configured to restart. These are init containers, migration runners,
-// config generators, etc. that are expected to exit.
+// and is a one-off task. Used to display the "completed" badge in the UI.
 func (c *Container) IsCompletedOneOff() bool {
-	return c.Status == StatusExited && c.ExitCode == 0 &&
-		(c.RestartPolicy == "no" || c.RestartPolicy == "" || c.RestartPolicy == "on-failure")
+	return c.Status == StatusExited && c.ExitCode == 0 && c.IsOneOff()
 }

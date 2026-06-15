@@ -405,7 +405,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
                     </TD>
                     <TD onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1 justify-end">
-                        {c.status !== "running" && !c.completed_one_off && (
+                        {c.status !== "running" && (
                           <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
                             Start
                           </Button>

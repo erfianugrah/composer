@@ -1024,24 +1024,27 @@ func deriveStackStatus(containers []domcontainer.Container) stack.Status {
 	}
 
 	running := 0
-	completedOneOff := 0
+	oneOff := 0
 	for _, c := range containers {
 		if c.IsRunning() {
 			running++
-		} else if c.IsCompletedOneOff() {
-			completedOneOff++
+		} else if c.Status == domcontainer.StatusExited && c.IsOneOff() {
+			// One-off tasks (init containers, migration runners, restore jobs)
+			// don't contribute to the long-running service count regardless of
+			// exit code — a failed restore doesn't make the stack "partial".
+			oneOff++
 		}
 	}
 
-	// Long-running services = total minus completed one-off containers
-	longRunning := len(containers) - completedOneOff
+	// Long-running services = total minus exited one-off containers
+	longRunning := len(containers) - oneOff
 
 	switch {
-	case longRunning == 0 && completedOneOff > 0:
-		// All containers are completed one-offs (unusual but possible)
+	case longRunning == 0 && oneOff > 0:
+		// All containers are exited one-offs (e.g. pure init stack)
 		return stack.StatusStopped
 	case running == longRunning:
-		// All long-running services are up (one-offs completed successfully)
+		// All long-running services are up
 		return stack.StatusRunning
 	case running == 0:
 		return stack.StatusStopped
