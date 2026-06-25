@@ -5,14 +5,59 @@ package docker_test
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	domcontainer "github.com/erfianugrah/composer/internal/domain/container"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 )
+
+// TestClient_PauseUnpauseLifecycle is the regression test for the paused-container
+// Start-button bug: Docker rejects ContainerStart on a paused container with
+// "cannot start a paused container, try unpause instead". The fix routes paused
+// containers through UnpauseContainer (ContainerUnpause) instead of StartContainer.
+func TestClient_PauseUnpauseLifecycle(t *testing.T) {
+	c, err := docker.NewClient("")
+	require.NoError(t, err)
+	defer c.Close()
+
+	ctx := context.Background()
+	require.NoError(t, c.PullImage(ctx, "busybox:uclibc"))
+
+	// Create a detached long-running container directly via the docker CLI
+	// (the Client only manages the lifecycle of existing containers).
+	out, err := exec.Command("docker", "run", "-d", "--rm",
+		"busybox:uclibc", "sleep", "120").CombinedOutput()
+	require.NoError(t, err, "docker run failed: %s", out)
+	id := strings.TrimSpace(string(out))
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
+
+	// Sanity: it starts running.
+	insp, err := c.InspectContainer(ctx, id)
+	require.NoError(t, err)
+	require.Equal(t, domcontainer.StatusRunning, insp.Status)
+
+	// Pause -> status must become paused.
+	require.NoError(t, c.PauseContainer(ctx, id))
+	insp, err = c.InspectContainer(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, domcontainer.StatusPaused, insp.Status)
+
+	// The original bug: StartContainer on a paused container is rejected.
+	err = c.StartContainer(ctx, id)
+	assert.Error(t, err, "Docker should reject start on a paused container")
+
+	// The fix: UnpauseContainer resumes it back to running.
+	require.NoError(t, c.UnpauseContainer(ctx, id))
+	insp, err = c.InspectContainer(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, domcontainer.StatusRunning, insp.Status)
+}
 
 func TestClient_Ping(t *testing.T) {
 	c, err := docker.NewClient("")

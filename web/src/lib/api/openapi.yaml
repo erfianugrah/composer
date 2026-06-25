@@ -3347,7 +3347,7 @@ info:
     identifier: MIT
     name: MIT
   title: Composer
-  version: 0.14.7
+  version: 0.14.8
 openapi: 3.1.0
 paths:
   /api/v1/audit:
@@ -3880,6 +3880,61 @@ paths:
       summary: Get container logs (snapshot)
       tags:
         - containers
+  /api/v1/containers/{id}/pause:
+    post:
+      description: Suspends all processes in a running container (SIGSTOP via cgroup freezer). Compose-managed only.
+      operationId: pauseContainer
+      parameters:
+        - description: Container ID (short 12-char or full 64-char)
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Container ID (short 12-char or full 64-char)
+            maxLength: 128
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Pause container
+      tags:
+        - containers
   /api/v1/containers/{id}/restart:
     post:
       description: Stops then starts a container in one call. Compose-managed only.
@@ -4043,6 +4098,61 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
       summary: Stop container
+      tags:
+        - containers
+  /api/v1/containers/{id}/unpause:
+    post:
+      description: Resumes a paused container. Docker rejects `start` on a paused container, so use this to resume one. Compose-managed only.
+      operationId: unpauseContainer
+      parameters:
+        - description: Container ID (short 12-char or full 64-char)
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Container ID (short 12-char or full 64-char)
+            maxLength: 128
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Unpause container
       tags:
         - containers
   /api/v1/docker/events:

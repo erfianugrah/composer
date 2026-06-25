@@ -63,6 +63,7 @@ const statusColor: Record<string, string> = {
   running: "bg-cp-green/20 text-cp-green border-cp-green/30",
   stopped: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
   exited: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
+  paused: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
   partial: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
   unknown: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
   healthy: "bg-cp-green/20 text-cp-green border-cp-green/30",
@@ -405,7 +406,12 @@ export function StackDetail({ stackName }: { stackName: string }) {
                     </TD>
                     <TD onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1 justify-end">
-                        {c.status !== "running" && (
+                        {c.status === "paused" && (
+                          <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/unpause`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                            Unpause
+                          </Button>
+                        )}
+                        {c.status !== "running" && c.status !== "paused" && (
                           <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
                             Start
                           </Button>
@@ -414,6 +420,9 @@ export function StackDetail({ stackName }: { stackName: string }) {
                           <>
                             <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
                               Restart
+                            </Button>
+                            <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/pause`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                              Pause
                             </Button>
                             <Button size="xs" variant="destructive" onClick={() => apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
                               Stop

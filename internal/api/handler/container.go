@@ -79,6 +79,24 @@ func (h *ContainerHandler) Register(api huma.API) {
 		Tags:        []string{"containers"},
 		Errors:      errsOperatorMutation,
 	}, h.Restart)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "pauseContainer", Method: http.MethodPost,
+		Path:        "/api/v1/containers/{id}/pause",
+		Summary:     "Pause container",
+		Description: "Suspends all processes in a running container (SIGSTOP via cgroup freezer). Compose-managed only.",
+		Tags:        []string{"containers"},
+		Errors:      errsOperatorMutation,
+	}, h.Pause)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "unpauseContainer", Method: http.MethodPost,
+		Path:        "/api/v1/containers/{id}/unpause",
+		Summary:     "Unpause container",
+		Description: "Resumes a paused container. Docker rejects `start` on a paused container, so use this to resume one. Compose-managed only.",
+		Tags:        []string{"containers"},
+		Errors:      errsOperatorMutation,
+	}, h.Unpause)
 }
 
 func (h *ContainerHandler) List(ctx context.Context, input *struct{}) (*dto.ContainerListOutput, error) {
@@ -170,6 +188,32 @@ func (h *ContainerHandler) Restart(ctx context.Context, input *dto.ContainerIDIn
 		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.docker.RestartContainer(ctx, input.ID); err != nil {
+		return nil, dockerError(ctx, err)
+	}
+	return nil, nil
+}
+
+func (h *ContainerHandler) Pause(ctx context.Context, input *dto.ContainerIDInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+	if err := h.validateScope(ctx, input.ID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	if err := h.docker.PauseContainer(ctx, input.ID); err != nil {
+		return nil, dockerError(ctx, err)
+	}
+	return nil, nil
+}
+
+func (h *ContainerHandler) Unpause(ctx context.Context, input *dto.ContainerIDInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+	if err := h.validateScope(ctx, input.ID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	if err := h.docker.UnpauseContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
 	}
 	return nil, nil

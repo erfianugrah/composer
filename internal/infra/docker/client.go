@@ -162,6 +162,18 @@ func (c *Client) RestartContainer(ctx context.Context, id string) error {
 	return c.cli.ContainerRestart(ctx, id, container.StopOptions{})
 }
 
+// PauseContainer suspends all processes in a running container.
+func (c *Client) PauseContainer(ctx context.Context, id string) error {
+	return c.cli.ContainerPause(ctx, id)
+}
+
+// UnpauseContainer resumes a paused container. Docker rejects ContainerStart
+// on a paused container ("cannot start a paused container, try unpause
+// instead"), so paused containers must be resumed through this path.
+func (c *Client) UnpauseContainer(ctx context.Context, id string) error {
+	return c.cli.ContainerUnpause(ctx, id)
+}
+
 // Events returns a channel of Docker events.
 func (c *Client) Events(ctx context.Context) (<-chan events.Message, <-chan error) {
 	return c.cli.Events(ctx, events.ListOptions{})
