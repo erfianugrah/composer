@@ -440,6 +440,11 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("pulling images", zap.String("stack", name))
+	// Decrypt SOPS-managed .env/compose before pull so ${VAR} image-tag
+	// references (e.g. image: repo:${TAG}) interpolate to plaintext instead of
+	// the literal ENC[...] ciphertext. Re-encrypt on exit. Mirrors Deploy.
+	s.decryptSopsSecrets(ctx, name, st.Path)
+	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
 	pullCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 	result, err := s.compose.Pull(pullCtx, st.Path, cf)
