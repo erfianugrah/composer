@@ -3,6 +3,8 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
+import { TERMINAL_THEME } from "@/lib/terminal-theme";
+import { Button } from "@/components/ui/button";
 
 interface ActionTerminalProps {
   stackName: string;
@@ -19,14 +21,55 @@ interface StatusMessage {
 }
 
 export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTerminalProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const [phase, setPhase] = useState<string>("");
-  const [status, setStatus] = useState<"connecting" | "running" | "done" | "error">("connecting");
+  const [status, setStatus] = useState<"connecting" | "running" | "done" | "error" | "cancelling">("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
   const finishedRef = useRef(false); // tracks done/error to prevent stale closure in onclose
+  const [cancelled, setCancelled] = useState(false);
+  const [height, setHeight] = useState(350);
+  const minHeight = 120;
+
+  // ── Resize drag handle ───────────────────────────────────────────
+  const [dragging, setDragging] = useState(false);
+  const dragStartY = useRef(0);
+  const dragStartHeight = useRef(0);
+
+  const onDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      dragStartY.current = e.clientY;
+      dragStartHeight.current = height;
+      setDragging(true);
+    },
+    [height],
+  );
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      const delta = e.clientY - dragStartY.current;
+      setHeight(Math.max(minHeight, dragStartHeight.current + delta));
+    };
+    const onUp = () => setDragging(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [dragging, minHeight]);
+
+  useEffect(() => {
+    if (dragging) {
+      const id = requestAnimationFrame(() => fitRef.current?.fit());
+      return () => cancelAnimationFrame(id);
+    }
+  }, [height, dragging]);
 
   const connect = useCallback(() => {
     if (!termRef.current) return;
@@ -38,6 +81,7 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
     setStatus("connecting");
     setPhase("");
     setExitCode(null);
+    setCancelled(false);
     finishedRef.current = false;
 
     const term = new XTerm({
@@ -46,28 +90,7 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
       fontSize: 13,
       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
       scrollback: 5000,
-      theme: {
-        background: "#1d1f28",
-        foreground: "#e0e0e0",
-        cursor: "#1d1f28", // hide cursor (read-only)
-        selectionBackground: "#c574dd40",
-        black: "#15161e",
-        red: "#f37e96",
-        green: "#5adecd",
-        yellow: "#ffd866",
-        blue: "#8796f4",
-        magenta: "#c574dd",
-        cyan: "#79e6f3",
-        white: "#e0e0e0",
-        brightBlack: "#414457",
-        brightRed: "#ff4870",
-        brightGreen: "#17e2c7",
-        brightYellow: "#ffd866",
-        brightBlue: "#546eff",
-        brightMagenta: "#af43d1",
-        brightCyan: "#3edced",
-        brightWhite: "#fcfcfc",
-      },
+      theme: TERMINAL_THEME,
     });
 
     const fitAddon = new FitAddon();
@@ -105,7 +128,6 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
           const msg: StatusMessage = JSON.parse(event.data);
           if (msg.type === "phase") {
             setPhase(msg.phase || "");
-            // Write phase separator to terminal
             const phaseLabel = msg.phase?.toUpperCase() || "";
             term.write(`\r\n\x1b[1;35m--- ${phaseLabel} ---\x1b[0m\r\n`);
           } else if (msg.type === "done") {
@@ -135,7 +157,7 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
     };
 
     ws.onclose = () => {
-      if (!finishedRef.current) {
+      if (!finishedRef.current && !cancelled) {
         setStatus("error");
       }
     };
@@ -170,7 +192,27 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
     };
   }, [connect]);
 
+  // ── Cancel: send cancel message then close WS ──────────────────
+  const handleCancel = useCallback(() => {
+    setCancelled(true);
+    setStatus("cancelling");
+    const term = xtermRef.current;
+    if (term) {
+      term.write(`\r\n\x1b[1;33m⏸ Cancelling…\x1b[0m\r\n`);
+    }
+    // Send cancel message if WS is still open
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "cancel" }));
+      // Give the server a moment to process, then close
+      setTimeout(() => wsRef.current?.close(), 300);
+    } else {
+      wsRef.current?.close();
+    }
+  }, []);
+
   const actionLabel = action.charAt(0).toUpperCase() + action.slice(1);
+  const canCancel = status === "running" || status === "connecting";
+  const isTerminal = status !== "done" && status !== "error";
 
   return (
     <div className="rounded-lg border border-border bg-cp-950 overflow-hidden" data-testid="action-terminal">
@@ -179,32 +221,54 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
           <span
             className={`h-2 w-2 rounded-full ${
               status === "running" ? "bg-cp-yellow animate-pulse" :
+              status === "cancelling" ? "bg-cp-red animate-pulse" :
               status === "done" && exitCode === 0 ? "bg-cp-green" :
               status === "error" || (status === "done" && exitCode !== 0) ? "bg-cp-red" :
               "bg-muted-foreground"
             }`}
           />
           <span className="text-xs text-muted-foreground uppercase tracking-wider">
-            {status === "connecting" && "Connecting..."}
-            {status === "running" && `${actionLabel}: ${phase || "starting"}...`}
+            {status === "connecting" && "Connecting…"}
+            {status === "running" && `${actionLabel}: ${phase || "starting"}…`}
+            {status === "cancelling" && `${actionLabel}: cancelling…`}
             {status === "done" && exitCode === 0 && `${actionLabel} complete`}
             {status === "done" && exitCode !== 0 && `${actionLabel} failed`}
             {status === "error" && `${actionLabel} error`}
           </span>
         </div>
-        <button
-          className="text-xs text-muted-foreground hover:text-foreground"
-          onClick={onClose}
-        >
-          close
-        </button>
+        <div className="flex items-center gap-2">
+          {canCancel && (
+            <Button
+              size="xs"
+              variant="destructive"
+              onClick={handleCancel}
+              data-testid="action-terminal-cancel"
+            >
+              Cancel
+            </Button>
+          )}
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={onClose}
+            data-testid="action-terminal-close"
+          >
+            close
+          </button>
+        </div>
       </div>
-      <div
-        ref={termRef}
-        className="p-3"
-        style={{ height: "350px" }}
-        data-testid="action-terminal-output"
-      />
+      <div ref={containerRef} className="relative" style={{ height }}>
+        <div ref={termRef} className="p-3 size-full" data-testid="action-terminal-output" />
+        {/* Drag handle */}
+        {isTerminal && (
+          <div
+            className={`absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize transition-colors ${
+              dragging ? "bg-cp-purple/40" : "hover:bg-cp-purple/20"
+            }`}
+            onMouseDown={onDragStart}
+            title="Drag to resize terminal"
+          />
+        )}
+      </div>
     </div>
   );
 }

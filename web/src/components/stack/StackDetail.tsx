@@ -427,21 +427,24 @@ export function StackDetail({ stackName }: { stackName: string }) {
                             <Button size="xs" variant="destructive" onClick={() => apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
                               Stop
                             </Button>
-                            <Button
-                              size="xs" variant="ghost"
-                              onClick={() => { setInspectContainerId(c.id); setInspectPane("terminal"); }}
-                              data-testid={`terminal-btn-${c.id}`}
-                            >
-                              Terminal
-                            </Button>
-                            <Button
-                              size="xs" variant="ghost"
-                              onClick={() => { setInspectContainerId(c.id); setInspectPane("stats"); }}
-                              data-testid={`stats-btn-${c.id}`}
-                            >
-                              Stats
-                            </Button>
                           </>
+                        )}
+                        {/* Terminal: always visible, for running opens directly, for stopped shows start prompt */}
+                        <Button
+                          size="xs" variant="ghost"
+                          onClick={() => { setInspectContainerId(c.id); setInspectPane("terminal"); }}
+                          data-testid={`terminal-btn-${c.id}`}
+                        >
+                          Terminal
+                        </Button>
+                        {c.status === "running" && (
+                          <Button
+                            size="xs" variant="ghost"
+                            onClick={() => { setInspectContainerId(c.id); setInspectPane("stats"); }}
+                            data-testid={`stats-btn-${c.id}`}
+                          >
+                            Stats
+                          </Button>
                         )}
                       </div>
                     </TD>
@@ -458,7 +461,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
             const panes: { id: InspectPane; label: string; enabled: boolean }[] = [
               { id: "logs", label: "Logs", enabled: true },
               { id: "stats", label: "Stats", enabled: isRunning },
-              { id: "terminal", label: "Terminal", enabled: isRunning },
+              { id: "terminal", label: "Terminal", enabled: true },
             ];
             return (
               <section
@@ -518,9 +521,26 @@ export function StackDetail({ stackName }: { stackName: string }) {
                       <Terminal containerId={c.id} />
                     </Suspense>
                   )}
-                  {!isRunning && (inspectPane === "stats" || inspectPane === "terminal") && (
+                  {inspectPane === "terminal" && !isRunning && (
+                    <div className="space-y-3 py-2">
+                      <p className="text-sm text-muted-foreground">
+                        Container is not running. Start it to open a terminal.
+                      </p>
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" })
+                            .then(() => setTimeout(fetchStack, 1000))
+                        }
+                        data-testid={`terminal-start-${c.id}`}
+                      >
+                        Start &amp; Open Terminal
+                      </Button>
+                    </div>
+                  )}
+                  {inspectPane === "stats" && !isRunning && (
                     <p className="text-sm text-muted-foreground">
-                      Container is not running. Start it to view {inspectPane}.
+                      Container is not running. Start it to view stats.
                     </p>
                   )}
                 </div>
@@ -597,30 +617,50 @@ export function StackDetail({ stackName }: { stackName: string }) {
       )}
 
       {activeTab === "terminal" && (() => {
-        // Auto-select first running container if none selected
-        const target = activeTerminal || stack.containers.find(c => c.status === "running")?.id;
+        // Auto-select first running container, fall back to any container
+        const target = activeTerminal || stack.containers.find(c => c.status === "running")?.id || stack.containers[0]?.id;
+        const selectedContainer = target ? stack.containers.find(c => c.id === target) : null;
+        const isRunning = selectedContainer?.status === "running";
         return (
           <section aria-label="Terminal" className="space-y-2">
-            {stack.containers.filter(c => c.status === "running").length > 1 && (
+            {stack.containers.length > 1 && (
               <div className="flex items-center justify-end">
                 <select
                   value={target || ""}
                   onChange={(e) => setActiveTerminal(e.target.value)}
                   className="text-xs rounded border border-input bg-transparent px-2 py-1 font-data"
                 >
-                  {stack.containers.filter(c => c.status === "running").map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                  {stack.containers.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}{c.status !== "running" ? ` (${c.status})` : ""}
+                    </option>
                   ))}
                 </select>
               </div>
             )}
             <div>
-              {target ? (
+              {target && isRunning ? (
                 <Suspense fallback={<div className="h-96 animate-pulse bg-muted rounded" />}>
                   <Terminal containerId={target} />
                 </Suspense>
+              ) : target && !isRunning ? (
+                <div className="space-y-3 py-4">
+                  <p className="text-sm text-muted-foreground">
+                    Container <span className="font-medium">{selectedContainer?.name}</span> is{" "}
+                    <span className="text-cp-red">{selectedContainer?.status}</span>. Start it to open a terminal.
+                  </p>
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      apiFetch(`/api/v1/containers/${target}/start`, { method: "POST" })
+                        .then(() => setTimeout(fetchStack, 1000))
+                    }
+                  >
+                    Start &amp; Open Terminal
+                  </Button>
+                </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No running containers.</p>
+                <p className="text-sm text-muted-foreground">No containers in this stack.</p>
               )}
             </div>
           </section>

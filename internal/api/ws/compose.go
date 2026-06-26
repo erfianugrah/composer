@@ -34,9 +34,10 @@ func NewComposeHandler(stacks *app.StackService) *ComposeHandler {
 
 // composeControlMsg is a JSON message from the client.
 type composeControlMsg struct {
-	Type string `json:"type"` // "resize"
-	Cols uint16 `json:"cols"`
-	Rows uint16 `json:"rows"`
+	Type   string `json:"type"`             // "resize", "cancel"
+	Cols   uint16 `json:"cols,omitempty"`
+	Rows   uint16 `json:"rows,omitempty"`
+	Cancel bool   `json:"cancel,omitempty"` // explicit cancel request
 }
 
 // composeStatusMsg is a JSON text message sent to the client.
@@ -122,6 +123,9 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ac.Cleanup()
 
+	// Track whether cancel was user-requested (immediate) vs disconnect (grace period)
+	userCancelled := false
+
 	// Listen for resize messages from client
 	var currentCols, currentRows uint16 = cols, rows
 	var sizeMu sync.Mutex
@@ -137,7 +141,10 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			if msgType == websocket.MessageText {
 				var msg composeControlMsg
-				if json.Unmarshal(data, &msg) == nil && msg.Type == "resize" {
+				if json.Unmarshal(data, &msg) != nil {
+					continue
+				}
+				if msg.Type == "resize" {
 					sizeMu.Lock()
 					currentCols = msg.Cols
 					currentRows = msg.Rows
@@ -147,6 +154,10 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						activeProc.Resize(msg.Cols, msg.Rows)
 					}
 					procMu.Unlock()
+				} else if msg.Type == "cancel" {
+					userCancelled = true
+					cancel() // cancels ctx immediately, bypasses grace period
+					return
 				}
 			}
 		}
@@ -181,12 +192,18 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		opCtx = docker.WithDockerConfigDir(opCtx, ac.DockerConfigDir)
 	}
 
-	// If WS context is cancelled, propagate to compose after a grace period
+	// If WS context is cancelled, propagate to compose after a grace period.
+	// User-requested cancel (via JSON {"type":"cancel"}) sets userCancelled=true
+	// and cancels ctx immediately — no grace period.
 	go func() {
 		<-ctx.Done()
-		// Give compose 5s to finish naturally before killing
-		time.Sleep(5 * time.Second)
-		opCancel()
+		if userCancelled {
+			opCancel() // immediate
+		} else {
+			// Give compose 5s to finish naturally before killing
+			time.Sleep(5 * time.Second)
+			opCancel()
+		}
 	}()
 
 	// Phase transitions print only a blank line to detach docker compose's
