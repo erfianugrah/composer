@@ -30,7 +30,7 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
   const [status, setStatus] = useState<"connecting" | "running" | "done" | "error" | "cancelling">("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
   const finishedRef = useRef(false); // tracks done/error to prevent stale closure in onclose
-  const [cancelled, setCancelled] = useState(false);
+  const cancelledRef = useRef(false); // tracks user-cancel to suppress the onclose error status
   const [height, setHeight] = useState(350);
   const minHeight = 120;
 
@@ -81,7 +81,7 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
     setStatus("connecting");
     setPhase("");
     setExitCode(null);
-    setCancelled(false);
+    cancelledRef.current = false;
     finishedRef.current = false;
 
     const term = new XTerm({
@@ -157,7 +157,10 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
     };
 
     ws.onclose = () => {
-      if (!finishedRef.current && !cancelled) {
+      // cancelledRef (not the `cancelled` state) avoids a stale closure:
+      // connect() doesn't depend on `cancelled`, so the captured state value
+      // would always be the initial false.
+      if (!finishedRef.current && !cancelledRef.current) {
         setStatus("error");
       }
     };
@@ -194,7 +197,7 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
 
   // ── Cancel: send cancel message then close WS ──────────────────
   const handleCancel = useCallback(() => {
-    setCancelled(true);
+    cancelledRef.current = true;
     setStatus("cancelling");
     const term = xtermRef.current;
     if (term) {

@@ -34,7 +34,7 @@ export function Terminal({
   const [height, setHeight] = useState(initialHeight);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
-  const intentionalCloseRef = useRef(false);
+  const mouseUpCleanupRef = useRef<(() => void) | null>(null);
   // Track whether we've ever had a successful connection (for reconnect banner)
   const [wasConnected, setWasConnected] = useState(false);
 
@@ -89,11 +89,20 @@ export function Terminal({
     if (!termRef.current) return;
 
     // Clean up previous
+    if (mouseUpCleanupRef.current) {
+      mouseUpCleanupRef.current();
+      mouseUpCleanupRef.current = null;
+    }
     if (xtermRef.current) xtermRef.current.dispose();
     if (wsRef.current) {
-      intentionalCloseRef.current = true;
+      // Detach handlers BEFORE close() so the old socket's onclose can't
+      // fire the auto-reconnect path. close() is async — a shared
+      // "intentional" boolean would already be reset by the time onclose
+      // runs, producing a spurious reconnect on shell-change / manual reconnect.
+      wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
+      wsRef.current.onmessage = null;
       wsRef.current.close();
-      intentionalCloseRef.current = false;
     }
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
@@ -149,7 +158,7 @@ export function Terminal({
         }).catch(() => {});
         return false;
       }
-      // Ctrl+Shift+K: Clear terminal (sends Ctrl+L)
+      // Ctrl+Shift+K: Clear xterm's scrollback buffer (client-side only)
       if (e.ctrlKey && e.shiftKey && e.key === "K" && !e.metaKey) {
         term.clear();
         return false;
@@ -157,20 +166,17 @@ export function Terminal({
       return true;
     });
 
-    // ── Copy on selection: copy to clipboard when mouse is released ──
-    term.onSelectionChange(() => {
-      // We don't auto-copy here because xterm fires this continuously
-      // during selection. Instead we copy on mouseup via the element.
-    });
-
-    // Auto-copy selection on mouseup
+    // Auto-copy selection on mouseup. Track the listener so reconnects /
+    // shell-changes don't stack duplicates on the persistent container node.
+    const termNode = termRef.current;
     const mouseUpHandler = () => {
       const sel = term.getSelection();
       if (sel) {
         navigator.clipboard.writeText(sel).catch(() => {});
       }
     };
-    termRef.current.addEventListener("mouseup", mouseUpHandler);
+    termNode.addEventListener("mouseup", mouseUpHandler);
+    mouseUpCleanupRef.current = () => termNode.removeEventListener("mouseup", mouseUpHandler);
 
     // ── WebSocket connection ──────────────────────────────────────
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -196,22 +202,19 @@ export function Terminal({
 
     ws.onclose = () => {
       setConnected(false);
-      // If this wasn't an intentional close and we didn't already error,
-      // try to auto-reconnect with exponential backoff.
-      if (!intentionalCloseRef.current) {
-        const attempt = reconnectAttemptsRef.current;
-        if (attempt < 5) {
-          const delay = Math.min(500 * Math.pow(2, attempt), 8000); // 500ms, 1s, 2s, 4s, 8s
-          term.write(`\r\n\x1b[33m[Disconnected — reconnecting in ${delay / 1000}s...]\x1b[0m\r\n`);
-          reconnectTimerRef.current = setTimeout(() => {
-            reconnectAttemptsRef.current++;
-            connect();
-          }, delay);
-        } else {
-          term.write("\r\n\x1b[31m[Connection lost — max reconnect attempts reached]\x1b[0m\r\n");
-        }
+      // We only reach this handler for genuine drops — intentional closes
+      // (reconnect, shell-change, unmount) detach this handler first. So
+      // always attempt auto-reconnect with exponential backoff.
+      const attempt = reconnectAttemptsRef.current;
+      if (attempt < 5) {
+        const delay = Math.min(500 * Math.pow(2, attempt), 8000); // 500ms,1s,2s,4s,8s
+        term.write(`\r\n\x1b[33m[Disconnected — reconnecting in ${delay / 1000}s...]\x1b[0m\r\n`);
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectAttemptsRef.current++;
+          connect();
+        }, delay);
       } else {
-        term.write("\r\n\x1b[33m[Session ended]\x1b[0m\r\n");
+        term.write("\r\n\x1b[31m[Connection lost — max reconnect attempts reached]\x1b[0m\r\n");
       }
     };
 
@@ -250,9 +253,14 @@ export function Terminal({
     return () => {
       clearTimeout(resizeTimer);
       window.removeEventListener("resize", handleResize);
-      intentionalCloseRef.current = true;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      wsRef.current?.close();
+      if (mouseUpCleanupRef.current) mouseUpCleanupRef.current();
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.close();
+      }
       xtermRef.current?.dispose();
     };
   }, [connect]);

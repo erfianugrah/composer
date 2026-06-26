@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -34,10 +35,9 @@ func NewComposeHandler(stacks *app.StackService) *ComposeHandler {
 
 // composeControlMsg is a JSON message from the client.
 type composeControlMsg struct {
-	Type   string `json:"type"`             // "resize", "cancel"
-	Cols   uint16 `json:"cols,omitempty"`
-	Rows   uint16 `json:"rows,omitempty"`
-	Cancel bool   `json:"cancel,omitempty"` // explicit cancel request
+	Type string `json:"type"` // "resize", "cancel"
+	Cols uint16 `json:"cols,omitempty"`
+	Rows uint16 `json:"rows,omitempty"`
 }
 
 // composeStatusMsg is a JSON text message sent to the client.
@@ -123,8 +123,10 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ac.Cleanup()
 
-	// Track whether cancel was user-requested (immediate) vs disconnect (grace period)
-	userCancelled := false
+	// Track whether cancel was user-requested (immediate) vs disconnect (grace
+	// period). Read from the WS read goroutine, the ctx.Done goroutine, and the
+	// main phase loop — atomic to keep all three races-free.
+	var userCancelled atomic.Bool
 
 	// Listen for resize messages from client
 	var currentCols, currentRows uint16 = cols, rows
@@ -155,7 +157,7 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 					procMu.Unlock()
 				} else if msg.Type == "cancel" {
-					userCancelled = true
+					userCancelled.Store(true)
 					cancel() // cancels ctx immediately, bypasses grace period
 					return
 				}
@@ -197,7 +199,7 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// and cancels ctx immediately — no grace period.
 	go func() {
 		<-ctx.Done()
-		if userCancelled {
+		if userCancelled.Load() {
 			opCancel() // immediate
 		} else {
 			// Give compose 5s to finish naturally before killing
@@ -277,6 +279,15 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if cmdErr != nil {
 			lastErr = cmdErr
+			// A user-requested cancel surfaces here as a killed subprocess.
+			// Stop immediately rather than falling through to the non-fatal
+			// pull fallback below — otherwise cancelling during the pull
+			// phase of an "update" would refresh the context and proceed to
+			// deploy anyway, defeating the cancel.
+			if userCancelled.Load() {
+				sendStatus(ctx, conn, composeStatusMsg{Type: "error", Message: "Cancelled by user"})
+				break
+			}
 			// For "update", pull failure is non-fatal -- continue to deploy
 			if action == "update" && phase == "pull" {
 				sendStatus(ctx, conn, composeStatusMsg{
