@@ -34,8 +34,11 @@ export function InlineStats({ containerId, stats: propStats }: Props) {
   useEffect(() => {
     if (propStats !== undefined) return; // parent is managing stats
     let cancelled = false;
+    let activeES: EventSource | null = null;
+    let activeTimeout: ReturnType<typeof setTimeout> | null = null;
     const fetchStats = async () => {
       const es = new EventSource(`/api/v1/sse/containers/${containerId}/stats`, { withCredentials: true });
+      activeES = es;
       const handler = (e: MessageEvent) => {
         try {
           const d = JSON.parse(e.data);
@@ -47,12 +50,20 @@ export function InlineStats({ containerId, stats: propStats }: Props) {
       es.addEventListener("stats", handler);
       es.onerror = () => es.close();
       // Auto-close after 3 seconds if no data
-      setTimeout(() => es.close(), 3000);
+      activeTimeout = setTimeout(() => es.close(), 3000);
     };
     fetchStats();
     // Re-fetch every 10 seconds instead of holding SSE open
     const interval = setInterval(fetchStats, 10000);
-    return () => { cancelled = true; clearInterval(interval); };
+    // Close the in-flight EventSource on unmount so a connection opened just
+    // before unmount is not orphaned (leaking a server goroutine + fd until
+    // its 3s timeout) and cannot fire setStats on an unmounted component.
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      if (activeTimeout) clearTimeout(activeTimeout);
+      if (activeES) activeES.close();
+    };
   }, [containerId, propStats]);
 
   if (!stats) return <span className="text-[10px] text-muted-foreground font-data">--</span>;

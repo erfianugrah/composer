@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"io"
 	"net/http"
 	"strings"
 )
@@ -44,6 +45,10 @@ func CSRF(next http.Handler) http.Handler {
 		// Cookie-based mutating request: require X-Requested-With header
 		if _, hasCookie := r.Cookie("composer_session"); hasCookie == nil {
 			if r.Header.Get("X-Requested-With") == "" {
+				// Drain the unread body before responding so an HTTP/1.1
+				// keep-alive connection is not left with leftover bytes that
+				// corrupt the next request on the same connection.
+				io.Copy(io.Discard, r.Body)
 				http.Error(w,
 					`{"status":403,"title":"Forbidden","detail":"X-Requested-With header required for cookie-based mutations"}`,
 					http.StatusForbidden)

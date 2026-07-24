@@ -30,6 +30,11 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
   const [paused, setPaused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
+  // Keep the latest maxLines readable inside the SSE handler without adding it
+  // to the effect deps (which would tear down + reconnect the stream and drop
+  // the buffered logs on every maxLines change).
+  const maxLinesRef = useRef(maxLines);
+  maxLinesRef.current = maxLines;
 
   useEffect(() => {
     let url: string;
@@ -57,11 +62,11 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
         };
         setLines((prev) => {
           // P21: avoid full array copy when under the limit
-          if (prev.length < maxLines) {
+          if (prev.length < maxLinesRef.current) {
             return [...prev, line];
           }
           // Over limit: drop oldest, append new
-          const next = prev.slice(-(maxLines - 1));
+          const next = prev.slice(-(maxLinesRef.current - 1));
           next.push(line);
           return next;
         });

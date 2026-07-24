@@ -21,8 +21,8 @@ build-frontend: ## Build Astro static site
 
 test: test-unit ## Run unit tests (fast, no Docker needed)
 
-test-unit: ## Run Go unit tests only
-	go test ./internal/domain/... ./internal/app/... ./internal/infra/eventbus/... ./internal/infra/crypto/... ./internal/infra/sops/... ./internal/infra/cache/... ./internal/infra/notify/...
+test-unit: ## Run Go unit tests only (race detector on: this code is goroutine-heavy)
+	go test -race -count=1 ./internal/domain/... ./internal/app/... ./internal/infra/eventbus/... ./internal/infra/crypto/... ./internal/infra/sops/... ./internal/infra/cache/... ./internal/infra/notify/...
 
 test-integration: ## Run Go integration tests (needs Docker for Postgres)
 	go test -tags=integration -count=1 -timeout=5m -p 1 ./...
