@@ -1,341 +1,304 @@
 # Self-Upgrade: Composer Managing Composer
 
-> **Design doc — not implemented yet.** Revised after review identified four
-> design gaps in the first draft (legacy-label assumption, non-compose
-> deployment path, ephemeral job tracking, helper image selection). Target:
-> v0.9.0, after bootstrap work.
+> **Design doc - rev 3.** Rev 1 had four design gaps (legacy-label assumption,
+> non-compose path, ephemeral job tracking, helper image). Rev 2 corrected them
+> but introduced a new technical error in the Gap-1 fix (the "daemon project
+> registry" does not exist) and left the trigger side unspecified. Rev 3 fixes
+> the compose-path mechanics for real, makes the **existing webhook receiver
+> the primary trigger**, and folds in operational lessons from watchtower's
+> ephemeral-orchestrator self-update (nicholas-fedor/watchtower#1491), which
+> independently converged on the same helper-container design.
 
 ## Status
 
-- [ ] Design review (this doc, revised 2026-04-23)
+- [x] Design review (rev 3, 2026-07-04)
+- [ ] Prerequisite: shutdown drain + stale-run reconciliation (see below)
 - [ ] Self-identification via container inspect
-- [ ] Compose-based upgrade path
-- [ ] Non-compose upgrade path (`docker run` reconstruction) — covers Unraid template
+- [ ] Compose-based upgrade path (label-derived compose file paths)
+- [ ] Non-compose upgrade path (`docker run` reconstruction) - covers Unraid
 - [ ] Singleton DB row for cross-restart job tracking
-- [ ] Helper image decision (use composer's own image)
+- [ ] Webhook trigger routing (system-scoped webhook)
+- [ ] Manual trigger `POST /api/v1/system/upgrade` + status endpoint
+- [ ] Boot-time: orphan-helper sweep + upgrade-row reconciliation
+- [ ] `release.yml` webhook step (fires the trigger on image push)
 - [ ] Tests
 - [ ] Docs (`configuration.md`, `security.md`, `api-reference.md`)
 
 ## Problem
 
-Composer's normal flow is `git pull → docker compose pull → docker compose up -d`.
+Composer's normal flow is `git pull -> docker compose pull -> docker compose up -d`.
 When the target stack is composer itself, step 3 stops and recreates the
-composer container mid-request. The process doing the restart dies before
-it can confirm success or return the response to the client. Operators today
-work around this with an external `docker compose pull && up -d` command run
-from SSH / watchtower / their host's cron — which breaks the "self-hosted all
-the way down" story.
+composer container mid-request. Worse, the compose CLI runs as a **subprocess
+of composerd** (`exec.CommandContext`): when the daemon SIGTERMs composerd,
+`appCancel()` kills the compose child mid-`up`. If death lands between "old
+container removed" and "new container created", composer is simply gone -
+`restart: unless-stopped` cannot help because the container no longer exists.
+
+Anything composerd parents dies with it; anything the **daemon** parents
+survives. That asymmetry is the whole design constraint.
 
 ## Why simple fixes don't work
 
+- **Point the existing webhook at composer's own stack**: the webhook ->
+  `GitService.SyncAndRedeploy` path ends in `compose.Pull` + `compose.Up` as
+  composerd subprocesses - exactly the suicidal pattern above.
 - **Async via `?async=true`**: the goroutine runs inside composer's process;
   dies when composer is SIGKILL'd by the daemon.
 - **`compose up` in a trailing `&`**: the subprocess inherits composer's
-  mount namespace; daemon reaps it when the composer container exits.
-- **`syscall.Exec` in-place binary swap**: container image is read-only;
-  `/usr/local/bin/composerd` can't be replaced without a new container.
+  process group; dies with it.
+- **`syscall.Exec` in-place binary swap**: container image is read-only.
 - **Blue-green on an alternate port**: requires coordination composer doesn't
-  have (proxy, shared volume contention, port exclusion).
+  have (proxy, shared volume contention, port exclusion). Also: composer
+  publishes `${COMPOSER_PORT:-8080}:8080`, and Docker holds published ports
+  while the old container runs - any create-before-stop ordering fails with
+  `port is already allocated` (watchtower's multi-year bug; their rename-based
+  self-update skipped port-mapped containers entirely for this reason).
+
+## Trigger: the existing webhook receiver (primary) + manual POST (fallback)
+
+Detection is **push-based, not polled**. The pieces already exist:
+
+- `POST /api/v1/hooks/{id}` - raw chi route, HMAC-validated per-webhook
+  secret, CSRF-exempt, auth-exempt (signature instead of session), delivery
+  history + audit trail. (`internal/api/handler/webhook*.go`, `server.go`)
+- `GitService.SyncAndRedeploy` already treats the webhook as "a new image is
+  available" - it always pulls and redeploys even when the compose file is
+  unchanged (git_service.go).
+- `release.yml` already builds + pushes the image on `v*` tags. Add a final
+  step: POST to the composer's hook URL with the HMAC secret. GitHub can also
+  deliver `release` events directly to the hook URL (provider `generic`).
+
+What is missing is **routing**: webhooks today bind to a `stack_name` and
+dispatch to `GitService.SyncAndRedeploy`. For self-upgrade we add a
+system-scoped binding:
+
+- Webhook CRUD gains a reserved scope: `stack_name = "_system"` (or a
+  nullable `scope` column - pick at implementation time; `_system` is the
+  zero-migration option if stack_name is free-form, otherwise add a small
+  migration).
+- The webhook handler (`handler.NewWebhookHandler`) dispatches `_system`
+  hooks to `SelfUpgradeService.Request(ctx, triggeredBy:"webhook:"+id)`
+  instead of `GitService`.
+- Manual path preserved: `POST /api/v1/system/upgrade` (admin-only) calls the
+  same `SelfUpgradeService.Request` - same code path, different auth.
+
+Both entry points converge on one service method; there is exactly one
+upgrade state machine regardless of trigger.
 
 ## Solution: detached helper container, two deployment paths
 
 Composer launches a **one-shot helper container** on the host Docker daemon
-via the SDK (not via `docker compose` exec — that keeps the subprocess inside
-composer's namespace). The helper is parented by the daemon, not by composer,
-so it survives composer's death.
+via the SDK (not via `docker compose` exec - that keeps the subprocess inside
+composer's process tree). The helper is parented by the daemon, not by
+composer, so it survives composer's death.
 
-The upgrade command inside the helper branches on deployment type:
+The helper:
 
-| Deployment | Helper command |
-|---|---|
-| `docker compose` (detected via `com.docker.compose.project` label) | `docker compose -p <project> pull && docker compose -p <project> up -d` |
-| Plain `docker run` (no compose label — Unraid template case) | `docker pull <image> && docker stop <self> && docker rm <self> && docker run <reconstructed flags> <image>` |
+1. Pulls the target image.
+2. Waits for the ack sentinel (see Coordination below).
+3. Runs the deployment-path-specific upgrade command.
+4. Polls the NEW composer container's health status (the image's own
+   HEALTHCHECK hits the public `GET /api/v1/system/health` - a ready-made
+   readiness probe) until `healthy` or timeout (~120s).
+5. Writes its outcome where the new composer can read it (exit code +
+   container logs; the helper stays around for inspection - `--rm` is NOT
+   used; cleanup is the new composer's job).
+6. Does NOT prune the old image. Rollback material is deleted only by the
+   new composer after a healthy boot (deferred cleanup).
 
-## Design gaps in the first draft (corrected here)
+Helper container properties (from watchtower's postmortems):
 
-### ❌ Gap 1: assumed legacy labels that aren't safe
+- Created via SDK with `AutoRemove: false`, no port bindings, no compose
+  project labels.
+- Labeled `io.composer.upgrade-helper=true` (+ `io.composer.upgrade-id`).
+  On boot, composer sweeps any containers with this label left over from a
+  crashed attempt (inspect -> collect logs -> remove) BEFORE starting a new
+  upgrade.
+- Uses **composer's own (target) image** as the helper image (rev 2 Gap-4
+  decision stands: the Dockerfile bundles docker CLI + compose plugin;
+  override entrypoint with `Entrypoint: []string{}` and run
+  `/bin/sh -c '<script>'`). Helper runs as root (entrypoint.sh bypassed) -
+  fine, it only writes to the shared data volume's sentinel path.
 
-First draft assumed `com.docker.compose.project.working_dir` and
-`com.docker.compose.project.config_files` exist. Per
-[docker/compose#10389](https://github.com/docker/compose/issues/10389):
+### Compose path (REVISED - rev 3)
 
-> `com.docker.compose.project.working_dir` and `com.docker.compose.project.config_files`
-> are **legacy labels used in earlier version of Docker Desktop**... AFAICT
-> Desktop has been updated so it now relies on `--project-name` for
-> equivalent commands and we could remove those labels. They're not a safe
-> way to track the compose model used to create an application, as file
-> might have been updated in between.
+Rev 2 claimed `docker compose -p <project> up -d` works via a "daemon
+project registry - no path on disk needed". **This is false.** Verified
+against current compose source (`pkg/api/labels.go` in docker/compose v2):
+there is no daemon-side registry of compose files, and `compose up` without
+`-f` fails with "no configuration file provided". The labels rev 1 relied on
+are NOT legacy either - compose still stamps every container with:
 
-**Correction**: rely only on `com.docker.compose.project` (stable, maintained).
-Use `docker compose -p <project> up -d` which looks up the project's compose
-file via the daemon's project registry — no path on disk needed from our side.
+- `com.docker.compose.project`
+- `com.docker.compose.project.working_dir` (absolute host path)
+- `com.docker.compose.project.config_files` (absolute host paths, comma-joined)
+- `com.docker.compose.project.environment_file` (when `--env-file` was used)
 
-### ❌ Gap 2: ignored non-compose deployments (Unraid template)
+These are absolute **host** paths. The compose CLI resolves relative paths
+(env_file, volume binds, build contexts) against the project directory, so
+the helper must see the same paths. Composer therefore:
 
-First draft said "return 422, use your platform's update flow" for
-non-compose deployments. But **production Unraid uses the template which emits
-a plain `docker run` command** — no compose labels. That's the primary
-deployment target! Punting here defeats the purpose.
+1. Reads the four labels off its OWN container (via `SelfContainerID()` +
+   `ContainerInspect`).
+2. Launches the helper with bind mounts mapping each host path to the SAME
+   absolute path inside the helper (`<working_dir>:<working_dir>:ro`, plus
+   each config file and env file's parent dir as needed - simplest correct
+   approach: mount working_dir and each config file's dir, all ro).
+3. Helper runs:
+   `docker compose --project-directory <working_dir> -f <file1> [-f <file2>...]
+    [--env-file <env_file>] -p <project> up -d --no-build --remove-orphans composer`
 
-**Correction**: separate non-compose path that reconstructs the `docker run`
-flags from `container inspect`:
+   Note the explicit **`composer` service argument**: composer's own
+   deploy/compose.yaml also runs postgres + valkey; scoping the recreate to
+   the composer service avoids needlessly bouncing stateful dependencies.
 
-```go
-type reconstructedRunSpec struct {
-    Name        string
-    Image       string             // from args, not from inspect (we want NEW image)
-    Env         []string           // .Config.Env
-    Binds       []string           // .HostConfig.Binds
-    PortBindings nat.PortMap        // .HostConfig.PortBindings
-    NetworkMode string             // .HostConfig.NetworkMode
-    RestartPolicy container.RestartPolicy // .HostConfig.RestartPolicy
-    SecurityOpt []string           // .HostConfig.SecurityOpt
-    Labels      map[string]string  // .Config.Labels (preserves Unraid template markers)
-    Capabilities + CapDrops + etc.
-}
-```
+Caveat carried from docker/compose#10389: the file on disk may have changed
+since the container was created. For an upgrade this is acceptable (arguably
+desirable - you get the current file), but the helper should log a diff-worthy
+warning if the config-hash label (`com.docker.compose.config-hash`) won't
+match after recreate. Compose handles that reconciliation itself; we just
+don't fight it.
 
-The helper receives this spec as JSON env var, `docker stop` + `docker rm` the
-old container, then `ContainerCreate + Start` with the new spec + new image.
-This works for Unraid because Unraid's template-driven container just becomes
-"the container being recreated" — the template metadata is in the labels, so
-Unraid keeps track of it after the recreation.
+### Non-compose path (`docker run` reconstruction - Unraid)
 
-**Caveat**: some host-level flags can't round-trip perfectly (e.g. Unraid's
-`--ip` flag corresponds to `.NetworkSettings.Networks.<net>.IPAMConfig.IPv4Address`
-which isn't always populated). Need to test against the actual Unraid template
-output and add missing field plumbing iteratively. This is inherently fiddly;
-maintain a test fixture from a real Unraid composer container.
+Unchanged from rev 2, and now the ONLY path for Unraid (template emits plain
+`docker run`, no compose labels):
 
-### ❌ Gap 3: in-memory `JobManager` lost on restart
+- Reconstruct the run spec from `container inspect` (env, binds, port
+  bindings, network mode, restart policy, security opts, labels, caps).
+- Pass the spec to the helper as a JSON env var.
+- Helper: `docker stop <self> && docker rm <self> && docker run <spec> <new image>`.
+  Stop+remove BEFORE create: the port-conflict lesson - create-before-stop
+  can never work with published ports.
+- Round-trip fidelity caveat stands (Unraid `--ip` -> IPAMConfig etc.);
+  maintain a test fixture from a real Unraid composer container.
 
-First draft: "New composer marks job completed based on container inspect."
-But `app.JobManager` is in-memory (`map[string]*Job` in `app/jobs.go`). Old
-composer creates job, dies, new composer boots with empty job map — the
-client's job ID is invalid after restart.
+## State: singleton DB row
 
-**Correction**: persist the upgrade state as a **singleton DB row** keyed
-by `"system.upgrade"`. Only one upgrade at a time, so a singleton row is
-sufficient:
+In-memory `JobManager` dies on restart, so upgrade state lives in the DB:
 
 ```sql
--- Migration in store/migrations:
 CREATE TABLE IF NOT EXISTS system_upgrade (
     id           TEXT PRIMARY KEY DEFAULT 'singleton'
                  CHECK (id = 'singleton'),
     started_at   TIMESTAMP NOT NULL,
-    started_by   TEXT NOT NULL,          -- user ID that initiated
+    started_by   TEXT NOT NULL,          -- user ID, or "webhook:wh_xxx"
     from_version TEXT NOT NULL,
     target_image TEXT NOT NULL,
     helper_id    TEXT NOT NULL,
-    status       TEXT NOT NULL            -- pending, helper_running, completed, failed
+    status       TEXT NOT NULL
                  CHECK (status IN ('pending','helper_running','completed','failed')),
     finished_at  TIMESTAMP,
     error        TEXT
 );
 ```
 
-Old composer writes row with `status='pending'`. Helper updates to
-`'helper_running'` when it picks up the job (via docker events or file
-sentinel — see Gap 5). New composer on boot reads the row, inspects the
-helper container (still around, since `--rm` fires only after exit), marks
-`'completed'` or `'failed'` based on helper exit code.
+- Old composer writes `status='pending'` before launching the helper.
+- New composer on boot reads the row, inspects the helper container (kept,
+  not `--rm`'d), marks `completed` or `failed` from its exit code + logs,
+  then removes the helper and - only after itself reporting healthy -
+  prunes the old image.
+- Second trigger while `pending`/`helper_running` -> 409.
+- `GET /api/v1/system/upgrade/status` returns the row. Public read (like
+  `/system/health`) so the UI can show "upgrade in progress" across the
+  restart window; write stays admin/HMAC only.
 
-`GET /api/v1/system/upgrade/status` returns the row. No per-job-ID
-endpoint — there's only ever one upgrade row.
+## Coordination: sentinel file (not sleep)
 
-### ❌ Gap 4: helper image may not have `docker compose` plugin
+Rev 2's sentinel design stands. Old composer schedules
+`$COMPOSER_DATA_DIR/upgrade-ack` to be written ~500ms after the HTTP
+response returns; the helper waits for the file, deletes it, then proceeds.
+Correctness does not depend on the client having received the response.
+The `composer_data` volume persists across the recreate, and entrypoint.sh's
+`chown -R` repairs any root-owned helper artifacts on next boot.
 
-First draft specified `docker:28-cli` as the helper image. That's Alpine
-with the Docker CLI, but the compose v2 plugin
-(`/usr/libexec/docker/cli-plugins/docker-compose`) isn't guaranteed.
+## Prerequisite: shutdown drain + stale-run reconciliation
 
-**Correction**: use **composer's own image** as the helper. Composer's
-Dockerfile already bundles `docker` + `docker-compose` (verified in
-`deploy/Dockerfile` stages). Override the entrypoint:
+Independent of (but required for) self-upgrade:
 
-```go
-helperCmd := []string{
-    "/bin/sh", "-c",
-    "sleep 5 && " + upgradeCommand,
-}
-
-cfg := container.Config{
-    Image:      newImageRef,  // same as target — we're pulling it anyway
-    Entrypoint: []string{},   // bypass composer's main
-    Cmd:        helperCmd,
-    // ...
-}
-```
-
-The helper pulls `newImageRef` → runs the upgrade command (compose or
-docker-run depending on path) → exits. Advantages:
-- No separate image to pin / track
-- Helper version matches composer version (the image we're upgrading TO)
-- `docker compose` plugin definitely available — composer uses it itself
-
-Disadvantage: the helper pulls the full composer image before it can do
-anything. Acceptable — the pull would happen in step 3 of the upgrade
-anyway. Just moves it earlier.
-
-### ❌ Gap 5: hand-wavy sleep-5-seconds coordination
-
-First draft's helper command starts with `sleep 5` to give composer time to
-flush its HTTP response. Flaky if the response takes longer than 5s or the
-client's TCP stack buffers the handshake differently.
-
-**Correction**: **sentinel file coordination**. Composer writes
-`$COMPOSER_DATA_DIR/upgrade-ack` after its response is flushed; helper
-watches for the file before starting its work:
-
-```go
-// Old composer's handler:
-func UpgradeHandler(...) (...) {
-    ... create row, launch helper ...
-    resp := &UpgradeResponse{...}
-
-    // huma flushes resp when this function returns. Schedule the ack
-    // file write AFTER the response flush by using a goroutine that
-    // waits briefly then writes.
-    go func() {
-        time.Sleep(500 * time.Millisecond)  // small margin; response is local I/O
-        os.WriteFile(filepath.Join(dataDir, "upgrade-ack"), []byte(row.ID), 0600)
-    }()
-
-    return resp, nil
-}
-
-// Helper's command:
-// while [ ! -f /data/upgrade-ack ]; do sleep 1; done && rm /data/upgrade-ack && <upgrade commands>
-```
-
-Still has a small window (response not yet flushed when file is written)
-but much smaller than 5s blind sleep, and correctness doesn't depend on
-response being flushed — even if the client times out, the upgrade
-proceeds. Client's job is to poll `/api/v1/system/upgrade/status` for
-progress, not rely on the initial 202.
+- `PipelineService.Stop()` exists but is never called from `main.go` -
+  wire it into the shutdown sequence before `httpSrv.Shutdown` returns.
+- On boot, mark any `runs` rows stuck in `running` as
+  `interrupted` ("composer restarted") - today every SIGTERM (upgrade or
+  otherwise) strands them forever.
+- Note Docker's default stop grace is 10s vs main.go's 30s HTTP drain: the
+  daemon will SIGKILL at 10s unless `stop_grace_period` is raised in
+  deploy/compose.yaml (recommend 35s) and plumbed into the reconstructed
+  run spec for the docker-run path (`--stop-timeout`).
 
 ## API surface
 
 ```
-POST /api/v1/system/upgrade
-Authentication: admin
-Request body: {} or {"pull_new_image": true}  (pull_new_image defaults true)
-Response: 202 Accepted
-{
-  "helper_container_id": "c0ffee...",
-  "from_version": "0.8.2",
-  "target_image": "ghcr.io/erfianugrah/composer:latest-amd64",
-  "deployment_type": "compose" | "docker_run",
-  "status_url": "/api/v1/system/upgrade/status"
-}
-
-GET /api/v1/system/upgrade/status
-Authentication: admin  (or public?  leaning public so the UI can show
-"upgrade in progress" during the restart window)
-Response:
-{
-  "status": "helper_running",
-  "started_at": "...",
-  "started_by": "user_abc",
-  "from_version": "0.8.2",
-  "target_image": "...",
-  "helper_container_id": "...",
-  "details": "Helper container pulling new image..."
-}
+POST /api/v1/hooks/{id}            (existing; _system-scoped webhook -> upgrade)
+POST /api/v1/system/upgrade        admin -> 202 {helper_container_id, from_version,
+                                     target_image, deployment_type, status_url}
+GET  /api/v1/system/upgrade/status public -> {status, started_at, started_by,
+                                     from_version, target_image,
+                                     helper_container_id, error?}
 ```
 
 ## Security considerations
 
-- **Admin-only for POST** — upgrade is "run helper container with Docker
-  socket" + "recreate composer with new image". Catastrophic if abused.
-- **Image source constraint**: target image MUST match the pattern
+- **Admin-only POST**; webhook path is HMAC-validated with per-hook secrets.
+- **Image source constraint**: target image MUST match
   `ghcr.io/erfianugrah/composer:<tag>` (configurable via
-  `COMPOSER_UPGRADE_IMAGE_PREFIX` env var). No arbitrary-image execution
-  via this endpoint.
-- **Helper image IS target image**: the helper pulls the image composer
-  will recreate with; if the image is malicious, composer was already
+  `COMPOSER_UPGRADE_IMAGE_PREFIX`). No arbitrary-image execution.
+- **Helper image IS target image**: if it's malicious, composer was already
   going to execute it. No amplification.
-- **Audit**: row in `system_upgrade` table includes `started_by`, accessible
-  via the standard audit log query too.
-- **One upgrade at a time**: the singleton row's PRIMARY KEY CHECK enforces
-  this at the DB level. Second POST while `status='pending'` or
-  `'helper_running'` returns 409.
-- **Rollback not automatic**: if the new image fails to start, the row gets
-  `status='failed'` but composer is stuck on an unhealthy container.
-  Recovery: operator sets a known-good image tag in compose.yaml / Unraid
-  template and retries, OR uses platform-native restart. Automatic rollback
-  is v0.10+ work.
-
-## Unraid path (integrated, not separate)
-
-First draft treated Unraid as a fallback. In the revised design, Unraid IS
-a first-class case because it's the primary non-compose deployment. The
-docker-run reconstruction path handles it natively — once implemented,
-Unraid users can use both:
-
-- **Unraid Docker tab** → "Update Ready" → one click (works once the v0.8.2
-  manifest fix propagates, doesn't touch composer's code)
-- **`POST /api/v1/system/upgrade`** → same end result via composer's own
-  plumbing (works identically on Unraid, bare Docker, and compose)
-
-Both coexist; pick based on preference.
+- **Audit**: `started_by` in the row + standard audit middleware entries for
+  both trigger paths.
+- **One at a time**: enforced by the singleton PRIMARY KEY CHECK + 409.
+- **Rollback not automatic**: on failure the row goes `failed`; operator
+  pins a known-good tag and retries. The old image is retained until the
+  new composer self-confirms healthy, so manual rollback is
+  `docker run <old image>` with the same spec. Automatic rollback is
+  follow-up work.
 
 ## Testing strategy
 
 ### Unit
 
-- `SelfContainerID()`: parse various `/proc/self/cgroup` formats
-  (cgroup v1, cgroup v2, hostname fallback, env var override)
-- `DetectDeploymentType()`: reads compose project label; returns
-  `compose` or `docker_run`
-- `ReconstructRunSpec()`: round-trip test — inspect output → spec →
-  equivalent docker run command. Fixture-based.
-- Singleton-row ORM: CREATE/UPDATE idempotency; status transitions
-  (pending → helper_running → completed | failed)
+- `SelfContainerID()`: cgroup v1/v2 formats, hostname fallback, env override.
+- `DetectDeploymentType()` + label extraction (config_files parsing:
+  comma-joined, multiple files, env_file present/absent).
+- `ReconstructRunSpec()`: inspect -> spec -> docker-run-equivalent round
+  trip. Fixture-based (incl. an Unraid fixture).
+- Singleton-row repo: idempotency, status transitions, 409 conflict logic.
+- Webhook routing: `_system` scope dispatches to SelfUpgradeService, not
+  GitService; stack-scoped hooks unaffected.
+- Boot reconciliation: stale runs marked interrupted; orphan helpers swept;
+  pending row -> completed/failed from helper exit code.
 
 ### Integration (testcontainers)
 
-- Run composer in a container via testcontainers
-- POST `/system/upgrade` with a mock target image (e.g. alpine:3 or
-  a pinned-minor version of composer)
-- Verify helper container is created with correct command
-- Wait for helper to complete
-- Verify new composer boots, reads the row, marks it completed
-- Verify old composer is gone (`docker inspect` returns 404)
+- Composer-in-container; POST upgrade against a mock target image; verify
+  helper spec (mounts, labels, entrypoint override, no ports); helper
+  completes; new composer reconciles the row; old container gone.
 
 ### Manual / E2E
 
-- Compose deployment path: `docker compose up` on a laptop, POST
-  upgrade, watch `docker ps` for helper + restart
-- Unraid path: deploy composer via the Unraid template, POST
-  upgrade from the web UI, verify template metadata (IP, network,
-  labels) preserved after recreation
+- Compose path on a laptop deploy; Unraid path via the template (verify
+  template metadata survives recreation).
+- release.yml webhook step against a staging composer before tagging it on.
 
 ## Migration path
 
-1. ✅ v0.8.2 (Unraid manifest fix — gives Unraid users a native update path
-   today without any new code).
-2. v0.9.0: implement the compose path first — lower risk, simpler flag
-   mapping, covers users who deploy composer via `docker compose up`.
-3. v0.9.1 or v0.9.2: implement the docker-run reconstruction path for
-   Unraid + plain `docker run` deployments.
-4. Document both paths in `docs/configuration.md`: platform-native
-   (Unraid "Update Ready", watchtower for compose) remains the
-   recommended default; `/system/upgrade` is the "self-hosted all the
-   way down" path for operators who want no external orchestrators.
+1. Prerequisite PR: drain + stale-run reconciliation + `stop_grace_period`.
+2. v0.16.0: compose path + webhook routing + status endpoint (self-upgrade
+   for compose deployments).
+3. v0.16.x: docker-run reconstruction path (Unraid).
+4. release.yml webhook step last, once the receiver side is proven.
 
 ## Out of scope
 
-- **Automatic rollback on upgrade failure**: requires keeping the old
-  image ID and recreating with it on boot failure. Straightforward once
-  basic upgrade works; v0.10+.
-- **Version pinning from the UI**: the endpoint upgrades to whatever tag
-  the current deployment references (compose.yaml image: line, or
-  `.Config.Image` from container inspect for docker-run path). A UI
-  control for "pick version from GHCR tag list" is nice-to-have.
-- **Multi-instance coordination (HA)**: if composer ever runs as an HA
-  pair, self-upgrade needs leader election + one-at-a-time rollout.
-  Not urgent — composer is a self-hosting platform, not a SaaS.
-- **Upgrading stacks composer manages**: the existing deploy endpoint
-  already handles that. This doc is only about composer upgrading itself.
+- **Automatic rollback on upgrade failure** (retained old image makes manual
+  rollback easy; automation later).
+- **Version pinning from the UI** (helper targets whatever ref the current
+  deployment uses: compose.yaml `image:` line, or `.Config.Image` for
+  docker-run).
+- **Polling-based update detection / "update available" badge**: the webhook
+  makes it unnecessary for the upgrade path. A nice-to-have UI hint later
+  (registry digest compare), deliberately not in this design.
+- **HA / multi-instance coordination.**
+- **Upgrading stacks composer manages**: existing deploy endpoint. This doc
+  is only composer-upgrading-composer.
