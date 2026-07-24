@@ -67,6 +67,7 @@ func TestLoadGlobalAgeKey_NotFound(t *testing.T) {
 	os.Unsetenv("SOPS_AGE_KEYS")
 	os.Unsetenv("COMPOSER_SOPS_AGE_KEY_FILE")
 	os.Unsetenv("SOPS_AGE_KEY_FILE")
+	t.Setenv("HOME", t.TempDir()) // isolate fallback #7 (~/.config/sops/age/keys.txt) from the host
 
 	key := LoadGlobalAgeKey(t.TempDir()) // empty dir
 	assert.Equal(t, "", key)
