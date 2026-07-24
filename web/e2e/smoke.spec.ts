@@ -58,14 +58,14 @@ test.describe("Login Page", () => {
     });
   });
 
-  test("uses AuthLayout with dark background and glow effect", async ({ page }) => {
+  test("uses AuthLayout with dark background", async ({ page }) => {
     await page.goto("/login");
 
     const bgColor = await page.evaluate(() =>
       getComputedStyle(document.body).backgroundColor
     );
-    // cp-950: #15161e -> rgb(21, 22, 30)
-    expect(bgColor).toMatch(/rgb\(21,\s*22,\s*30\)/);
+    // --color-background: #1a1a1d -> rgb(26, 26, 29)
+    expect(bgColor).toMatch(/rgb\(26,\s*26,\s*29\)/);
   });
 });
 
@@ -91,8 +91,8 @@ test.describe("Dashboard Page", () => {
 
     const dashboardNav = page.getByTestId("nav-dashboard");
     const className = await dashboardNav.getAttribute("class");
-    expect(className).toContain("text-cp-purple");
-    expect(className).toContain("bg-cp-purple");
+    expect(className).toContain("text-brand");
+    expect(className).toContain("bg-brand");
   });
 
   test("other nav items are NOT active on root page", async ({ page }) => {
@@ -135,7 +135,7 @@ test.describe("Stacks Page", () => {
 
     const stacksNav = page.getByTestId("nav-stacks");
     const className = await stacksNav.getAttribute("class");
-    expect(className).toContain("text-cp-purple");
+    expect(className).toContain("text-brand");
   });
 });
 
@@ -156,7 +156,7 @@ test.describe("Pipelines Page", () => {
 
     const nav = page.getByTestId("nav-pipelines");
     const className = await nav.getAttribute("class");
-    expect(className).toContain("text-cp-purple");
+    expect(className).toContain("text-brand");
   });
 
   test("pipeline config card appears when row is selected", async ({ page }) => {
@@ -425,52 +425,45 @@ test.describe("Login Page - Error Handling", () => {
   });
 });
 
-test.describe("Lovelace Theme", () => {
-  test("login page has dark background (cp-950)", async ({ page }) => {
+test.describe("Utilitarian Theme", () => {
+  test("login page has dark background", async ({ page }) => {
     await page.goto("/login");
 
     const bgColor = await page.evaluate(() =>
       getComputedStyle(document.body).backgroundColor
     );
-    expect(bgColor).toMatch(/rgb\(21,\s*22,\s*30\)/);
+    // --color-background: #1a1a1d -> rgb(26, 26, 29)
+    expect(bgColor).toMatch(/rgb\(26,\s*26,\s*29\)/);
   });
 
-  test("dashboard has correct background (cp-900 via background token)", async ({ page }) => {
+  test("dashboard has correct background (via background token)", async ({ page }) => {
     await page.goto("/");
 
     const bgColor = await page.evaluate(() =>
       getComputedStyle(document.body).backgroundColor
     );
-    // background token maps to cp-900: #1d1f28 -> rgb(29, 31, 40)
-    expect(bgColor).toMatch(/rgb\(29,\s*31,\s*40\)/);
+    // background token maps to --color-background: #1a1a1d -> rgb(26, 26, 29)
+    expect(bgColor).toMatch(/rgb\(26,\s*26,\s*29\)/);
   });
 
-  test("sidebar has darkest background (cp-950)", async ({ page }) => {
+  test("sidebar has darkest background", async ({ page }) => {
     await page.goto("/");
 
-    // The aside element with cp-950 class
+    // The aside element uses bg-gray-950
     const sidebar = page.locator("aside").first();
     const bgColor = await sidebar.evaluate((el) =>
       getComputedStyle(el).backgroundColor
     );
-    expect(bgColor).toMatch(/rgb\(21,\s*22,\s*30\)/);
+    // bg-gray-950: #0f0f12 -> rgb(15, 15, 18)
+    expect(bgColor).toMatch(/rgb\(15,\s*15,\s*18\)/);
   });
 
-  test("active nav link has purple accent", async ({ page }) => {
+  test("active nav link has brand accent", async ({ page }) => {
     await page.goto("/");
 
     const dashboardNav = page.getByTestId("nav-dashboard");
     const className = await dashboardNav.getAttribute("class");
-    expect(className).toContain("cp-purple");
-  });
-
-  test("text uses Space Grotesk font", async ({ page }) => {
-    await page.goto("/");
-
-    const fontFamily = await page.evaluate(() =>
-      getComputedStyle(document.body).fontFamily
-    );
-    expect(fontFamily.toLowerCase()).toContain("space grotesk");
+    expect(className).toContain("brand");
   });
 });
 
