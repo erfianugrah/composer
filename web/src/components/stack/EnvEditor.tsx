@@ -104,7 +104,7 @@ export function EnvEditor({ stackName, initialContent, sopsEncrypted }: Props) {
         onChange={(e) => { setContent(e.target.value); setDirty(true); }}
         placeholder={"# Environment variables for this stack\n# KEY=value\nDB_PASSWORD=secret\nPORT=3000"}
         rows={15}
-        className="w-full rounded-lg border border-border bg-cp-950 p-3 font-data text-sm resize-y focus:outline-none focus:ring-1 focus:ring-cp-purple"
+        className="w-full rounded border border-border bg-cp-950 p-3 font-data text-sm resize-y focus:outline-none focus:ring-1 focus:ring-cp-purple"
         spellCheck={false}
         data-testid="env-editor"
       />

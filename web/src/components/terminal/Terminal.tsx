@@ -115,7 +115,7 @@ export function Terminal({
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+      fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", "Consolas", "Liberation Mono", Menlo, monospace',
       scrollback: 5000,
       theme: TERMINAL_THEME,
       allowProposedApi: true,
@@ -279,7 +279,7 @@ export function Terminal({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span
-            className={`h-2 w-2 rounded-full ${connected ? "bg-cp-green" : "bg-cp-red"}`}
+            className={`h-2 w-2 rounded-sm ${connected ? "bg-cp-green" : "bg-cp-red"}`}
           />
           <span className="text-xs text-muted-foreground">
             {connected ? "Connected" : wasConnected ? "Reconnecting…" : "Disconnected"}
@@ -340,7 +340,7 @@ export function Terminal({
       {/* Terminal container with dynamic height + drag handle */}
       <div
         ref={containerRef}
-        className="relative rounded-lg border border-border overflow-hidden"
+        className="relative rounded border border-border overflow-hidden"
         style={{ height }}
         data-testid="terminal-container"
       >

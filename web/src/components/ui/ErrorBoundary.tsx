@@ -13,7 +13,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-6 text-center rounded-lg border border-cp-red/30 bg-cp-red/5">
+        <div className="p-6 text-center rounded border border-cp-red/30 bg-cp-red/5">
           <h2 className="text-lg font-semibold text-cp-red">Something went wrong</h2>
           <p className="text-sm text-muted-foreground mt-2 font-data">{this.state.error?.message}</p>
           <button

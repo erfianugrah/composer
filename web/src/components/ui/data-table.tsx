@@ -17,7 +17,7 @@ export function Table({ className, ...rest }: React.HTMLAttributes<HTMLTableElem
   // table guarantees we hit the scrollable threshold below the md: breakpoint.
   return (
     <div
-      className="w-full overflow-x-auto rounded-md border border-border"
+      className="w-full overflow-x-auto rounded border border-border"
       role="region"
       aria-label="Scrollable table"
       tabIndex={0}

@@ -52,7 +52,7 @@ export function RawComposeForm({ onCreated }: Props) {
               placeholder={"services:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8080:80\""}
               required
               rows={12}
-              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm font-data resize-y"
+              className="flex w-full rounded border border-input bg-transparent px-3 py-2 text-sm font-data resize-y"
               data-testid="raw-compose"
             />
           </div>

@@ -1,67 +1,92 @@
 @import "tailwindcss";
-@import "@fontsource/space-grotesk/400.css";
-@import "@fontsource/space-grotesk/500.css";
-@import "@fontsource/space-grotesk/600.css";
-@import "@fontsource/space-grotesk/700.css";
-@import "@fontsource/jetbrains-mono/400.css";
-@import "@fontsource/jetbrains-mono/700.css";
 
-/* P7+P8: Prevent invisible text during font load */
-@font-face { font-family: "Space Grotesk"; font-display: swap; }
-@font-face { font-family: "JetBrains Mono"; font-display: swap; }
+/* ── Composer Utilitarian Theme ──
+   McMaster-Carr ethos: ONE brand accent + neutral gray ramp.
+   Flat. Sharp corners. System fonts. Borders over shadows. */
 
-/* ── Lovelace Theme for Composer ── */
 @theme {
-  /* Base (warm charcoal) */
-  --color-cp-950: #15161e;
-  --color-cp-900: #1d1f28;
-  --color-cp-800: #282a36;
-  --color-cp-700: #343647;
-  --color-cp-600: #414457;
+  /* Neutral gray ramp (dark-first) */
+  --color-gray-50: #fafafa;
+  --color-gray-100: #f4f4f5;
+  --color-gray-200: #e4e4e7;
+  --color-gray-300: #d4d4d8;
+  --color-gray-400: #a1a1aa;
+  --color-gray-500: #71717a;
+  --color-gray-600: #52525b;
+  --color-gray-700: #3f3f46;
+  --color-gray-800: #2a2a2e;
+  --color-gray-850: #222226;
+  --color-gray-900: #1a1a1d;
+  --color-gray-925: #161619;
+  --color-gray-950: #0f0f12;
 
-  /* Accents (pastel-neon) */
-  --color-cp-purple: #c574dd;
-  --color-cp-purple-dim: #af43d1;
-  --color-cp-green: #5adecd;
-  --color-cp-green-bright: #17e2c7;
-  --color-cp-red: #f37e96;
-  --color-cp-red-bright: #ff4870;
-  --color-cp-peach: #f1a171;
-  --color-cp-peach-bright: #ff8037;
-  --color-cp-blue: #8796f4;
-  --color-cp-blue-bright: #546eff;
-  --color-cp-cyan: #79e6f3;
-  --color-cp-cyan-bright: #3edced;
-  --color-cp-yellow: #ffd866;
-  --color-cp-mauve: #c9a0dc;
+  /* Brand accent: industrial steel-blue */
+  --color-brand: #2563eb;
+  --color-brand-dim: #1d4ed8;
+  --color-brand-bright: #3b82f6;
 
-  /* shadcn semantic tokens */
-  --color-background: #1d1f28;
-  --color-foreground: #e0e0e0;
-  --color-card: #282a36;
-  --color-card-foreground: #e0e0e0;
-  --color-popover: #282a36;
-  --color-popover-foreground: #e0e0e0;
-  --color-primary: #c574dd;
-  --color-primary-foreground: #15161e;
-  --color-secondary: #343647;
-  --color-secondary-foreground: #e0e0e0;
-  --color-muted: #343647;
-  --color-muted-foreground: #bdbdc1;
-  --color-accent: #343647;
-  --color-accent-foreground: #e0e0e0;
-  --color-destructive: #f37e96;
-  --color-destructive-foreground: #15161e;
-  --color-border: #414457;
-  --color-input: #414457;
-  --color-ring: #c574dd;
+  /* Semantic state colors */
+  --color-success: #16a34a;
+  --color-success-dim: #15803d;
+  --color-warning: #d97706;
+  --color-warning-dim: #b45309;
+  --color-destructive: #dc2626;
+  --color-destructive-dim: #b91c1c;
+  --color-info: #2563eb;
+  --color-info-dim: #1d4ed8;
 
-  /* Fonts */
-  --font-sans: "Space Grotesk", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  /* shadcn semantic tokens (dark scheme) */
+  --color-background: #1a1a1d;
+  --color-foreground: #e4e4e4;
+  --color-card: #222226;
+  --color-card-foreground: #e4e4e4;
+  --color-popover: #222226;
+  --color-popover-foreground: #e4e4e4;
+  --color-primary: #2563eb;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #2a2a2e;
+  --color-secondary-foreground: #e4e4e4;
+  --color-muted: #2a2a2e;
+  --color-muted-foreground: #999999;
+  --color-accent: #2a2a2e;
+  --color-accent-foreground: #e4e4e4;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #3a3a3e;
+  --color-input: #3a3a3e;
+  --color-ring: #2563eb;
 
-  /* Radius */
-  --radius: 0.5rem;
+  /* System font stacks */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", "Consolas",
+    "Liberation Mono", Menlo, monospace;
+
+  /* Radius: sharp (4px = 0.25rem) */
+  --radius: 0.25rem;
+}
+
+/* ── Backward-compat cp-* tokens (maps to new palette) ── */
+@theme {
+  --color-cp-950: var(--color-gray-950);
+  --color-cp-900: var(--color-gray-900);
+  --color-cp-800: var(--color-gray-800);
+  --color-cp-700: var(--color-gray-700);
+  --color-cp-600: var(--color-gray-600);
+  --color-cp-purple: var(--color-brand);
+  --color-cp-purple-dim: var(--color-brand-dim);
+  --color-cp-green: var(--color-success);
+  --color-cp-green-bright: #22c55e;
+  --color-cp-red: var(--color-destructive);
+  --color-cp-red-bright: #ef4444;
+  --color-cp-peach: var(--color-warning);
+  --color-cp-peach-bright: #f59e0b;
+  --color-cp-blue: var(--color-info);
+  --color-cp-blue-bright: #3b82f6;
+  --color-cp-cyan: #06b6d4;
+  --color-cp-cyan-bright: #22d3ee;
+  --color-cp-yellow: #ca8a04;
+  --color-cp-mauve: #7c3aed;
 }
 
 /* ── Base ── */
@@ -83,40 +108,7 @@
   font-family: var(--font-mono);
 }
 
-/* Decorative glow + entrance animation: kept as opt-in for branded surfaces
- * (login screen wordmark). Stripped from operator-facing chrome so the UI
- * reads as a tool, not a hero page. */
-.glow-purple {
-  text-shadow:
-    0 0 7px rgba(197, 116, 221, 0.6),
-    0 0 14px rgba(197, 116, 221, 0.3),
-    0 0 28px rgba(197, 116, 221, 0.15);
-}
-
-.glow-green {
-  text-shadow:
-    0 0 7px rgba(90, 222, 205, 0.6),
-    0 0 14px rgba(90, 222, 205, 0.3),
-    0 0 28px rgba(90, 222, 205, 0.15);
-}
-
-@keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-in-up {
-  animation: fade-in-up 0.4s ease-out both;
-}
-
-/* Respect user motion preferences — disable all decorative motion,
- * collapse skeleton pulses to a static state. */
+/* Respect user motion preferences */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -126,10 +118,6 @@
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  .glow-purple,
-  .glow-green {
-    text-shadow: none;
-  }
 }
 
 /* ── Scrollbar ── */
@@ -138,18 +126,18 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-cp-950);
+  background: var(--color-gray-950);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-cp-600);
+  background: var(--color-gray-600);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-cp-purple);
+  background: var(--color-gray-500);
 }
 
 /* U27: Fix native select dropdowns on dark theme */
 select option {
-  background-color: var(--color-cp-900);
+  background-color: var(--color-gray-900);
   color: var(--color-foreground);
 }

@@ -96,7 +96,7 @@ export function StackConsole({ stackName }: Props) {
 
       {/* Output area */}
       <div
-        className="rounded-lg border border-border bg-cp-950 overflow-y-auto font-data text-xs leading-5 p-3"
+        className="rounded border border-border bg-cp-950 overflow-y-auto font-data text-xs leading-5 p-3"
         style={{ height: "350px" }}
         data-testid="console-output"
       >
@@ -126,7 +126,7 @@ export function StackConsole({ stackName }: Props) {
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="flex gap-2">
-        <div className="flex-1 flex items-center gap-2 rounded-md border border-border bg-cp-950 px-3">
+        <div className="flex-1 flex items-center gap-2 rounded border border-border bg-cp-950 px-3">
           <span className="text-xs text-cp-cyan font-data select-none whitespace-nowrap">docker compose</span>
           <input
             ref={inputRef}

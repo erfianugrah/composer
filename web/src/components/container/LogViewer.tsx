@@ -108,7 +108,7 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs">
-        <span className={`h-2 w-2 rounded-full ${connected ? "bg-cp-green" : "bg-cp-red"}`} />
+        <span className={`h-2 w-2 rounded-sm ${connected ? "bg-cp-green" : "bg-cp-red"}`} />
         <span className="text-muted-foreground">{connected ? "Streaming" : "Disconnected"}</span>
         <span className="text-muted-foreground font-data">{lines.length} lines</span>
         {paused && (
@@ -163,7 +163,7 @@ function VirtualizedLogView({ lines, connected, paused, containerRef, onScroll }
     <div
       ref={containerRef}
       onScroll={onScroll}
-      className="rounded-lg border border-border bg-cp-950 overflow-auto font-data text-xs leading-5"
+      className="rounded border border-border bg-cp-950 overflow-auto font-data text-xs leading-5"
       style={{ height: "400px" }}
       data-testid="log-viewer"
     >

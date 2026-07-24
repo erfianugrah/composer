@@ -88,7 +88,7 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
       cursorBlink: false,
       disableStdin: true,
       fontSize: 13,
-      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+      fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", "Consolas", "Liberation Mono", Menlo, monospace',
       scrollback: 5000,
       theme: TERMINAL_THEME,
     });
@@ -218,11 +218,11 @@ export function ActionTerminal({ stackName, action, onClose, onDone }: ActionTer
   const isTerminal = status !== "done" && status !== "error";
 
   return (
-    <div className="rounded-lg border border-border bg-cp-950 overflow-hidden" data-testid="action-terminal">
+    <div className="rounded border border-border bg-cp-950 overflow-hidden" data-testid="action-terminal">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <div className="flex items-center gap-2">
           <span
-            className={`h-2 w-2 rounded-full ${
+            className={`h-2 w-2 rounded-sm ${
               status === "running" ? "bg-cp-yellow animate-pulse" :
               status === "cancelling" ? "bg-cp-red animate-pulse" :
               status === "done" && exitCode === 0 ? "bg-cp-green" :

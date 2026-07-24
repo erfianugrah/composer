@@ -111,7 +111,7 @@ export function LoginPage() {
     <Card className="border-cp-purple/30">
       <CardHeader className="text-center">
         <div className="mx-auto mb-4">
-          <span className="text-2xl font-bold uppercase tracking-widest glow-purple text-cp-purple">
+          <span className="text-2xl font-bold uppercase tracking-widest text-brand">
             Composer
           </span>
         </div>
@@ -131,7 +131,7 @@ export function LoginPage() {
             <div className="space-y-2">
               <a
                 href="/api/v1/auth/oauth/github"
-                className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-border bg-cp-950 text-sm font-medium hover:bg-accent transition-colors"
+                className="flex h-9 w-full items-center justify-center gap-2 rounded border border-border bg-cp-950 text-sm font-medium hover:bg-accent transition-colors"
                 data-testid="oauth-github"
               >
                 <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
@@ -141,7 +141,7 @@ export function LoginPage() {
               </a>
               <a
                 href="/api/v1/auth/oauth/google"
-                className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-border bg-cp-950 text-sm font-medium hover:bg-accent transition-colors"
+                className="flex h-9 w-full items-center justify-center gap-2 rounded border border-border bg-cp-950 text-sm font-medium hover:bg-accent transition-colors"
                 data-testid="oauth-google"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4">

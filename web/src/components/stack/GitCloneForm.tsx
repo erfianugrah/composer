@@ -91,7 +91,7 @@ export function GitCloneForm({ onCreated }: Props) {
               <select
                 value={authMethod}
                 onChange={(e) => setAuthMethod(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                className="flex h-9 w-full rounded border border-input bg-transparent px-3 py-1 text-sm"
                 data-testid="git-auth-method"
               >
                 <option value="none">None (public repo / global SSH keys)</option>
@@ -119,7 +119,7 @@ export function GitCloneForm({ onCreated }: Props) {
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
                 required
                 rows={4}
-                className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm font-data resize-none"
+                className="flex w-full rounded border border-input bg-transparent px-3 py-2 text-sm font-data resize-none"
                 data-testid="git-ssh-key"
               />
             </div>

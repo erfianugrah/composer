@@ -173,7 +173,7 @@ export function WebhookSettings() {
                 <select
                   value={provider}
                   onChange={(e) => setProvider(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                  className="flex h-9 w-full rounded border border-input bg-transparent px-3 py-1 text-sm"
                   data-testid="webhook-provider"
                 >
                   <option value="github">GitHub</option>
@@ -207,7 +207,7 @@ export function WebhookSettings() {
 
           {/* Show newly created webhook with secret (shown once) */}
           {newWebhook && (
-            <div className="mt-4 rounded-lg border border-cp-green/30 bg-cp-green/5 p-4 space-y-2" data-testid="webhook-created">
+            <div className="mt-4 rounded border border-cp-green/30 bg-cp-green/5 p-4 space-y-2" data-testid="webhook-created">
               <p className="text-sm font-medium text-cp-green">Webhook created — save the secret, it won't be shown again.</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                 <div>

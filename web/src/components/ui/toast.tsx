@@ -97,7 +97,7 @@ export function Toaster() {
       {items.map((t) => (
         <div
           key={t.id}
-          className={`pointer-events-auto rounded-lg border px-3 py-2 shadow-lg text-xs animate-fade-in-up ${variantStyles[t.variant]}`}
+          className={`pointer-events-auto rounded border px-3 py-2 text-xs ${variantStyles[t.variant]}`}
           role={t.variant === "error" ? "alert" : "status"}
           data-testid={`toast-${t.variant}`}
         >

@@ -60,7 +60,7 @@ function PruneDropdown({ onPrune, onResult }: { onPrune: () => void; onResult: (
         Prune Unused
       </Button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] rounded-md border border-border bg-popover p-1 shadow-md">
+        <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] rounded border border-border bg-popover p-1">
           <button onClick={() => prune(false)} className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors">
             Dangling only
             <span className="block text-[10px] text-muted-foreground">Untagged images — cannot be undone</span>

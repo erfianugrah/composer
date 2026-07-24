@@ -62,7 +62,7 @@ export function TemplatePicker({ onSelect }: Props) {
                   <button
                     key={t.id}
                     onClick={() => setSelected(t.id)}
-                    className={`flex items-center gap-2 rounded-lg border p-2 text-left text-sm transition-colors ${
+                    className={`flex items-center gap-2 rounded border p-2 text-left text-sm transition-colors ${
                       selected === t.id
                         ? "border-cp-purple bg-cp-purple/10"
                         : "border-border hover:bg-accent/50"
