@@ -90,12 +90,16 @@ func lcsLines(a, b []string) []string {
 		}
 	}
 
-	// Backtrack to find the LCS
+	// Backtrack to find the LCS. Build the result in reverse (append to the
+	// end, O(1) amortized) and reverse once at the end -- the previous
+	// prepend `append([]string{a[i-1]}, result...)` was O(k^2) in the LCS
+	// length because it reallocated and copied the whole accumulator on every
+	// matched line.
 	result := make([]string, 0, dp[m][n])
 	i, j := m, n
 	for i > 0 && j > 0 {
 		if a[i-1] == b[j-1] {
-			result = append([]string{a[i-1]}, result...)
+			result = append(result, a[i-1])
 			i--
 			j--
 		} else if dp[i-1][j] > dp[i][j-1] {
@@ -103,6 +107,11 @@ func lcsLines(a, b []string) []string {
 		} else {
 			j--
 		}
+	}
+
+	// Reverse in place to restore forward order.
+	for lo, hi := 0, len(result)-1; lo < hi; lo, hi = lo+1, hi-1 {
+		result[lo], result[hi] = result[hi], result[lo]
 	}
 
 	return result

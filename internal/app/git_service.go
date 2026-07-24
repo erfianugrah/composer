@@ -139,16 +139,22 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 			perStackAgeKey = gitCfg.Credentials.AgeKey
 		}
 		ageKey := sops.ResolveAgeKey(perStackAgeKey, s.stacksDir)
-		sops.DecryptEnvFile(gitCfg.ResolveEnvPath(stackPath), ageKey)
-		sops.DecryptComposeSecrets(filepath.Join(stackPath, gitCfg.ComposePath), ageKey)
+		envFile := gitCfg.ResolveEnvPath(stackPath)
+		composePath := filepath.Join(stackPath, gitCfg.ComposePath)
+		sops.DecryptEnvFile(envFile, ageKey)
+		sops.DecryptComposeSecrets(composePath, ageKey)
+		// Re-encrypt on ANY return path (success OR deploy failure), so secrets
+		// are never left decrypted at rest when docker compose up fails.
+		defer func() {
+			sops.ReEncryptEnvFile(envFile)
+			sops.ReEncryptComposeSecrets(composePath)
+		}()
 	}
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 	if _, err := s.compose.Up(deployCtx, stackPath, gitCfg.ComposePath); err != nil {
 		s.log.Warn("auto-deploy failed (stack cloned but not running)", zap.String("stack", name), zap.Error(err))
 	} else {
-		sops.ReEncryptEnvFile(gitCfg.ResolveEnvPath(stackPath))
-		sops.ReEncryptComposeSecrets(filepath.Join(stackPath, gitCfg.ComposePath))
 		s.publishEvent(domevent.StackDeployed{Name: name, Timestamp: time.Now()})
 	}
 

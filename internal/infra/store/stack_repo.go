@@ -106,14 +106,21 @@ func NewGitConfigRepo(db *sql.DB) *GitConfigRepo {
 }
 
 func (r *GitConfigRepo) Upsert(ctx context.Context, stackName string, cfg *stack.GitSource) error {
-	_, err := r.db.ExecContext(ctx,
+	// Serialize+encrypt credentials up front so an encryption failure surfaces
+	// as an error instead of silently storing NULL (dropping the user's git
+	// auth with no signal anywhere).
+	creds, err := marshalCredentials(cfg.Credentials)
+	if err != nil {
+		return fmt.Errorf("upserting git config: %w", err)
+	}
+	_, err = r.db.ExecContext(ctx,
 		`INSERT INTO stack_git_configs (stack_name, repo_url, branch, compose_path, env_path, auto_sync, auth_method, credentials, last_sync_at, last_commit, sync_status)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 ON CONFLICT (stack_name) DO UPDATE SET
 		   repo_url=$2, branch=$3, compose_path=$4, env_path=$5, auto_sync=$6, auth_method=$7,
 		   credentials=$8, last_sync_at=$9, last_commit=$10, sync_status=$11`,
 		stackName, cfg.RepoURL, cfg.Branch, cfg.ComposePath, cfg.EnvPath, cfg.AutoSync,
-		string(cfg.AuthMethod), marshalCredentials(cfg.Credentials), cfg.LastSyncAt, cfg.LastCommitSHA, string(cfg.SyncStatus),
+		string(cfg.AuthMethod), creds, cfg.LastSyncAt, cfg.LastCommitSHA, string(cfg.SyncStatus),
 	)
 	if err != nil {
 		return fmt.Errorf("upserting git config: %w", err)
@@ -159,19 +166,21 @@ func (r *GitConfigRepo) UpdateSyncStatus(ctx context.Context, stackName string, 
 
 // marshalCredentials serializes and encrypts git credentials for storage.
 // Uses AES-256-GCM if COMPOSER_ENCRYPTION_KEY is set, otherwise stores plaintext.
-func marshalCredentials(creds *stack.GitCredentials) *string {
+func marshalCredentials(creds *stack.GitCredentials) (*string, error) {
 	if creds == nil {
-		return nil
+		return nil, nil
 	}
 	b, err := json.Marshal(creds)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("marshaling git credentials: %w", err)
 	}
+	// fail closed: never store plaintext credentials (S18). Propagate the
+	// error so the caller does not silently persist NULL credentials.
 	encrypted, err := crypto.Encrypt(string(b))
 	if err != nil {
-		return nil // fail closed: don't store plaintext credentials (S18)
+		return nil, fmt.Errorf("encrypting git credentials: %w", err)
 	}
-	return &encrypted
+	return &encrypted, nil
 }
 
 // unmarshalCredentials decrypts and deserializes git credentials from storage.
