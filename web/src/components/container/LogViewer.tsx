@@ -30,6 +30,11 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
   const [paused, setPaused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
+  // Keep the latest maxLines readable inside the SSE handler without adding it
+  // to the effect deps (which would tear down + reconnect the stream and drop
+  // the buffered logs on every maxLines change).
+  const maxLinesRef = useRef(maxLines);
+  maxLinesRef.current = maxLines;
 
   useEffect(() => {
     let url: string;
@@ -57,11 +62,11 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
         };
         setLines((prev) => {
           // P21: avoid full array copy when under the limit
-          if (prev.length < maxLines) {
+          if (prev.length < maxLinesRef.current) {
             return [...prev, line];
           }
           // Over limit: drop oldest, append new
-          const next = prev.slice(-(maxLines - 1));
+          const next = prev.slice(-(maxLinesRef.current - 1));
           next.push(line);
           return next;
         });
@@ -108,7 +113,7 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs">
-        <span className={`h-2 w-2 rounded-full ${connected ? "bg-cp-green" : "bg-cp-red"}`} />
+        <span className={`h-2 w-2 rounded-sm ${connected ? "bg-cp-green" : "bg-cp-red"}`} />
         <span className="text-muted-foreground">{connected ? "Streaming" : "Disconnected"}</span>
         <span className="text-muted-foreground font-data">{lines.length} lines</span>
         {paused && (
@@ -163,7 +168,7 @@ function VirtualizedLogView({ lines, connected, paused, containerRef, onScroll }
     <div
       ref={containerRef}
       onScroll={onScroll}
-      className="rounded-lg border border-border bg-cp-950 overflow-auto font-data text-xs leading-5"
+      className="rounded border border-border bg-cp-950 overflow-auto font-data text-xs leading-5"
       style={{ height: "400px" }}
       data-testid="log-viewer"
     >

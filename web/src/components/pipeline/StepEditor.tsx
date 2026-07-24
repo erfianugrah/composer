@@ -127,7 +127,7 @@ export function StepEditor({ step, index, total, onChange, onRemove, onMoveUp, o
 
   return (
     <div
-      className="rounded-lg border border-border bg-cp-950/40 p-3 space-y-2"
+      className="rounded border border-border bg-cp-950/40 p-3 space-y-2"
       data-testid={`step-editor-${index}`}
     >
       <div className="flex items-center gap-2">

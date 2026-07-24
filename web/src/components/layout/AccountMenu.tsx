@@ -85,13 +85,13 @@ export function AccountMenu() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         aria-haspopup="menu"
         aria-expanded={open}
         data-testid="account-menu-trigger"
         title={label}
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-cp-purple/20 text-cp-purple font-medium text-[11px]">
+        <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-cp-purple/20 text-cp-purple font-medium text-[11px]">
           {initial}
         </span>
         <span className="hidden md:inline text-foreground/90 max-w-[120px] truncate">{label}</span>
@@ -101,7 +101,7 @@ export function AccountMenu() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1 z-50 min-w-[220px] rounded-md border border-border bg-popover shadow-md"
+          className="absolute right-0 top-full mt-1 z-50 min-w-[220px] rounded border border-border bg-popover"
           data-testid="account-menu"
         >
           {/* Identity block */}

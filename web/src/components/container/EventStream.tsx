@@ -121,7 +121,7 @@ export function EventStream() {
     <ErrorBoundary>
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs">
-        <span className={`h-2 w-2 rounded-full ${connected ? "bg-cp-green" : "bg-cp-red"}`} />
+        <span className={`h-2 w-2 rounded-sm ${connected ? "bg-cp-green" : "bg-cp-red"}`} />
         <span className="text-muted-foreground">{connected ? "Streaming" : "Disconnected"}</span>
         <span className="text-muted-foreground font-data">{events.length} events</span>
         {paused && (
@@ -142,7 +142,7 @@ export function EventStream() {
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="rounded-lg border border-border bg-cp-950 overflow-y-auto text-xs"
+        className="rounded border border-border bg-cp-950 overflow-y-auto text-xs"
         style={{ height: "300px" }}
         data-testid="event-stream"
       >

@@ -295,7 +295,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Action error feedback */}
       {actionError && (
-        <div className="rounded-lg border border-cp-red/30 bg-cp-red/5 p-3 text-sm text-cp-red" data-testid="action-error">
+        <div className="rounded border border-cp-red/30 bg-cp-red/5 p-3 text-sm text-cp-red" data-testid="action-error">
           {actionError}
           <button className="ml-2 underline" onClick={() => setActionError("")}>dismiss</button>
         </div>
@@ -315,7 +315,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Action output (stdout/stderr from deploy/stop/restart/pull) */}
       {actionOutput && !streamingAction && (
-        <div className="rounded-lg border border-border bg-cp-950 p-3" data-testid="action-output">
+        <div className="rounded border border-border bg-cp-950 p-3" data-testid="action-output">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-muted-foreground uppercase tracking-wider">Command Output</span>
             <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setActionOutput("")}>close</button>
@@ -466,7 +466,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
             return (
               <section
                 aria-label={`Inspector for ${c.name}`}
-                className="mt-4 rounded-md border border-border"
+                className="mt-4 rounded border border-border"
                 data-testid={`inspector-${c.id}`}
               >
                 <header className="flex items-center justify-between border-b border-border bg-cp-purple/5 px-3 py-2 text-xs">
@@ -757,7 +757,7 @@ function MoreActions({ disabled, actionLoading, doAction }: MoreActionsProps) {
         More ▾
       </Button>
       {open && (
-        <div role="menu" className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-md">
+        <div role="menu" className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded border border-border bg-popover p-1">
           {items.map((item) => (
             <button
               key={item.id}

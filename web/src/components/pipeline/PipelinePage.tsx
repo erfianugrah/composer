@@ -309,7 +309,7 @@ export function PipelinePage() {
     return (
       <div className="space-y-4">
         {[...Array(3)].map((_, i) => (
-          <div key={i} className="h-16 bg-muted rounded-xl animate-pulse" />
+          <div key={i} className="h-16 bg-muted rounded animate-pulse" />
         ))}
       </div>
     );
@@ -440,7 +440,7 @@ export function PipelinePage() {
                   const isExpanded = expandedRun === run.id;
                   const detail = runDetails[run.id];
                   return (
-                    <div key={run.id} className="rounded-lg border border-border" data-testid={`run-${run.id}`}>
+                    <div key={run.id} className="rounded border border-border" data-testid={`run-${run.id}`}>
                       <button
                         type="button"
                         onClick={() => toggleRunExpanded(run.id)}

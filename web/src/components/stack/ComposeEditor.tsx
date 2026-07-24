@@ -21,7 +21,7 @@ const lovelaceTheme = EditorView.theme({
     backgroundColor: "#15161e",
     color: "#e0e0e0",
     fontSize: "13px",
-    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+    fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", "Consolas", "Liberation Mono", Menlo, monospace',
   },
   ".cm-content": {
     caretColor: "#c574dd",
@@ -276,7 +276,7 @@ export function ComposeEditor({ content, stackName, readOnly = false, onSave }: 
       )}
       <div
         ref={editorRef}
-        className="rounded-lg border border-border overflow-hidden"
+        className="rounded border border-border overflow-hidden"
         style={{ minHeight: "300px", maxHeight: "80vh", overflow: "auto" }}
         data-testid="compose-editor"
       />

@@ -53,7 +53,7 @@ export function DiffViewer({ stackName }: { stackName: string }) {
         {!diff.has_changes ? (
           <p className="text-sm text-muted-foreground">No pending changes. Compose file matches the running config.</p>
         ) : (
-          <div className="rounded-lg border border-border bg-cp-950 overflow-x-auto font-data text-xs leading-relaxed" data-testid="diff-output">
+          <div className="rounded border border-border bg-cp-950 overflow-x-auto font-data text-xs leading-relaxed" data-testid="diff-output">
             <pre className="p-0">
               {diff.lines.map((line, i) => (
                 <div

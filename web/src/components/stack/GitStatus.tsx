@@ -133,7 +133,7 @@ export function GitStatus({ stackName }: { stackName: string }) {
             </div>
           </div>
           {status.sync_status === "dirty" && (
-            <div className="mt-3 rounded-lg border border-cp-peach/30 bg-cp-peach/10 px-3 py-2 text-xs text-cp-peach">
+            <div className="mt-3 rounded border border-cp-peach/30 bg-cp-peach/10 px-3 py-2 text-xs text-cp-peach">
               Local changes detected. The compose file has been edited and diverges from the git HEAD.
               The next git sync will overwrite these changes. Use the Sync button to pull from remote,
               or commit and push your changes through your git workflow.
@@ -154,7 +154,7 @@ export function GitStatus({ stackName }: { stackName: string }) {
               {commits.map((commit) => (
                 <div
                   key={commit.sha}
-                  className="flex items-center gap-3 rounded-lg border border-border p-3"
+                  className="flex items-center gap-3 rounded border border-border p-3"
                 >
                   <code className="text-xs font-data text-cp-purple whitespace-nowrap">
                     {commit.short_sha}

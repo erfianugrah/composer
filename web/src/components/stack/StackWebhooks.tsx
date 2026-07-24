@@ -66,7 +66,7 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs uppercase tracking-wider text-muted-foreground">Provider</label>
-                <select aria-label="Webhook provider" value={provider} onChange={(e) => setProvider(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
+                <select aria-label="Webhook provider" value={provider} onChange={(e) => setProvider(e.target.value)} className="flex h-9 w-full rounded border border-input bg-transparent px-3 py-1 text-sm">
                   <option value="github">GitHub</option><option value="gitlab">GitLab</option><option value="gitea">Gitea</option><option value="generic">Generic</option>
                 </select>
               </div>
@@ -80,7 +80,7 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
             <Button type="submit" disabled={creating}>{creating ? "Creating..." : "Create Webhook"}</Button>
           </form>
           {newWebhook && (
-            <div className="mt-3 rounded-lg border border-cp-green/30 bg-cp-green/5 p-3 space-y-1">
+            <div className="mt-3 rounded border border-cp-green/30 bg-cp-green/5 p-3 space-y-1">
               <p className="text-xs text-cp-green font-bold">Webhook created -- save the secret now (shown once):</p>
               <div className="text-xs font-data"><span className="text-muted-foreground">URL:</span> {newWebhook.url}</div>
               <div className="text-xs font-data"><span className="text-muted-foreground">Secret:</span> <code className="bg-cp-950 px-1 rounded">{newWebhook.secret}</code></div>
@@ -97,7 +97,7 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
             <div className="space-y-2">
               {webhooks.map((w) => (
                 <div key={w.id}>
-                  <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                  <div className="flex items-center justify-between rounded border border-border p-3">
                     <div className="flex items-center gap-2">
                       <Badge className={providerColor[w.provider] || providerColor.generic}>{w.provider}</Badge>
                       {w.branch_filter && <span className="text-xs font-data text-muted-foreground">{w.branch_filter}</span>}

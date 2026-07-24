@@ -58,7 +58,7 @@ export function CommandPalette() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-lg hover:bg-accent transition-colors"
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
         data-testid="cmd-k-trigger"
       >
         <kbd className="rounded border border-border bg-cp-950 px-1.5 py-0.5 font-data text-[10px]">{typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"}</kbd>
@@ -73,8 +73,8 @@ export function CommandPalette() {
       <div className="fixed inset-0 bg-black/50" onClick={() => setOpen(false)} />
 
       {/* Command dialog */}
-      <div className="relative w-full max-w-lg rounded-xl border border-border bg-card shadow-2xl">
-        <Command className="rounded-xl" shouldFilter={true}>
+      <div className="relative w-full max-w-lg rounded border border-border bg-card">
+        <Command className="rounded" shouldFilter={true}>
           <Command.Input
             value={search}
             onValueChange={setSearch}
@@ -98,7 +98,7 @@ export function CommandPalette() {
                       key={item.id}
                       value={item.label}
                       onSelect={item.action}
-                      className="flex items-center justify-between rounded-lg px-3 py-2 text-sm cursor-pointer aria-selected:bg-accent"
+                      className="flex items-center justify-between rounded px-3 py-2 text-sm cursor-pointer aria-selected:bg-accent"
                     >
                       <span>{item.label}</span>
                       {item.description && (

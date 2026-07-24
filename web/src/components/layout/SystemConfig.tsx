@@ -453,7 +453,7 @@ function SSHKeysCard({
             onChange={(e) => setSSHKeyContent(e.target.value)}
             placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
             rows={4}
-            className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs font-data resize-none"
+            className="w-full rounded border border-input bg-transparent px-3 py-2 text-xs font-data resize-none"
             spellCheck={false}
           />
           {sshKeyMsg && (

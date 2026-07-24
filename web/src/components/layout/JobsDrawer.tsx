@@ -190,7 +190,7 @@ export function JobsDrawer() {
           />
 
           {/* Panel -- slides from right */}
-          <div className="fixed inset-y-0 right-0 w-full max-w-md border-l border-border bg-card shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="fixed inset-y-0 right-0 w-full max-w-md border-l border-border bg-card flex flex-col animate-in slide-in-from-right duration-200">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <div className="flex items-center gap-2">

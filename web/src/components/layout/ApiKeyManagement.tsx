@@ -167,7 +167,7 @@ export function ApiKeyManagement() {
           />
           <select
             value={role} onChange={(e) => setRole(e.target.value)}
-            className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+            className="flex h-9 rounded border border-input bg-transparent px-3 py-1 text-sm"
             data-testid="key-role"
           >
             <option value="viewer">Viewer</option>
@@ -178,7 +178,7 @@ export function ApiKeyManagement() {
             type="date"
             value={expiresAt}
             onChange={(e) => setExpiresAt(e.target.value)}
-            className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+            className="flex h-9 rounded border border-input bg-transparent px-3 py-1 text-sm"
             placeholder="Expires (optional)"
             title="Expiration date (optional)"
             data-testid="key-expires"
@@ -192,7 +192,7 @@ export function ApiKeyManagement() {
 
         {/* Show newly created key */}
         {newKey && (
-          <div className="rounded-lg border border-cp-green/30 bg-cp-green/5 p-4 space-y-2" data-testid="key-created">
+          <div className="rounded border border-cp-green/30 bg-cp-green/5 p-4 space-y-2" data-testid="key-created">
             <p className="text-sm font-medium text-cp-green">Key created — copy now, it won't be shown again.</p>
             <div className="flex items-center gap-2">
               <code className="flex-1 break-all rounded bg-cp-950 p-2 text-xs font-data text-cp-peach">
