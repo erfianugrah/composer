@@ -212,11 +212,17 @@ export function WebhookSettings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                 <div>
                   <span className="text-muted-foreground">Webhook URL</span>
-                  <p className="font-data break-all">{typeof window !== "undefined" ? window.location.origin : ""}{newWebhook.url}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-data break-all">{typeof window !== "undefined" ? window.location.origin : ""}{newWebhook.url}</p>
+                    <Button size="xs" variant="outline" className="shrink-0" onClick={() => navigator.clipboard.writeText(`${window.location.origin}${newWebhook.url}`)}>Copy</Button>
+                  </div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Secret</span>
-                  <p className="font-data break-all text-cp-peach">{newWebhook.secret}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-data break-all text-cp-peach">{newWebhook.secret}</p>
+                    <Button size="xs" variant="outline" className="shrink-0" onClick={() => navigator.clipboard.writeText(newWebhook.secret)}>Copy</Button>
+                  </div>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">

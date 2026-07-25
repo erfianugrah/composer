@@ -10,6 +10,17 @@ interface WebhookSummary { id: string; stack_name: string; provider: string; bra
 interface WebhookDetail { id: string; stack_name: string; provider: string; secret: string; url: string; branch_filter: string; auto_redeploy: boolean; }
 interface Delivery { id: string; event: string; status: string; branch: string; created_at: string; }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button size="xs" variant="outline" onClick={() => {
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }}>{copied ? "Copied!" : "Copy"}</Button>
+  );
+}
+
 const providerColor: Record<string, string> = {
   github: "bg-cp-purple/20 text-cp-purple border-cp-purple/30",
   gitlab: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
@@ -82,8 +93,16 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
           {newWebhook && (
             <div className="mt-3 rounded border border-cp-green/30 bg-cp-green/5 p-3 space-y-1">
               <p className="text-xs text-cp-green font-bold">Webhook created -- save the secret now (shown once):</p>
-              <div className="text-xs font-data"><span className="text-muted-foreground">URL:</span> {newWebhook.url}</div>
-              <div className="text-xs font-data"><span className="text-muted-foreground">Secret:</span> <code className="bg-cp-950 px-1 rounded">{newWebhook.secret}</code></div>
+              <div className="flex items-center gap-2 text-xs font-data">
+                <span className="text-muted-foreground shrink-0">URL:</span>
+                <span className="break-all">{typeof window !== "undefined" ? window.location.origin : ""}{newWebhook.url}</span>
+                <CopyButton text={`${typeof window !== "undefined" ? window.location.origin : ""}${newWebhook.url}`} />
+              </div>
+              <div className="flex items-center gap-2 text-xs font-data">
+                <span className="text-muted-foreground shrink-0">Secret:</span>
+                <code className="bg-cp-950 px-1 rounded break-all">{newWebhook.secret}</code>
+                <CopyButton text={newWebhook.secret} />
+              </div>
             </div>
           )}
         </CardContent>
