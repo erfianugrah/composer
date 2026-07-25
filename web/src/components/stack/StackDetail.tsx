@@ -119,6 +119,19 @@ export function StackDetail({ stackName }: { stackName: string }) {
   // is still on screen for the user to read. Without this the buttons stay
   // greyed out until the user clicks the terminal's "close" link.
   const streamingBusy = !!actionLoading || (!!streamingAction && !streamingDone);
+  // Label spinner for whichever action is in flight (sync or streaming).
+  const busyAction = actionLoading || (streamingAction && !streamingDone ? streamingAction : "");
+
+  // Compose actions (up/down/build/restart/pull/update) stream over the PTY
+  // websocket so docker pull progress bars and ANSI output render live --
+  // the sync POST endpoint returns a static stdout/stderr blob where \r
+  // cursor-control redraws pile up as garbage in a <pre>.
+  function startStreaming(action: string) {
+    setStreamingAction(action);
+    setStreamingDone(false);
+    setActionOutput("");
+    setActionError("");
+  }
 
   // Master/detail state for the Containers tab. When set, the inspector
   // panel below the table reveals Logs / Stats / Terminal for that container.
@@ -161,26 +174,6 @@ export function StackDetail({ stackName }: { stackName: string }) {
       extra.innerHTML = "";
     };
   }, [stackName]);
-
-  async function doAction(action: string) {
-    setActionLoading(action);
-    setActionError("");
-    setActionOutput("");
-    const { data, error } = await apiFetch<{ stdout: string; stderr: string; job_id?: string }>(`/api/v1/stacks/${stackName}/${action}`, { method: "POST" });
-    if (error) {
-      setActionError(`${action} failed: ${error}`);
-    } else if (data) {
-      if (data.job_id) {
-        // Async operation -- output will be in the Jobs drawer
-        setActionOutput(`Job started: ${data.job_id}`);
-      } else {
-        const output = [data.stdout, data.stderr].filter(Boolean).join("\n");
-        if (output) setActionOutput(output);
-      }
-    }
-    setTimeout(fetchStack, 1000);
-    setActionLoading("");
-  }
 
   async function handleDelete() {
     setActionLoading("delete");
@@ -267,18 +260,18 @@ export function StackDetail({ stackName }: { stackName: string }) {
         </div>
         <div className="flex flex-wrap items-center gap-2" data-testid="stack-actions">
           {/* Primary verbs */}
-          <Button size="sm" onClick={() => { setStreamingAction("update"); setStreamingDone(false); setActionOutput(""); setActionError(""); }} disabled={streamingBusy} data-testid="btn-update">
-            Update
+          <Button size="sm" onClick={() => startStreaming("update")} disabled={streamingBusy} data-testid="btn-update">
+            {busyAction === "update" ? "Updating…" : "Update"}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => doAction("up")} disabled={streamingBusy} data-testid="btn-deploy">
-            {actionLoading === "up" ? "Deploying…" : "Deploy"}
+          <Button size="sm" variant="outline" onClick={() => startStreaming("up")} disabled={streamingBusy} data-testid="btn-deploy">
+            {busyAction === "up" ? "Deploying…" : "Deploy"}
           </Button>
           {/* Secondary verbs collapsed into an overflow menu */}
-          <MoreActions disabled={streamingBusy} actionLoading={actionLoading} doAction={doAction} />
+          <MoreActions disabled={streamingBusy} busyAction={busyAction} onAction={startStreaming} />
           {/* Destructive actions, grouped at the end */}
           <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-          <Button size="sm" variant="destructive" onClick={() => doAction("down")} disabled={streamingBusy} data-testid="btn-stop">
-            {actionLoading === "down" ? "Stopping…" : "Stop"}
+          <Button size="sm" variant="destructive" onClick={() => startStreaming("down")} disabled={streamingBusy} data-testid="btn-stop">
+            {busyAction === "down" ? "Stopping…" : "Stop"}
           </Button>
           <ConfirmButton
             size="sm"
@@ -715,11 +708,11 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
 interface MoreActionsProps {
   disabled: boolean;
-  actionLoading: string;
-  doAction: (action: string) => void;
+  busyAction: string;
+  onAction: (action: string) => void;
 }
 
-function MoreActions({ disabled, actionLoading, doAction }: MoreActionsProps) {
+function MoreActions({ disabled, busyAction, onAction }: MoreActionsProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -763,11 +756,11 @@ function MoreActions({ disabled, actionLoading, doAction }: MoreActionsProps) {
               key={item.id}
               role="menuitem"
               disabled={disabled}
-              onClick={() => { setOpen(false); doAction(item.id); }}
+              onClick={() => { setOpen(false); onAction(item.id); }}
               className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
               data-testid={`btn-${item.id}`}
             >
-              {actionLoading === item.id ? item.loadingLabel : item.label}
+              {busyAction === item.id ? item.loadingLabel : item.label}
             </button>
           ))}
         </div>
