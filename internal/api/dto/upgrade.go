@@ -25,6 +25,7 @@ type UpgradeStatusOutput struct {
 	Body struct {
 		Status         string    `json:"status" enum:"pending,helper_running,completed,failed" doc:"Current upgrade status"`
 		HelperID       string    `json:"helper_id,omitempty" doc:"Docker container ID of the upgrade helper"`
+		StartedBy      string    `json:"started_by,omitempty" doc:"User ID or webhook:<id> that triggered the upgrade"`
 		FromVersion    string    `json:"from_version" doc:"Current Composer version"`
 		TargetImage    string    `json:"target_image" doc:"Image being upgraded to"`
 		DeploymentType string    `json:"deployment_type" enum:"compose,docker_run,unknown"`

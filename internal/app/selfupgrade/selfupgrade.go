@@ -177,9 +177,9 @@ func ReconstructRunSpec(inspectJSON []byte) (*RunSpec, error) {
 			Labels map[string]string `json:"Labels"`
 		} `json:"Config"`
 		HostConfig struct {
-			Binds         []string                     `json:"Binds"`
+			Binds         []string    `json:"Binds"`
 			PortBindings  nat.PortMap `json:"PortBindings"`
-			NetworkMode   string                       `json:"NetworkMode"`
+			NetworkMode   string      `json:"NetworkMode"`
 			RestartPolicy struct {
 				Name              string `json:"Name"`
 				MaximumRetryCount int    `json:"MaximumRetryCount"`
@@ -338,14 +338,14 @@ const (
 
 // DetectDeploymentType inspects the container's labels and returns the
 // deployment type. It must be called with self-container labels from the
-// Docker engine (not from inside the container).
+// Docker engine (not from inside the container). Anything that is not a
+// compose deployment is treated as docker-run: a plain `docker run` may
+// carry no labels at all, and the reconstruction path works from inspect
+// data alone. DeployUnknown is reserved for the no-inspect case (handled
+// by the caller, e.g. Docker client unavailable or not in a container).
 func DetectDeploymentType(labels map[string]string) DeploymentType {
 	if _, ok := ParseComposeProject(labels); ok {
 		return DeployCompose
 	}
-	// If there's a non-empty labels map but no compose project, assume docker run.
-	if len(labels) > 0 {
-		return DeployDockerRun
-	}
-	return DeployUnknown
+	return DeployDockerRun
 }

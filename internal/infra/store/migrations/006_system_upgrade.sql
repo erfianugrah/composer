@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS system_upgrade (
     status          TEXT NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending', 'helper_running', 'completed', 'failed')),
     helper_id       TEXT,
+    started_by      TEXT NOT NULL DEFAULT '',
     from_version    TEXT NOT NULL,
     target_image    TEXT NOT NULL,
     deployment_type TEXT NOT NULL DEFAULT 'unknown'

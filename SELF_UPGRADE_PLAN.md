@@ -12,17 +12,18 @@
 ## Status
 
 - [x] Design review (rev 3, 2026-07-04)
-- [ ] Prerequisite: shutdown drain + stale-run reconciliation (see below)
-- [ ] Self-identification via container inspect
-- [ ] Compose-based upgrade path (label-derived compose file paths)
-- [ ] Non-compose upgrade path (`docker run` reconstruction) - covers Unraid
-- [ ] Singleton DB row for cross-restart job tracking
-- [ ] Webhook trigger routing (system-scoped webhook)
-- [ ] Manual trigger `POST /api/v1/system/upgrade` + status endpoint
-- [ ] Boot-time: orphan-helper sweep + upgrade-row reconciliation
+- [x] Prerequisite: shutdown drain + stale-run reconciliation (see below)
+- [x] Self-identification via container inspect
+- [x] Compose-based upgrade path (label-derived compose file paths)
+- [x] Non-compose upgrade path (`docker run` reconstruction) - covers Unraid
+- [x] Singleton DB row for cross-restart job tracking
+- [x] Webhook trigger routing (system-scoped webhook)
+- [x] Manual trigger `POST /api/v1/system/upgrade` + status endpoint
+- [x] Boot-time: orphan-helper sweep + upgrade-row reconciliation
 - [ ] `release.yml` webhook step (fires the trigger on image push)
-- [ ] Tests
+- [x] Tests (unit + conformance suite in `internal/conformance/selfupgrade/`)
 - [ ] Docs (`configuration.md`, `security.md`, `api-reference.md`)
+- [ ] Live E2E: compose-path upgrade on a real deployment; Unraid path via template
 
 ## Problem
 

@@ -39,9 +39,9 @@ func TestParseComposeProject_NilMap(t *testing.T) {
 
 func TestParseComposeProject_Compose(t *testing.T) {
 	labels := map[string]string{
-		"com.docker.compose.project":              "composer",
-		"com.docker.compose.project.working_dir":   "/opt/stacks/composer",
-		"com.docker.compose.project.config_files":  "compose.yaml,docker-compose.yaml",
+		"com.docker.compose.project":                  "composer",
+		"com.docker.compose.project.working_dir":      "/opt/stacks/composer",
+		"com.docker.compose.project.config_files":     "compose.yaml,docker-compose.yaml",
 		"com.docker.compose.project.environment_file": ".env",
 	}
 	cp, ok := ParseComposeProject(labels)
@@ -115,9 +115,12 @@ func TestDetectDeploymentType_DockerRun(t *testing.T) {
 	assert.Equal(t, DeployDockerRun, DetectDeploymentType(labels))
 }
 
-func TestDetectDeploymentType_Unknown(t *testing.T) {
-	assert.Equal(t, DeployUnknown, DetectDeploymentType(nil))
-	assert.Equal(t, DeployUnknown, DetectDeploymentType(map[string]string{}))
+func TestDetectDeploymentType_LabellessIsDockerRun(t *testing.T) {
+	// A plain `docker run` container may carry no labels at all; the
+	// reconstruction path works from inspect data alone. DeployUnknown is
+	// reserved for the no-inspect case handled by the caller.
+	assert.Equal(t, DeployDockerRun, DetectDeploymentType(nil))
+	assert.Equal(t, DeployDockerRun, DetectDeploymentType(map[string]string{}))
 }
 
 func TestSelfContainerID_EnvOverride(t *testing.T) {
@@ -156,9 +159,9 @@ func TestRunSpecMarshalRoundtrip(t *testing.T) {
 	// ReconstructRunSpec uses nat.PortMap which decodes to map[nat.Port][]nat.PortBinding.
 	// Use the actual Docker SDK types to match.
 	type inspectHostConfig struct {
-		Binds         []string                     `json:"Binds"`
-		PortBindings  map[string]json.RawMessage    `json:"PortBindings"`
-		NetworkMode   string                       `json:"NetworkMode"`
+		Binds         []string                   `json:"Binds"`
+		PortBindings  map[string]json.RawMessage `json:"PortBindings"`
+		NetworkMode   string                     `json:"NetworkMode"`
 		RestartPolicy struct {
 			Name string `json:"Name"`
 		} `json:"RestartPolicy"`

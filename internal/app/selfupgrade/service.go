@@ -59,9 +59,17 @@ func validateImage(image string) error {
 	return nil
 }
 
+// shellQuote single-quote escapes a string for safe inclusion in a shell
+// command evaluated by /bin/sh: ' becomes '\”.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 // Request initiates a self-upgrade. It writes the singleton row, builds the
-// helper container, and launches it detached. Returns the upgrade row.
-func (s *UpgradeService) Request(ctx context.Context, targetImage string) (*store.UpgradeRow, error) {
+// helper container, and launches it detached. startedBy records who/what
+// triggered the upgrade (a user ID, or "webhook:<id>") for audit.
+// Returns the upgrade row.
+func (s *UpgradeService) Request(ctx context.Context, targetImage, startedBy string) (*store.UpgradeRow, error) {
 	if err := validateImage(targetImage); err != nil {
 		return nil, err
 	}
@@ -108,6 +116,7 @@ func (s *UpgradeService) Request(ctx context.Context, targetImage string) (*stor
 	row := &store.UpgradeRow{
 		ID:             1,
 		Status:         "pending",
+		StartedBy:      startedBy,
 		FromVersion:    composer.Version,
 		TargetImage:    targetImage,
 		DeploymentType: string(deployType),
@@ -245,17 +254,27 @@ func (s *UpgradeService) launchHelper(
 		if err != nil {
 			return "", fmt.Errorf("reconstructing run spec: %w", err)
 		}
-		// Include --stop-timeout to give the new composer 35s to drain
-		// (matches deploy/compose.yaml stop_grace_period).
 		args, err := spec.DockerRunArgs(targetImage)
 		if err != nil {
 			return "", fmt.Errorf("building docker run args: %w", err)
 		}
+		// Give the new container a 35s stop grace for future upgrades
+		// (matches deploy/compose.yaml stop_grace_period). The image is the
+		// final arg, so insert before it.
+		withTimeout := make([]string, 0, len(args)+2)
+		withTimeout = append(withTimeout, args[:len(args)-1]...)
+		withTimeout = append(withTimeout, "--stop-timeout", "35", args[len(args)-1])
 		// Write the run args to a file in the data dir (already mounted into
-		// the helper) so the helper script can eval them.
-		argsContent := strings.Join(args, " ")
+		// the helper) so the helper script can eval them. Each arg is
+		// single-quote escaped: env/label values containing spaces or shell
+		// metacharacters must survive the eval verbatim.
+		quoted := make([]string, len(withTimeout))
+		for i, a := range withTimeout {
+			quoted[i] = shellQuote(a)
+		}
+		argsContent := strings.Join(quoted, " ")
 		argsPath := filepath.Join(s.dataDir, "upgrade-docker-run-args")
-		if err := os.WriteFile(argsPath, []byte(argsContent), 0644); err != nil {
+		if err := os.WriteFile(argsPath, []byte(argsContent), 0600); err != nil {
 			return "", fmt.Errorf("writing docker-run-args file: %w", err)
 		}
 		// Also pass the old container name so the helper can stop+rm it.
@@ -351,7 +370,19 @@ docker compose --project-directory "$COMPOSER_WORKING_DIR" \
 	up -d --no-build --remove-orphans --quiet-pull composer
 set +x
 
-health_poll composer 120
+# Resolve the new composer container by project+service labels - compose
+# container names are <project>-<service>-<index>, not the bare service name.
+NEW_ID=""
+for _i in $(seq 1 15); do
+	NEW_ID=$(docker ps -q --filter "label=com.docker.compose.project=$COMPOSER_PROJECT_NAME" --filter "label=com.docker.compose.service=composer" | head -1)
+	[ -n "$NEW_ID" ] && break
+	sleep 2
+done
+if [ -z "$NEW_ID" ]; then
+	echo "new composer container not found after recreate" >&2
+	exit 1
+fi
+health_poll "$NEW_ID" 120
 `)
 
 	case DeployDockerRun:
@@ -359,7 +390,7 @@ health_poll composer 120
 # create-before-stop fails with published ports (port-already-allocated),
 # so stop+remove first is the only safe order.
 echo "stopping old composer container..."
-docker stop "$COMPOSER_OLD_NAME" 2>/dev/null || true
+docker stop -t 35 "$COMPOSER_OLD_NAME" 2>/dev/null || true
 echo "removing old composer container..."
 docker rm "$COMPOSER_OLD_NAME" 2>/dev/null || true
 
@@ -384,43 +415,16 @@ func (s *UpgradeService) Status(ctx context.Context) (*store.UpgradeRow, error) 
 	return s.repo.Get(ctx)
 }
 
-// ReconcileAtBoot sweeps for orphaned helper containers and reconciles the
-// upgrade row from the helper's exit code.
+// ReconcileAtBoot reconciles the upgrade row from the helper's exit code,
+// then sweeps orphaned helper containers. The row MUST be reconciled before
+// the sweep: the sweep removes the helper, and inspecting a removed helper
+// would wrongly mark a successful upgrade as failed.
 func (s *UpgradeService) ReconcileAtBoot(ctx context.Context) {
 	if s.docker == nil {
 		return
 	}
 
-	// Sweep orphan helpers.
-	helpers, err := s.docker.ListContainersByLabel(ctx, "io.composer.upgrade-helper=true")
-	if err != nil {
-		if s.logger != nil {
-			s.logger.Warn("failed to list upgrade helper containers during boot reconciliation", zap.Error(err))
-		}
-	} else {
-		for _, h := range helpers {
-			if s.logger != nil {
-				s.logger.Info("removing orphaned upgrade helper container",
-					zap.String("helper_id", h.ID),
-				)
-			}
-			// Capture logs first, then remove (force if running).
-			logs, logErr := s.captureContainerLogs(ctx, h.ID)
-			if logErr != nil && s.logger != nil {
-				s.logger.Warn("failed to capture helper logs", zap.String("helper_id", h.ID), zap.Error(logErr))
-			}
-			if err := s.docker.ContainerRemove(ctx, h.ID, true); err != nil {
-				if s.logger != nil {
-					s.logger.Warn("failed to remove orphan helper", zap.String("helper_id", h.ID), zap.Error(err))
-				}
-			}
-			if s.logger != nil && logs != "" {
-				s.logger.Info("orphan helper logs captured", zap.String("helper_id", h.ID), zap.String("logs", logs))
-			}
-		}
-	}
-
-	// Reconcile upgrade row.
+	// Reconcile upgrade row FIRST (needs to inspect the helper container).
 	row, err := s.repo.Get(ctx)
 	if err != nil {
 		if s.logger != nil {
@@ -459,6 +463,36 @@ func (s *UpgradeService) ReconcileAtBoot(ctx context.Context) {
 		} else {
 			// No helper ID but pending -- mark as failed.
 			_ = s.repo.UpdateStatus(ctx, row.Status, "failed", "", "no helper container launched")
+		}
+	}
+
+	// Sweep orphan helpers AFTER row reconciliation (this removes the helper
+	// the reconciliation just inspected, plus any from crashed attempts).
+	helpers, err := s.docker.ListContainersByLabel(ctx, "io.composer.upgrade-helper=true")
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("failed to list upgrade helper containers during boot reconciliation", zap.Error(err))
+		}
+		return
+	}
+	for _, h := range helpers {
+		if s.logger != nil {
+			s.logger.Info("removing orphaned upgrade helper container",
+				zap.String("helper_id", h.ID),
+			)
+		}
+		// Capture logs first, then remove (force if running).
+		logs, logErr := s.captureContainerLogs(ctx, h.ID)
+		if logErr != nil && s.logger != nil {
+			s.logger.Warn("failed to capture helper logs", zap.String("helper_id", h.ID), zap.Error(logErr))
+		}
+		if err := s.docker.ContainerRemove(ctx, h.ID, true); err != nil {
+			if s.logger != nil {
+				s.logger.Warn("failed to remove orphan helper", zap.String("helper_id", h.ID), zap.Error(err))
+			}
+		}
+		if s.logger != nil && logs != "" {
+			s.logger.Info("orphan helper logs captured", zap.String("helper_id", h.ID), zap.String("logs", logs))
 		}
 	}
 }

@@ -3446,6 +3446,8 @@ export interface components {
             from_version: string;
             /** @description Docker container ID of the upgrade helper */
             helper_id?: string;
+            /** @description User ID or webhook:<id> that triggered the upgrade */
+            started_by?: string;
             /**
              * @description Current upgrade status
              * @enum {string}
@@ -9833,8 +9835,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Accepted */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

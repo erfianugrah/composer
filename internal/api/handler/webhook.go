@@ -119,7 +119,7 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "could not determine target image from webhook payload - include 'image' or 'tag'")
 			return
 		}
-		row, err := h.upgradeSvc.Request(context.Background(), targetImage)
+		row, err := h.upgradeSvc.Request(context.Background(), targetImage, "webhook:"+webhookID)
 		if err != nil {
 			h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "failed", "", err.Error())
 			jsonError(w, http.StatusInternalServerError, "upgrade request failed: "+err.Error())

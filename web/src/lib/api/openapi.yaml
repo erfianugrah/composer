@@ -3107,6 +3107,9 @@ components:
         helper_id:
           description: Docker container ID of the upgrade helper
           type: string
+        started_by:
+          description: User ID or webhook:<id> that triggered the upgrade
+          type: string
         status:
           description: Current upgrade status
           enum:
@@ -8424,12 +8427,12 @@ paths:
               $ref: "#/components/schemas/RequestUpgradeInputBody"
         required: true
       responses:
-        "200":
+        "202":
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/RequestUpgradeOutputBody"
-          description: OK
+          description: Accepted
         "401":
           content:
             application/problem+json:

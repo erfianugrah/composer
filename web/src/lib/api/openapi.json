@@ -4177,6 +4177,10 @@
             "description": "Docker container ID of the upgrade helper",
             "type": "string"
           },
+          "started_by": {
+            "description": "User ID or webhook:\u003cid\u003e that triggered the upgrade",
+            "type": "string"
+          },
           "status": {
             "description": "Current upgrade status",
             "enum": [
@@ -12547,7 +12551,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -12555,7 +12559,7 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "Accepted"
           },
           "401": {
             "content": {

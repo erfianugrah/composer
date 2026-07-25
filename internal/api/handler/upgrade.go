@@ -27,13 +27,14 @@ func NewUpgradeHandler(svc *selfupgrade.UpgradeService) *UpgradeHandler {
 // Register registers upgrade endpoints on the Huma API.
 func (h *UpgradeHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
-		OperationID: "requestUpgrade",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/system/upgrade",
-		Summary:     "Request a self-upgrade",
-		Description: "Launches a detached helper container that upgrades composer to the given image. Admin only. Returns 202 with helper details; polls GET /api/v1/system/upgrade/status for progress.",
-		Tags:        []string{"system"},
-		Errors:      errsAdminMutation,
+		OperationID:   "requestUpgrade",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/system/upgrade",
+		Summary:       "Request a self-upgrade",
+		Description:   "Launches a detached helper container that upgrades composer to the given image. Admin only. Returns 202 with helper details; polls GET /api/v1/system/upgrade/status for progress.",
+		Tags:          []string{"system"},
+		DefaultStatus: http.StatusAccepted,
+		Errors:        errsAdminMutation,
 	}, h.RequestUpgrade)
 
 	huma.Register(api, huma.Operation{
@@ -53,7 +54,7 @@ func (h *UpgradeHandler) RequestUpgrade(ctx context.Context, input *dto.RequestU
 		return nil, err
 	}
 
-	row, err := h.svc.Request(ctx, input.Body.Image)
+	row, err := h.svc.Request(ctx, input.Body.Image, authmw.UserIDFromContext(ctx))
 	if err != nil {
 		if errors.Is(err, store.ErrUpgradeInFlight) {
 			return nil, huma.Error409Conflict("an upgrade is already in progress")
@@ -88,6 +89,7 @@ func (h *UpgradeHandler) Status(ctx context.Context, input *struct{}) (*dto.Upgr
 		out.Body.TargetImage = row.TargetImage
 		out.Body.DeploymentType = row.DeploymentType
 		out.Body.ErrorMessage = row.ErrorMessage
+		out.Body.StartedBy = row.StartedBy
 		out.Body.CreatedAt = row.CreatedAt
 		out.Body.UpdatedAt = row.UpdatedAt
 	} else {
