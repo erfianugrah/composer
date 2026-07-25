@@ -124,12 +124,12 @@ func TestEncryptSSHKeys(t *testing.T) {
 
 	// Everything else: untouched bit-for-bit
 	cases := map[string]string{
-		"id_ed25519.pub":   "ssh-ed25519 AAAA",
-		"known_hosts":      "github.com ssh-rsa AAAA",
-		"known_hosts.old":  "legacy entries",
-		"config":           "Host *\n",
-		"authorized_keys":  "ssh-ed25519 AAAA",
-		"notes.txt":        "random note, not a key",
+		"id_ed25519.pub":  "ssh-ed25519 AAAA",
+		"known_hosts":     "github.com ssh-rsa AAAA",
+		"known_hosts.old": "legacy entries",
+		"config":          "Host *\n",
+		"authorized_keys": "ssh-ed25519 AAAA",
+		"notes.txt":       "random note, not a key",
 	}
 	for name, want := range cases {
 		got, _ := os.ReadFile(filepath.Join(sshDir, name))

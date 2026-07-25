@@ -304,6 +304,40 @@ func stripProto(s string) string {
 	return s
 }
 
+// Mount maps a host path (Source) to a container path (Destination).
+type Mount struct {
+	Source      string
+	Destination string
+}
+
+// HostPathFor translates a container-side path to its host-side equivalent
+// using the container's mount table. The longest Destination prefix match
+// wins. Returns containerPath unchanged when no mount covers it - in that
+// case the path is either already a host path (bind with identical paths)
+// or container-local and NOT usable from another container.
+func HostPathFor(mounts []Mount, containerPath string) string {
+	best := -1
+	bestLen := -1
+	for i, m := range mounts {
+		dest := m.Destination
+		if dest == "" || m.Source == "" {
+			continue
+		}
+		if containerPath == dest || strings.HasPrefix(containerPath, dest+"/") {
+			if len(dest) > bestLen {
+				best = i
+				bestLen = len(dest)
+			}
+		}
+	}
+	if best < 0 {
+		return containerPath
+	}
+	m := mounts[best]
+	suffix := strings.TrimPrefix(containerPath, m.Destination)
+	return strings.TrimSuffix(m.Source, "/") + suffix
+}
+
 // SelfContainerID returns the ID of the container running this process.
 // Checks COMPOSER_SELF_CONTAINER_ID env first, then parses /proc/self/cgroup,
 // then falls back to hostname.

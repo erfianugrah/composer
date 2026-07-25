@@ -79,8 +79,18 @@ func (s *UpgradeService) Request(ctx context.Context, targetImage, startedBy str
 	deployType := DeployUnknown
 	var composeInfo *ComposeInfo
 	var inspectRaw []byte
+	var selfMounts []Mount
 
 	if s.docker != nil && selfID != "" {
+		// The mount table translates container-side paths (data dir, stacks
+		// dir) into host paths so the helper container can bind-mount the
+		// SAME storage (named volumes live under /var/lib/docker/volumes).
+		if mps, err := s.docker.ContainerMounts(ctx, selfID); err == nil {
+			for _, mp := range mps {
+				selfMounts = append(selfMounts, Mount{Source: mp.Source, Destination: mp.Destination})
+			}
+		}
+
 		labels, err := s.docker.ContainerLabels(ctx, selfID)
 		if err == nil {
 			deployType = DetectDeploymentType(labels)
@@ -129,7 +139,7 @@ func (s *UpgradeService) Request(ctx context.Context, targetImage, startedBy str
 	}
 
 	// Build helper container spec.
-	helperID, err := s.launchHelper(ctx, targetImage, deployType, composeInfo, inspectRaw)
+	helperID, err := s.launchHelper(ctx, targetImage, deployType, composeInfo, inspectRaw, selfMounts)
 	if err != nil {
 		_ = s.repo.UpdateStatus(ctx, "pending", "failed", "", err.Error())
 		return nil, fmt.Errorf("launching helper container: %w", err)
@@ -177,6 +187,7 @@ func (s *UpgradeService) launchHelper(
 	deployType DeploymentType,
 	composeInfo *ComposeInfo,
 	inspectRaw []byte,
+	selfMounts []Mount,
 ) (string, error) {
 	// Build the helper script that runs inside the container.
 	helperScript := s.buildHelperScript(targetImage, deployType, composeInfo)
@@ -202,14 +213,18 @@ func (s *UpgradeService) launchHelper(
 	}
 
 	// Mount the data dir (rw) so the helper can read the ack sentinel and
-	// docker-run args file, and write logs if needed.
-	hostConfig.Binds = append(hostConfig.Binds, s.dataDir+":"+s.dataDir+":rw")
+	// docker-run args file. The SOURCE must be the HOST path: composer's
+	// data dir usually lives in a named volume whose host path differs
+	// from the container path (e.g. /var/lib/docker/volumes/.../_data).
+	hostDataDir := HostPathFor(selfMounts, s.dataDir)
+	hostConfig.Binds = append(hostConfig.Binds, hostDataDir+":"+s.dataDir+":rw")
 
 	// If stacks dir is set, mount it too (for compose deployments that
-	// reference stack directories).
+	// reference stack directories), with the same host-path translation.
 	stacksDir := os.Getenv("COMPOSER_STACKS_DIR")
 	if stacksDir != "" {
-		hostConfig.Binds = append(hostConfig.Binds, stacksDir+":"+stacksDir+":rw")
+		hostStacksDir := HostPathFor(selfMounts, stacksDir)
+		hostConfig.Binds = append(hostConfig.Binds, hostStacksDir+":"+stacksDir+":rw")
 	}
 
 	// --- Deployment-type-specific setup ---
@@ -315,6 +330,8 @@ func (s *UpgradeService) buildHelperScript(targetImage string, deployType Deploy
 	// Shared preamble.
 	sb.WriteString(`#!/bin/sh
 set -e
+
+echo "upgrade helper started (target: $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo unknown) daemon), waiting for ack sentinel"
 
 # Wait for the upgrade-ack sentinel file to appear (composerd writes it
 # after returning the HTTP response and releasing the port).

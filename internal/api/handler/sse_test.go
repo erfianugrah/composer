@@ -43,19 +43,19 @@ func TestSplitDockerTimestamp(t *testing.T) {
 		},
 		{
 			name:   "leading space — empty prefix",
-			in:    " message starts with space",
+			in:     " message starts with space",
 			wantOK: false,
 		},
 		{
 			name:   "non-timestamp prefix",
-			in:    "INFO startup complete",
+			in:     "INFO startup complete",
 			wantOK: false,
 		},
 		{
-			name:   "empty message after timestamp",
-			in:     "2026-05-20T08:35:09Z ",
-			wantOK: true,
-			wantMsg: "",
+			name:      "empty message after timestamp",
+			in:        "2026-05-20T08:35:09Z ",
+			wantOK:    true,
+			wantMsg:   "",
 			wantTSStr: "2026-05-20T08:35:09Z",
 		},
 	}

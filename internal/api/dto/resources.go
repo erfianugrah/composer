@@ -50,15 +50,15 @@ type NetworkInspectOutput struct {
 		Name       string             `json:"name"`
 		Driver     string             `json:"driver"`
 		Scope      string             `json:"scope"`
-		EnableIPv6 bool                `json:"enable_ipv6"`
-		Internal   bool                `json:"internal"`
-		Attachable bool                `json:"attachable"`
-		Ingress    bool                `json:"ingress"`
-		IPAM       NetworkInspectIPAM  `json:"ipam"`
-		Options    map[string]string   `json:"options,omitempty"`
-		Labels     map[string]string   `json:"labels,omitempty"`
-		Containers map[string]string   `json:"containers,omitempty" doc:"Map of container ID to container name attached to this network"`
-		Created    string              `json:"created,omitempty" format:"date-time"`
+		EnableIPv6 bool               `json:"enable_ipv6"`
+		Internal   bool               `json:"internal"`
+		Attachable bool               `json:"attachable"`
+		Ingress    bool               `json:"ingress"`
+		IPAM       NetworkInspectIPAM `json:"ipam"`
+		Options    map[string]string  `json:"options,omitempty"`
+		Labels     map[string]string  `json:"labels,omitempty"`
+		Containers map[string]string  `json:"containers,omitempty" doc:"Map of container ID to container name attached to this network"`
+		Created    string             `json:"created,omitempty" format:"date-time"`
 	}
 }
 

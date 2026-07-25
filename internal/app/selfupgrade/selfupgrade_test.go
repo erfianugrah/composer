@@ -215,3 +215,46 @@ func TestRunSpecMarshalRoundtrip(t *testing.T) {
 	require.Len(t, spec.PortBindings, 1)
 	assert.Equal(t, "8080", spec.PortBindings["8080/tcp"][0].HostPort)
 }
+
+func TestHostPathFor(t *testing.T) {
+	volumeMounts := []Mount{
+		{Source: "/var/lib/docker/volumes/composer-e2e_composer_data/_data", Destination: "/opt/composer"},
+		{Source: "/var/lib/docker/volumes/composer-e2e_stacks/_data", Destination: "/opt/stacks"},
+		{Source: "/var/run/docker.sock", Destination: "/var/run/docker.sock"},
+	}
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"exact volume destination", "/opt/composer", "/var/lib/docker/volumes/composer-e2e_composer_data/_data"},
+		{"nested under volume destination", "/opt/composer/sub/file", "/var/lib/docker/volumes/composer-e2e_composer_data/_data/sub/file"},
+		{"second volume", "/opt/stacks", "/var/lib/docker/volumes/composer-e2e_stacks/_data"},
+		{"identical host/container bind", "/var/run/docker.sock", "/var/run/docker.sock"},
+		{"no mount covers path", "/etc/hostname", "/etc/hostname"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, HostPathFor(volumeMounts, tc.in))
+		})
+	}
+
+	t.Run("longest prefix wins", func(t *testing.T) {
+		mounts := []Mount{
+			{Source: "/host/data", Destination: "/data"},
+			{Source: "/host/data/inner", Destination: "/data/inner"},
+		}
+		assert.Equal(t, "/host/data/inner/f", HostPathFor(mounts, "/data/inner/f"))
+	})
+
+	t.Run("prefix must be a path boundary", func(t *testing.T) {
+		mounts := []Mount{{Source: "/host/data", Destination: "/data"}}
+		// /database is NOT under /data
+		assert.Equal(t, "/database", HostPathFor(mounts, "/database"))
+	})
+
+	t.Run("empty mounts", func(t *testing.T) {
+		assert.Equal(t, "/opt/composer", HostPathFor(nil, "/opt/composer"))
+	})
+}

@@ -3,11 +3,12 @@
 // private registries without polluting the host's ~/.docker/config.json.
 //
 // Lifecycle:
-//   dir, cleanup, err := registry.BuildConfigDir(creds)
-//   if err != nil { ... }
-//   defer cleanup()
-//   ctx = docker.WithDockerConfigDir(ctx, dir)
-//   compose.Pull(ctx, ...)
+//
+//	dir, cleanup, err := registry.BuildConfigDir(creds)
+//	if err != nil { ... }
+//	defer cleanup()
+//	ctx = docker.WithDockerConfigDir(ctx, dir)
+//	compose.Pull(ctx, ...)
 package registry
 
 import (

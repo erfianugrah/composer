@@ -99,12 +99,12 @@ func TestParseCgroupContainerID(t *testing.T) {
 func TestParseComposeProject(t *testing.T) {
 	t.Run("full label set, multiple config files", func(t *testing.T) {
 		labels := map[string]string{
-			"com.docker.compose.project":                 "composer",
-			"com.docker.compose.project.working_dir":     "/srv/composer/deploy",
-			"com.docker.compose.project.config_files":    "/srv/composer/deploy/compose.yaml,/srv/composer/deploy/compose.override.yaml",
+			"com.docker.compose.project":                  "composer",
+			"com.docker.compose.project.working_dir":      "/srv/composer/deploy",
+			"com.docker.compose.project.config_files":     "/srv/composer/deploy/compose.yaml,/srv/composer/deploy/compose.override.yaml",
 			"com.docker.compose.project.environment_file": "/srv/composer/deploy/.env",
-			"com.docker.compose.service":                 "composer",
-			"com.docker.compose.config-hash":             "abc123",
+			"com.docker.compose.service":                  "composer",
+			"com.docker.compose.config-hash":              "abc123",
 		}
 		p, ok := selfupgrade.ParseComposeProject(labels)
 		require.True(t, ok, "compose labels present must report compose deployment")

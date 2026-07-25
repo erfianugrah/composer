@@ -252,8 +252,8 @@ func DocumentRawRoutes(api huma.API) {
 			"Validates the HMAC signature against the per-webhook secret and enqueues the configured " +
 			"sync / deploy / pipeline action. Served by a raw chi handler so the raw request body is " +
 			"available for signature validation; not callable from typed API clients.",
-			// No body schema — signature validation requires raw bytes, and
-			// each git host uses a different envelope shape.
+		// No body schema — signature validation requires raw bytes, and
+		// each git host uses a different envelope shape.
 		Tags:     []string{"webhooks"},
 		Security: []map[string][]string{}, // signature-authenticated, not session-authenticated
 		Parameters: []*huma.Param{{

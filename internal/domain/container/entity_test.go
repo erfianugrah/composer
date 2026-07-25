@@ -27,9 +27,9 @@ func TestContainer_IsOneOff(t *testing.T) {
 
 func TestContainer_IsCompletedOneOff(t *testing.T) {
 	tests := []struct {
-		name   string
-		c      container.Container
-		want   bool
+		name string
+		c    container.Container
+		want bool
 	}{
 		{"exited-0-no-policy", container.Container{Status: container.StatusExited, ExitCode: 0, RestartPolicy: "no"}, true},
 		{"exited-0-empty-policy", container.Container{Status: container.StatusExited, ExitCode: 0, RestartPolicy: ""}, true},

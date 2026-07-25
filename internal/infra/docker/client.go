@@ -175,6 +175,18 @@ func (c *Client) UnpauseContainer(ctx context.Context, id string) error {
 	return c.cli.ContainerUnpause(ctx, id)
 }
 
+// ContainerMounts returns the container's mount table (host source ->
+// container destination) from the raw inspect output. Needed to translate
+// container-side paths into host paths when mounting them into another
+// container (e.g. the upgrade helper).
+func (c *Client) ContainerMounts(ctx context.Context, id string) ([]container.MountPoint, error) {
+	ctr, err := c.cli.ContainerInspect(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("inspecting container mounts %s: %w", id, err)
+	}
+	return ctr.Mounts, nil
+}
+
 // ContainerLabels returns the labels map from the container's inspect output.
 func (c *Client) ContainerLabels(ctx context.Context, id string) (map[string]string, error) {
 	ctr, err := c.cli.ContainerInspect(ctx, id)

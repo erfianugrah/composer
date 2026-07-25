@@ -56,9 +56,10 @@ func RemoteIPFromContext(ctx context.Context) string {
 
 // bypassPaths are public endpoints that skip authentication.
 var bypassPaths = map[string]bool{
-	"/api/v1/system/health":  true,
-	"/api/v1/auth/bootstrap": true,
-	"/api/v1/auth/login":     true,
+	"/api/v1/system/health":         true,
+	"/api/v1/system/upgrade/status": true, // public so the UI can poll across the restart window
+	"/api/v1/auth/bootstrap":        true,
+	"/api/v1/auth/login":            true,
 	// OpenAPI spec is served at /openapi.json (outside /api/ prefix) and is
 	// publicly accessible. This is intentional for API documentation tooling.
 }

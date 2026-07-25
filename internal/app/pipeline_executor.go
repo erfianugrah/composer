@@ -26,7 +26,7 @@ type StepExecutor func(ctx context.Context, step pipeline.Step) (output string, 
 // PipelineExecutor runs pipeline steps in DAG order with concurrency.
 type PipelineExecutor struct {
 	compose   *docker.Compose
-	docker    *docker.Client            // required for docker_exec steps; may be nil in tests
+	docker    *docker.Client // required for docker_exec steps; may be nil in tests
 	bus       domevent.Bus
 	stacks    stack.StackRepository     // resolve stack name → path
 	gitCfgs   stack.GitConfigRepository // per-stack SOPS age key

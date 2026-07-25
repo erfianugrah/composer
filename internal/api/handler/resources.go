@@ -270,10 +270,10 @@ func (h *ResourceHandler) InspectNetwork(ctx context.Context, input *dto.Network
 	out.Body.IPAM.Options = data.IPAM.Options
 	for _, cfg := range data.IPAM.Config {
 		out.Body.IPAM.Config = append(out.Body.IPAM.Config, map[string]string{
-			"subnet":     cfg.Subnet,
-			"gateway":    cfg.Gateway,
-			"ip_range":   cfg.IPRange,
-			"aux_addrs":  fmt.Sprintf("%v", cfg.AuxAddress),
+			"subnet":    cfg.Subnet,
+			"gateway":   cfg.Gateway,
+			"ip_range":  cfg.IPRange,
+			"aux_addrs": fmt.Sprintf("%v", cfg.AuxAddress),
 		})
 	}
 	out.Body.Options = data.Options

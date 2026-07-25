@@ -33,9 +33,9 @@ const (
 
 // GitSource holds the configuration for a git-backed stack.
 type GitSource struct {
-	RepoURL       string
-	Branch        string
-	ComposePath   string
+	RepoURL     string
+	Branch      string
+	ComposePath string
 	// EnvPath is the path to the .env file relative to the repo root.
 	// Empty string means the legacy default: ".env" at the repo root.
 	// Use e.g. "deploy/unraid/.env" to keep the .env next to a compose file in a subdirectory.

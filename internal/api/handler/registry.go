@@ -36,10 +36,10 @@ func (h *RegistryHandler) Register(api huma.API) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getRegistryCredential", Method: http.MethodGet,
-		Path:        "/api/v1/registries/{id}",
-		Summary:     "Get a registry credential",
-		Tags:        []string{"registries"},
-		Errors:      errsViewerNotFound,
+		Path:    "/api/v1/registries/{id}",
+		Summary: "Get a registry credential",
+		Tags:    []string{"registries"},
+		Errors:  errsViewerNotFound,
 	}, h.Get)
 
 	huma.Register(api, huma.Operation{
@@ -62,10 +62,10 @@ func (h *RegistryHandler) Register(api huma.API) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteRegistryCredential", Method: http.MethodDelete,
-		Path:        "/api/v1/registries/{id}",
-		Summary:     "Delete a registry credential",
-		Tags:        []string{"registries"},
-		Errors:      errsAdminMutation,
+		Path:    "/api/v1/registries/{id}",
+		Summary: "Delete a registry credential",
+		Tags:    []string{"registries"},
+		Errors:  errsAdminMutation,
 	}, h.Delete)
 }
 
