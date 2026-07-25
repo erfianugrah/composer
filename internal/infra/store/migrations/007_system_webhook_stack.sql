@@ -11,7 +11,9 @@
 -- path is a sentinel, not a real filesystem path (never resolved/read) --
 -- guaranteed unique since it isn't a valid absolute path any real stack
 -- would use.
-INSERT OR IGNORE INTO stacks (name, path, source) VALUES ('_system', '::system-reserved::', 'local');
+-- ON CONFLICT DO NOTHING is the portable form (Postgres + SQLite >= 3.24);
+-- INSERT OR IGNORE is SQLite-only and fails on Postgres with SQLSTATE 42601.
+INSERT INTO stacks (name, path, source) VALUES ('_system', '::system-reserved::', 'local') ON CONFLICT DO NOTHING;
 
 -- +goose Down
 DELETE FROM stacks WHERE name = '_system';
