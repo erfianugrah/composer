@@ -87,7 +87,12 @@ func (s *UpgradeService) Request(ctx context.Context, targetImage, startedBy str
 		// SAME storage (named volumes live under /var/lib/docker/volumes).
 		if mps, err := s.docker.ContainerMounts(ctx, selfID); err == nil {
 			for _, mp := range mps {
-				selfMounts = append(selfMounts, Mount{Source: mp.Source, Destination: mp.Destination})
+				selfMounts = append(selfMounts, Mount{
+					Type:        string(mp.Type),
+					Name:        mp.Name,
+					Source:      mp.Source,
+					Destination: mp.Destination,
+				})
 			}
 		}
 
@@ -201,6 +206,10 @@ func (s *UpgradeService) launchHelper(
 			"io.composer.upgrade-helper": "true",
 		},
 		Env: []string{"COMPOSER_DATA_DIR=" + s.dataDir},
+		// The target image's HEALTHCHECK curls composer's HTTP port, which
+		// nothing listens on inside the helper - disable it so the helper
+		// does not report (unhealthy) while it works.
+		Healthcheck: &container.HealthConfig{Test: strslice.StrSlice{"NONE"}},
 	}
 
 	hostConfig := &container.HostConfig{
@@ -213,18 +222,15 @@ func (s *UpgradeService) launchHelper(
 	}
 
 	// Mount the data dir (rw) so the helper can read the ack sentinel and
-	// docker-run args file. The SOURCE must be the HOST path: composer's
-	// data dir usually lives in a named volume whose host path differs
-	// from the container path (e.g. /var/lib/docker/volumes/.../_data).
-	hostDataDir := HostPathFor(selfMounts, s.dataDir)
-	hostConfig.Binds = append(hostConfig.Binds, hostDataDir+":"+s.dataDir+":rw")
+	// docker-run args file. MountBindFor mounts named volumes BY NAME
+	// (portable) and translates bind mounts to their host path.
+	hostConfig.Binds = append(hostConfig.Binds, MountBindFor(selfMounts, s.dataDir)+":rw")
 
 	// If stacks dir is set, mount it too (for compose deployments that
-	// reference stack directories), with the same host-path translation.
+	// reference stack directories), with the same translation.
 	stacksDir := os.Getenv("COMPOSER_STACKS_DIR")
 	if stacksDir != "" {
-		hostStacksDir := HostPathFor(selfMounts, stacksDir)
-		hostConfig.Binds = append(hostConfig.Binds, hostStacksDir+":"+stacksDir+":rw")
+		hostConfig.Binds = append(hostConfig.Binds, MountBindFor(selfMounts, stacksDir)+":rw")
 	}
 
 	// --- Deployment-type-specific setup ---

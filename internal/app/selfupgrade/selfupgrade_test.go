@@ -258,3 +258,28 @@ func TestHostPathFor(t *testing.T) {
 		assert.Equal(t, "/opt/composer", HostPathFor(nil, "/opt/composer"))
 	})
 }
+
+func TestMountBindFor(t *testing.T) {
+	mounts := []Mount{
+		{Type: "volume", Name: "composer-e2e_composer_data", Source: "/var/lib/docker/volumes/composer-e2e_composer_data/_data", Destination: "/opt/composer"},
+		{Type: "bind", Source: "/mnt/user/appdata/composer/stacks", Destination: "/opt/stacks"},
+		{Type: "bind", Source: "/var/run/docker.sock", Destination: "/var/run/docker.sock"},
+	}
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"named volume exact destination mounts by name", "/opt/composer", "composer-e2e_composer_data:/opt/composer"},
+		{"bind mount translates to host path", "/opt/stacks", "/mnt/user/appdata/composer/stacks:/opt/stacks"},
+		{"identical bind passthrough", "/var/run/docker.sock", "/var/run/docker.sock:/var/run/docker.sock"},
+		{"nested under volume falls back to host path", "/opt/composer/sub", "/var/lib/docker/volumes/composer-e2e_composer_data/_data/sub:/opt/composer/sub"},
+		{"uncovered path passthrough", "/etc/hostname", "/etc/hostname:/etc/hostname"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, MountBindFor(mounts, tc.in))
+		})
+	}
+}

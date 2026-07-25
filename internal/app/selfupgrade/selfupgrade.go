@@ -304,9 +304,11 @@ func stripProto(s string) string {
 	return s
 }
 
-// Mount maps a host path (Source) to a container path (Destination).
+// Mount describes one of a container's mounts.
 type Mount struct {
-	Source      string
+	Type        string // "volume" or "bind"
+	Name        string // volume name (Type == "volume")
+	Source      string // host path (Type == "bind") or volume host dir
 	Destination string
 }
 
@@ -336,6 +338,40 @@ func HostPathFor(mounts []Mount, containerPath string) string {
 	m := mounts[best]
 	suffix := strings.TrimPrefix(containerPath, m.Destination)
 	return strings.TrimSuffix(m.Source, "/") + suffix
+}
+
+// MountBindFor returns the bind spec ("source:dest" or "volume-name:dest")
+// that gives ANOTHER container access to containerPath's storage.
+//
+// Named volumes are mounted BY NAME whenever containerPath is exactly the
+// volume's destination: the volume's host path (/var/lib/docker/volumes/...)
+// is not portable - it does not exist inside Docker Desktop's VM, moves with
+// the containerd image store, and differs under rootless docker. The daemon
+// resolves a volume name correctly in all of those. Nested paths and bind
+// mounts fall back to the host path (correct on native Linux daemons, which
+// is where bind-mounted self-deployments like Unraid run).
+func MountBindFor(mounts []Mount, containerPath string) string {
+	best := -1
+	bestLen := -1
+	for i, m := range mounts {
+		dest := m.Destination
+		if dest == "" {
+			continue
+		}
+		if containerPath == dest || strings.HasPrefix(containerPath, dest+"/") {
+			if len(dest) > bestLen {
+				best = i
+				bestLen = len(dest)
+			}
+		}
+	}
+	if best >= 0 {
+		m := mounts[best]
+		if m.Type == "volume" && m.Name != "" && containerPath == m.Destination {
+			return m.Name + ":" + containerPath
+		}
+	}
+	return HostPathFor(mounts, containerPath) + ":" + containerPath
 }
 
 // SelfContainerID returns the ID of the container running this process.
