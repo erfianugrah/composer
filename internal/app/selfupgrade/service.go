@@ -425,6 +425,10 @@ docker rm "$COMPOSER_OLD_NAME" 2>/dev/null || true
 echo "starting new composer container..."
 eval docker run -d $(cat "$COMPOSER_DATA_DIR/upgrade-docker-run-args")
 
+# The args file contains the full env (which may include secrets) -
+# do not leave it on disk after use.
+rm -f "$COMPOSER_DATA_DIR/upgrade-docker-run-args"
+
 health_poll "$COMPOSER_OLD_NAME" 120
 `)
 
@@ -512,6 +516,15 @@ func (s *UpgradeService) selfImageMatches(ctx context.Context, image string) boo
 func (s *UpgradeService) ReconcileAtBoot(ctx context.Context) {
 	if s.docker == nil {
 		return
+	}
+
+	// Remove a stale docker-run args file from a previous upgrade. It
+	// contains the full container env (which may include secrets); helpers
+	// built by composer <=0.16.1 did not delete it after use.
+	if err := os.Remove(filepath.Join(s.dataDir, "upgrade-docker-run-args")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if s.logger != nil {
+			s.logger.Warn("failed to remove stale upgrade args file", zap.Error(err))
+		}
 	}
 
 	// Reconcile the upgrade row FIRST (needs to inspect the helper
