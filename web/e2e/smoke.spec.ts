@@ -238,6 +238,12 @@ test.describe("Settings Page", () => {
 
     await expect(page.getByRole("heading", { name: "API Keys" })).toBeVisible();
   });
+
+  test("self-upgrade section is visible", async ({ page }) => {
+    await page.goto("/settings");
+
+    await expect(page.getByRole("heading", { name: "Self-Upgrade" })).toBeVisible();
+  });
 });
 
 test.describe("Navigation", () => {

@@ -196,6 +196,16 @@ In Docker Compose, services communicate by name (`postgres:5432`). In standalone
 
 ## Updating
 
+**Self-upgrade (recommended, v0.16.0+):** composer can recreate its own
+container via a detached helper - trigger it from Settings > Self-Upgrade,
+`POST /api/v1/system/upgrade`, or a `_system`-scoped webhook (which
+`release.yml` fires automatically once configured). Poll the public
+`GET /api/v1/system/upgrade/status` for progress. Works for compose and
+plain `docker run` (Unraid) deployments; see Configuration > Self-Upgrade
+for the `.env` requirement and rollback notes.
+
+**Manual (fallback):**
+
 ```bash
 # Docker Compose
 docker compose pull && docker compose up -d

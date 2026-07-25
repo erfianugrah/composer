@@ -7,6 +7,7 @@ Think Dockge's simplicity meets Portainer's power -- built from scratch with Go,
 ## Features
 
 - **Stack management** -- Create, deploy, stop, restart, pull, delete, build Docker Compose stacks via REST API or web UI
+- **Self-upgrade** -- Composer upgrades its own container via a detached helper: `_system`-scoped webhook (release.yml can fire it) or `POST /api/v1/system/upgrade`, with public status polling across the restart. Compose and plain `docker run` (Unraid) deployments supported
 - **Three creation modes** -- From template (10 presets), clone from Git repo, or paste raw YAML
 - **Build & Deploy** -- `docker compose up --build` for projects with Dockerfiles. Build images live
 - **Background jobs** -- Long-running compose operations run async (`?async=true`). Jobs drawer in UI with live status polling
