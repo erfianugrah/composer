@@ -2279,7 +2279,7 @@ export interface components {
              * @enum {string}
              */
             provider: "github" | "gitlab" | "gitea" | "generic";
-            /** @description Stack to trigger on push */
+            /** @description Stack to trigger on push. '_system' is a reserved scope that dispatches to the self-upgrade service instead of a compose deploy -- see Self-Upgrade in configuration.md. */
             stack_name: string;
         };
         DeliveryListOutputBody: {

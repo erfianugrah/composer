@@ -33,7 +33,16 @@ func (r *StackRepo) Create(ctx context.Context, s *stack.Stack) error {
 	return nil
 }
 
+// systemStackName is the reserved sentinel row (007_system_webhook_stack.sql)
+// that satisfies the webhooks.stack_name FK for the self-upgrade "_system"
+// webhook. It is never a real stack -- hide it from GetByName/List so it
+// can't surface in the UI or be reachable via the generic stack API.
+const systemStackName = "_system"
+
 func (r *StackRepo) GetByName(ctx context.Context, name string) (*stack.Stack, error) {
+	if name == systemStackName {
+		return nil, nil
+	}
 	s := &stack.Stack{}
 	var source string
 	err := r.db.QueryRowContext(ctx,
@@ -54,7 +63,7 @@ func (r *StackRepo) GetByName(ctx context.Context, name string) (*stack.Stack, e
 func (r *StackRepo) List(ctx context.Context) ([]*stack.Stack, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT name, path, source, created_at, updated_at
-		 FROM stacks ORDER BY name ASC LIMIT 500`)
+		 FROM stacks WHERE name != $1 ORDER BY name ASC LIMIT 500`, systemStackName)
 	if err != nil {
 		return nil, fmt.Errorf("listing stacks: %w", err)
 	}

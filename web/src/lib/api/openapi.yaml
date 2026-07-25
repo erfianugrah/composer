@@ -781,7 +781,7 @@ components:
             - generic
           type: string
         stack_name:
-          description: Stack to trigger on push
+          description: Stack to trigger on push. '_system' is a reserved scope that dispatches to the self-upgrade service instead of a compose deploy -- see Self-Upgrade in configuration.md.
           maxLength: 128
           minLength: 1
           type: string
@@ -3454,7 +3454,7 @@ info:
     identifier: MIT
     name: MIT
   title: Composer
-  version: 0.16.1
+  version: 0.16.2
 openapi: 3.1.0
 paths:
   /api/v1/audit:

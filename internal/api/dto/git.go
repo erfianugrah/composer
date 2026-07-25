@@ -65,7 +65,7 @@ type GitStatusOutput struct {
 
 type CreateWebhookInput struct {
 	Body struct {
-		StackName    string `json:"stack_name" minLength:"1" maxLength:"128" doc:"Stack to trigger on push"`
+		StackName    string `json:"stack_name" minLength:"1" maxLength:"128" doc:"Stack to trigger on push. '_system' is a reserved scope that dispatches to the self-upgrade service instead of a compose deploy -- see Self-Upgrade in configuration.md."`
 		Provider     string `json:"provider" enum:"github,gitlab,gitea,generic" doc:"Git hosting provider"`
 		BranchFilter string `json:"branch_filter,omitempty" maxLength:"255" doc:"Only trigger on this branch (empty = any)"`
 		AutoRedeploy bool   `json:"auto_redeploy" doc:"Auto-redeploy on compose change"`
