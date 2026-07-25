@@ -375,20 +375,24 @@ health_poll() {
 
 	switch deployType {
 	case DeployCompose:
-		// Build -f flags from the colon-separated config file list.
-		sb.WriteString(`# Build compose file flags from colon-separated list.
-COMPOSE_FILE_FLAGS=""
-IFS=':'
-for cf in $COMPOSER_CONFIG_FILE; do
-	[ -n "$cf" ] && COMPOSE_FILE_FLAGS="$COMPOSE_FILE_FLAGS -f $cf"
-done
+		// COMPOSE_FILE natively accepts a colon-separated file list on
+		// Linux - no flag assembly, no IFS pitfalls.
+		sb.WriteString(`# COMPOSE_FILE takes a colon-separated list natively; the service
+# already joined the config file paths with ':'.
+export COMPOSE_FILE="$COMPOSER_CONFIG_FILE"
+
+# --env-file only when a non-default env file was used at deploy time.
+ENV_FILE_FLAG=""
+if [ -n "$COMPOSER_ENV_FILE" ]; then
+	ENV_FILE_FLAG="--env-file=$COMPOSER_ENV_FILE"
+fi
 
 cd "$COMPOSER_WORKING_DIR" || { echo "working dir $COMPOSER_WORKING_DIR not found" >&2; exit 1; }
 
 echo "pulling image and recreating composer service..."
 set -x
 docker compose --project-directory "$COMPOSER_WORKING_DIR" \
-	$COMPOSE_FILE_FLAGS \
+	$ENV_FILE_FLAG \
 	-p "$COMPOSER_PROJECT_NAME" \
 	up -d --no-build --remove-orphans --quiet-pull composer
 set +x
