@@ -1,0 +1,55 @@
+{
+  "Id": "c0ffee1234567890abcdef1234567890abcdef1234567890abcdef12345678",
+  "Name": "/composer",
+  "Config": {
+    "Hostname": "composer",
+    "Image": "ghcr.io/erfianugrah/composer:latest-amd64",
+    "Env": [
+      "PUID=99",
+      "PGID=100",
+      "COMPOSER_PORT=8080",
+      "COMPOSER_DATA_DIR=/opt/composer",
+      "COMPOSER_STACKS_DIR=/opt/stacks",
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    ],
+    "Labels": {
+      "net.unraid.docker.managed": "dockerman",
+      "net.unraid.docker.icon": "https://raw.githubusercontent.com/erfianugrah/composer/main/icon.png",
+      "net.unraid.docker.webui": "http://[IP]:[PORT:8080]"
+    }
+  },
+  "HostConfig": {
+    "Binds": [
+      "/mnt/user/appdata/composer:/opt/composer:rw",
+      "/mnt/user/appdata/composer/stacks:/opt/stacks:rw",
+      "/var/run/docker.sock:/var/run/docker.sock:rw"
+    ],
+    "PortBindings": {
+      "8080/tcp": [
+        {
+          "HostIp": "",
+          "HostPort": "8080"
+        }
+      ]
+    },
+    "NetworkMode": "proxynet",
+    "RestartPolicy": {
+      "Name": "unless-stopped",
+      "MaximumRetryCount": 0
+    },
+    "CapAdd": ["CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE"],
+    "CapDrop": ["ALL"],
+    "SecurityOpt": ["no-new-privileges:true"],
+    "Privileged": false
+  },
+  "NetworkSettings": {
+    "Networks": {
+      "proxynet": {
+        "IPAMConfig": {
+          "IPv4Address": "172.19.30.5"
+        },
+        "IPAddress": "172.19.30.5"
+      }
+    }
+  }
+}
