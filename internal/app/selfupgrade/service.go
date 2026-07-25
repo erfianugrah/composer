@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	composer "github.com/erfianugrah/composer"
+	domcontainer "github.com/erfianugrah/composer/internal/domain/container"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	"github.com/erfianugrah/composer/internal/infra/store"
 )
@@ -437,9 +438,71 @@ exit 1
 	return sb.String()
 }
 
-// Status returns the current upgrade status.
+// Status returns the current upgrade status. It lazily reconciles an
+// in-flight row first: the helper typically outlives the OLD composer
+// (its health poll finishes after the NEW composer boots), so boot-time
+// reconciliation alone can strand the row in helper_running forever.
 func (s *UpgradeService) Status(ctx context.Context) (*store.UpgradeRow, error) {
+	s.Reconcile(ctx)
 	return s.repo.Get(ctx)
+}
+
+// Reconcile advances an in-flight (pending/helper_running) upgrade row
+// based on the helper container's state. Terminal rows are left alone.
+func (s *UpgradeService) Reconcile(ctx context.Context) {
+	if s.docker == nil {
+		return
+	}
+	row, err := s.repo.Get(ctx)
+	if err != nil || row == nil {
+		return
+	}
+	if row.Status != "pending" && row.Status != "helper_running" {
+		return
+	}
+
+	if row.HelperID == "" {
+		_ = s.repo.UpdateStatus(ctx, row.Status, "failed", "", "no helper container launched")
+		return
+	}
+
+	inspected, err := s.docker.InspectContainer(ctx, row.HelperID)
+	if err != nil || inspected == nil {
+		// Helper is gone. If WE are now running the target image, the
+		// upgrade succeeded (the helper finished and was swept); otherwise
+		// it died before recreating us.
+		if s.selfImageMatches(ctx, row.TargetImage) {
+			_ = s.repo.UpdateStatus(ctx, row.Status, "completed", row.HelperID, "")
+		} else {
+			_ = s.repo.UpdateStatus(ctx, row.Status, "failed", row.HelperID,
+				"helper container vanished before completing the upgrade")
+		}
+		return
+	}
+
+	if inspected.Status == domcontainer.StatusExited {
+		if inspected.ExitCode == 0 {
+			_ = s.repo.UpdateStatus(ctx, row.Status, "completed", row.HelperID, "")
+		} else {
+			_ = s.repo.UpdateStatus(ctx, row.Status, "failed", row.HelperID,
+				fmt.Sprintf("helper exited with code %d", inspected.ExitCode))
+		}
+	}
+	// Still running: leave the row alone; a later Status() poll re-reconciles.
+}
+
+// selfImageMatches reports whether the currently running composer
+// container's image equals the given reference.
+func (s *UpgradeService) selfImageMatches(ctx context.Context, image string) bool {
+	selfID := SelfContainerID()
+	if selfID == "" || s.docker == nil {
+		return false
+	}
+	self, err := s.docker.InspectContainer(ctx, selfID)
+	if err != nil || self == nil {
+		return false
+	}
+	return self.Image == image
 }
 
 // ReconcileAtBoot reconciles the upgrade row from the helper's exit code,
@@ -451,50 +514,13 @@ func (s *UpgradeService) ReconcileAtBoot(ctx context.Context) {
 		return
 	}
 
-	// Reconcile upgrade row FIRST (needs to inspect the helper container).
-	row, err := s.repo.Get(ctx)
-	if err != nil {
-		if s.logger != nil {
-			s.logger.Warn("failed to get upgrade row during boot reconciliation", zap.Error(err))
-		}
-		return
-	}
-	if row == nil {
-		return
-	}
+	// Reconcile the upgrade row FIRST (needs to inspect the helper
+	// container), then sweep only EXITED helpers. A helper that is still
+	// running is mid-upgrade (its health poll outlives the old composer);
+	// killing it would strand the row in helper_running, and force-removal
+	// would destroy the very exit-code evidence reconciliation needs.
+	s.Reconcile(ctx)
 
-	if row.Status == "pending" || row.Status == "helper_running" {
-		if row.HelperID != "" && s.docker != nil {
-			inspected, err := s.docker.InspectContainer(ctx, row.HelperID)
-			if err != nil || inspected == nil {
-				// Helper is gone, mark as failed.
-				if s.logger != nil {
-					s.logger.Warn("upgrade helper container not found, marking upgrade as failed",
-						zap.String("helper_id", row.HelperID),
-					)
-				}
-				_ = s.repo.UpdateStatus(ctx, row.Status, "failed", row.HelperID, "helper container not found at boot")
-				return
-			}
-
-			// Check exit code of helper.
-			if inspected.Status == "exited" {
-				if inspected.ExitCode == 0 {
-					_ = s.repo.UpdateStatus(ctx, row.Status, "completed", row.HelperID, "")
-				} else {
-					_ = s.repo.UpdateStatus(ctx, row.Status, "failed", row.HelperID,
-						fmt.Sprintf("helper exited with code %d", inspected.ExitCode))
-				}
-			}
-			// If still running, leave as helper_running.
-		} else {
-			// No helper ID but pending -- mark as failed.
-			_ = s.repo.UpdateStatus(ctx, row.Status, "failed", "", "no helper container launched")
-		}
-	}
-
-	// Sweep orphan helpers AFTER row reconciliation (this removes the helper
-	// the reconciliation just inspected, plus any from crashed attempts).
 	helpers, err := s.docker.ListContainersByLabel(ctx, "io.composer.upgrade-helper=true")
 	if err != nil {
 		if s.logger != nil {
@@ -503,17 +529,25 @@ func (s *UpgradeService) ReconcileAtBoot(ctx context.Context) {
 		return
 	}
 	for _, h := range helpers {
+		if h.Status == domcontainer.StatusRunning {
+			if s.logger != nil {
+				s.logger.Info("upgrade helper still running, leaving it to finish",
+					zap.String("helper_id", h.ID),
+				)
+			}
+			continue
+		}
 		if s.logger != nil {
 			s.logger.Info("removing orphaned upgrade helper container",
 				zap.String("helper_id", h.ID),
 			)
 		}
-		// Capture logs first, then remove (force if running).
+		// Capture logs first, then remove.
 		logs, logErr := s.captureContainerLogs(ctx, h.ID)
 		if logErr != nil && s.logger != nil {
 			s.logger.Warn("failed to capture helper logs", zap.String("helper_id", h.ID), zap.Error(logErr))
 		}
-		if err := s.docker.ContainerRemove(ctx, h.ID, true); err != nil {
+		if err := s.docker.ContainerRemove(ctx, h.ID, false); err != nil {
 			if s.logger != nil {
 				s.logger.Warn("failed to remove orphan helper", zap.String("helper_id", h.ID), zap.Error(err))
 			}
