@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/button";
-import { highlightLog } from "@/lib/log-highlight";
+import { detectLogLevel, highlightLog } from "@/lib/log-highlight";
 
 interface LogLine {
   id: number;
@@ -180,6 +180,14 @@ function VirtualizedLogView({ lines, connected, paused, containerRef, onScroll }
         <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
           {virtualizer.getVirtualItems().map((virtualItem) => {
             const line = lines[virtualItem.index];
+            // Color by detected severity, not by stream: most containers
+            // (Caddy, etc.) write ALL logs to stderr, so stderr=red painted
+            // the entire stream red regardless of actual level.
+            const level = detectLogLevel(line.message);
+            const levelCls =
+              level === "error" ? "text-cp-red/90" :
+              level === "warn" ? "text-cp-peach/90" :
+              level === "debug" ? "text-muted-foreground" : "";
             // whitespace-pre + overflow on the parent gives us terminal-style
             // single-line rows with horizontal scroll. Wrapping (pre-wrap +
             // break-all) made each row a variable-height block, which fought
@@ -192,17 +200,13 @@ function VirtualizedLogView({ lines, connected, paused, containerRef, onScroll }
                 key={line.id}
                 ref={virtualizer.measureElement}
                 data-index={virtualItem.index}
-                className={`absolute left-0 px-3 whitespace-pre ${line.stream === "stderr" ? "text-cp-red/90" : ""}`}
+                className={`absolute left-0 px-3 whitespace-pre ${levelCls}`}
                 style={{ top: `${virtualItem.start}px` }}
               >
                 <span className="text-muted-foreground select-none">
                   {new Date(line.ts).toISOString().slice(11, 19)}{" "}
                 </span>
-                {line.stream === "stderr" ? (
-                  line.message
-                ) : (
-                  <span>{highlightLog(line.message)}</span>
-                )}
+                <span>{highlightLog(line.message)}</span>
               </div>
             );
           })}

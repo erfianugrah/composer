@@ -13,6 +13,18 @@ interface Rule {
 }
 
 const rules: Rule[] = [
+  // Structured JSON level field (Caddy, zap, slog): color the whole
+  // "level":"..." pair by severity. Must precede the quoted-string rule.
+  {
+    pattern: /"level"\s*:\s*"(fatal|panic|error|warn(?:ing)?|info|debug|trace)"/gi,
+    classify: (m) => {
+      const l = m[1].toLowerCase();
+      return l === "fatal" || l === "panic" || l === "error" ? "text-cp-red"
+        : l.startsWith("warn") ? "text-cp-peach"
+        : l === "info" ? "text-cp-blue"
+        : "text-cp-600";
+    },
+  },
   { pattern: /\b(FATAL|PANIC|EMERGENCY)\b/gi, classify: () => "text-cp-red font-bold" },
   { pattern: /\b(ERROR|ERR)\b/gi, classify: () => "text-cp-red" },
   { pattern: /\b(WARN|WARNING)\b/gi, classify: () => "text-cp-peach" },
@@ -36,6 +48,27 @@ const rules: Rule[] = [
   { pattern: /(https?:\/\/[^\s"<>]+)/g, classify: () => "text-cp-blue underline" },
   { pattern: /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?)\b/g, classify: () => "text-cp-peach" },
 ];
+
+export type LogLevel = "error" | "warn" | "info" | "debug";
+
+const levelPatterns: [LogLevel, RegExp][] = [
+  // Checked in severity order; first hit wins.
+  ["error", /"level"\s*:\s*"(?:fatal|panic|error)"|\blevel=(?:fatal|panic|error)\b|\b(?:FATAL|PANIC|EMERGENCY|ERROR|ERR)\b/i],
+  ["warn", /"level"\s*:\s*"warn(?:ing)?"|\blevel=warn(?:ing)?\b|\b(?:WARN|WARNING)\b/i],
+  ["info", /"level"\s*:\s*"info"|\blevel=info\b|\bINFO\b/i],
+  ["debug", /"level"\s*:\s*"(?:debug|trace)"|\blevel=(?:debug|trace)\b|\b(?:DEBUG|DBG|TRACE)\b/i],
+];
+
+/**
+ * Best-effort log-level detection across JSON (Caddy/zap/slog), logfmt, and
+ * bare-keyword formats. Returns null when no level marker is present.
+ */
+export function detectLogLevel(msg: string): LogLevel | null {
+  for (const [level, pattern] of levelPatterns) {
+    if (pattern.test(msg)) return level;
+  }
+  return null;
+}
 
 let keyCounter = 0;
 
