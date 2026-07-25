@@ -31,6 +31,30 @@ This is equivalent to root access on the host. There is no way to meaningfully r
 3. **Use strong passwords** -- the bootstrap password becomes the admin account
 4. **Use API keys with minimal roles** -- for automation, create Operator or Viewer keys, not Admin
 
+## Self-Upgrade
+
+The self-upgrade endpoint (`POST /api/v1/system/upgrade`) and `_system`
+webhooks launch a short-lived **helper container** that pulls a new image and
+recreates composer. Threat model and mitigations:
+
+- **Admin-only / HMAC-only triggers.** The REST endpoint requires an admin
+  session or API key; the webhook path validates the per-webhook HMAC secret
+  before any dispatch. No other role can start an upgrade.
+- **Image prefix constraint.** The target image must start with
+  `COMPOSER_UPGRADE_IMAGE_PREFIX` (default `ghcr.io/erfianugrah/composer`).
+  This prevents the endpoint from being used to run arbitrary images with a
+  mounted Docker socket. Treat the prefix value as security-sensitive config.
+- **The helper is as privileged as composer itself.** It gets the Docker
+  socket (required to recreate composer) and runs as root inside its
+  container. It is labeled `io.composer.upgrade-helper=true`, publishes no
+  ports, and is removed after completion (or swept at the next boot).
+- **No new secret surface.** The helper receives only paths and the target
+  image reference; the ack sentinel and args file live in the data volume
+  (args file is written `0600`).
+- **Audit.** The `system_upgrade` row records `started_by` (user ID or
+  `webhook:<id>`), the target image, and the outcome; both trigger paths
+  also produce standard audit log entries.
+
 ## Encryption at Rest
 
 Encryption is **automatic** -- no configuration needed:

@@ -29,6 +29,44 @@ All configuration is via `COMPOSER_*` environment variables. No config files, no
 | `COMPOSER_REGISTRY_AUTHS` | (empty) | Bootstrap Docker registry credentials at startup. JSON array of `{registry,username,secret,email?,stack_name?}`. Empty `stack_name` = global (applied to every stack). Idempotent: existing rows preserved unless `COMPOSER_REGISTRY_AUTHS_OVERWRITE=true`. Use the UI / `/api/v1/registries` for ongoing changes. |
 | `COMPOSER_REGISTRY_AUTHS_FILE` | (empty) | Alternative to `COMPOSER_REGISTRY_AUTHS`: path to a JSON file with the same shape. Useful when secrets are mounted in as files. |
 | `COMPOSER_REGISTRY_AUTHS_OVERWRITE` | `false` | When `true`, env-bootstrapped registry credentials replace any existing DB rows on every boot. Default keeps the DB as source of truth after first seed. |
+| `COMPOSER_UPGRADE_IMAGE_PREFIX` | `ghcr.io/erfianugrah/composer` | Allowed image prefix for self-upgrade targets. Requests for images outside this prefix are rejected. See [Self-Upgrade](#self-upgrade). |
+| `COMPOSER_SELF_CONTAINER_ID` | (auto-detect) | Override self container ID detection (cgroup/hostname). Only needed when cgroup paths are masked. |
+
+## Self-Upgrade
+
+Composer can upgrade its own container when a new image is published. The
+mechanism and full design are in [`SELF_UPGRADE_PLAN.md`](../SELF_UPGRADE_PLAN.md);
+the operator-facing pieces are:
+
+**Trigger (choose one):**
+
+- **Webhook (recommended, push-based):** create a webhook with stack name
+  `_system` (`POST /api/v1/webhooks` or the UI), provider `generic`. Send it
+  `{"image": "ghcr.io/erfianugrah/composer:latest-amd64", "tag": "<version>"}`
+  with an `X-Webhook-Signature: sha256=<hmac>` header. `release.yml` does this
+  automatically when repo variable `COMPOSER_UPGRADE_WEBHOOK_URL` and secret
+  `COMPOSER_UPGRADE_WEBHOOK_SECRET` are set.
+- **Manual:** `POST /api/v1/system/upgrade` with `{"image": "..."}` as admin.
+
+**Progress:** poll `GET /api/v1/system/upgrade/status` (public). Composer is
+briefly unreachable while the container is recreated; the status flips to
+`completed` or `failed` after the new instance boots.
+
+**Requirements and caveats:**
+
+- Compose deployments: put host-side overrides (`COMPOSER_PORT`, etc.) in a
+  `.env` file in the project directory. The upgrade helper re-runs
+  `docker compose up` and only sees the `.env`, not the shell environment
+  used for the original `up`. Everything else (compose file paths, project
+  name) is recovered from container labels.
+- Named volumes are mounted into the helper by name; no host-path
+  assumptions are made (works on Docker Desktop, rootless, containerd store).
+- `docker run` deployments (Unraid): the run spec is reconstructed from
+  `container inspect` (env, binds, ports, restart policy, labels, caps) and
+  the new container gets `--stop-timeout 35` for graceful future upgrades.
+- The old image is retained, so manual rollback is `docker run`/`compose up`
+  with the previous tag. Automatic rollback is not implemented.
+- One upgrade at a time; a second trigger while one is in flight returns 409.
 
 ## Container User Mapping (PUID/PGID)
 

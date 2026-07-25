@@ -20,10 +20,13 @@
 - [x] Webhook trigger routing (system-scoped webhook)
 - [x] Manual trigger `POST /api/v1/system/upgrade` + status endpoint
 - [x] Boot-time: orphan-helper sweep + upgrade-row reconciliation
-- [ ] `release.yml` webhook step (fires the trigger on image push)
+- [x] `release.yml` webhook step (fires the trigger on image push; opt-in via repo var/secret)
 - [x] Tests (unit + conformance suite in `internal/conformance/selfupgrade/`)
-- [ ] Docs (`configuration.md`, `security.md`, `api-reference.md`)
-- [ ] Live E2E: compose-path upgrade on a real deployment; Unraid path via template
+- [x] Docs (`configuration.md`, `security.md`, `api-reference.md`)
+- [x] Live E2E (2026-07-25, Docker Desktop): compose path AND docker-run path,
+      both `completed`; found+fixed 4 runtime bugs (host-path translation,
+      volume-by-name mounts, COMPOSE_FILE IFS, lazy reconciliation)
+- [ ] Live E2E on a native-Linux daemon (NixOS router) + Unraid via template
 
 ## Problem
 

@@ -285,6 +285,8 @@ Replaces a host crontab entry + custom cron-wrapper image. Output is captured pe
 
 Supported providers: GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), Gitea (`X-Gitea-Signature`), Generic (`X-Webhook-Signature`).
 
+**Reserved scope `_system`:** a webhook whose `stack_name` is `_system` does not redeploy a stack - it triggers a [self-upgrade](#system-12-endpoints). The generic payload must include `image` (full reference) or `tag` (combined with `COMPOSER_UPGRADE_IMAGE_PREFIX`). `release.yml` sends this automatically when configured (see Configuration > Self-Upgrade).
+
 ### Audit Log (1 endpoint, admin)
 
 | Method | Path | Description |
@@ -319,11 +321,13 @@ Jobs are created when compose operations run with `?async=true` or when webhooks
 | `GET` | `/api/v1/volumes/{name}` | Viewer+ | Inspect volume (full JSON) |
 | `GET` | `/api/v1/docker/events` | Viewer+ | Recent Docker daemon events. `?since=5m` |
 
-### System (10 endpoints)
+### System (12 endpoints)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/api/v1/system/health` | None | Health check |
+| `POST` | `/api/v1/system/upgrade` | Admin | Trigger self-upgrade (202, launches helper container; 409 if one is in flight) |
+| `GET` | `/api/v1/system/upgrade/status` | None | Self-upgrade status (public so the UI can poll across the restart window) |
 | `GET` | `/api/v1/system/info` | Viewer+ | Docker engine info (version, containers, images) |
 | `GET` | `/api/v1/system/version` | Viewer+ | Composer version, Go version, uptime |
 | `GET` | `/api/v1/system/config` | Admin | Global config status (SSH keys, SOPS, encryption) |
