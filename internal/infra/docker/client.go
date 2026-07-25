@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -172,6 +173,26 @@ func (c *Client) PauseContainer(ctx context.Context, id string) error {
 // instead"), so paused containers must be resumed through this path.
 func (c *Client) UnpauseContainer(ctx context.Context, id string) error {
 	return c.cli.ContainerUnpause(ctx, id)
+}
+
+// ContainerLabels returns the labels map from the container's inspect output.
+func (c *Client) ContainerLabels(ctx context.Context, id string) (map[string]string, error) {
+	ctr, err := c.cli.ContainerInspect(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("inspecting container labels %s: %w", id, err)
+	}
+	return ctr.Config.Labels, nil
+}
+
+// InspectRawJSON returns the full container inspect response as raw JSON.
+// This is the same data the Docker API returns, suitable for
+// ReconstructRunSpec and other raw-inspect consumers.
+func (c *Client) InspectRawJSON(ctx context.Context, id string) ([]byte, error) {
+	ctr, err := c.cli.ContainerInspect(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("inspecting container %s: %w", id, err)
+	}
+	return json.Marshal(ctr)
 }
 
 // Events returns a channel of Docker events.
@@ -450,6 +471,53 @@ func (c *Client) RemoveImage(ctx context.Context, id string) error {
 // PruneImages removes unused images. If all is true, removes all unused images
 // (not just dangling/untagged). This is the critical distinction — dangling-only
 // misses old tagged images from previous pulls.
+// ContainerCreate creates a container and returns its ID. The container is
+// NOT started -- use StartContainer to start it.
+func (c *Client) ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, name string) (string, error) {
+	resp, err := c.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, name)
+	if err != nil {
+		return "", fmt.Errorf("creating container: %w", err)
+	}
+	return resp.ID, nil
+}
+
+// ContainerRemove removes a container. If force is true, the container is
+// killed first if running.
+func (c *Client) ContainerRemove(ctx context.Context, id string, force bool) error {
+	return c.cli.ContainerRemove(ctx, id, container.RemoveOptions{Force: force})
+}
+
+// ContainerWait blocks until the container exits and returns the exit code.
+func (c *Client) ContainerWait(ctx context.Context, id string) (int64, error) {
+	statusCh, errCh := c.cli.ContainerWait(ctx, id, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return -1, fmt.Errorf("waiting for container %s: %w", id, err)
+		}
+		return -1, nil
+	case status := <-statusCh:
+		return status.StatusCode, nil
+	}
+}
+
+// ListContainersByLabel returns containers matching the given label filter.
+func (c *Client) ListContainersByLabel(ctx context.Context, label string) ([]domcontainer.Container, error) {
+	opts := container.ListOptions{All: true}
+	opts.Filters = filters.NewArgs(filters.Arg("label", label))
+
+	containers, err := c.cli.ContainerList(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("listing containers by label: %w", err)
+	}
+
+	result := make([]domcontainer.Container, 0, len(containers))
+	for _, ctr := range containers {
+		result = append(result, toDomainContainer(ctr))
+	}
+	return result, nil
+}
+
 func (c *Client) PruneImages(ctx context.Context, all bool) (uint64, error) {
 	f := filters.NewArgs()
 	if all {

@@ -13,6 +13,7 @@ import (
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/api/ws"
 	"github.com/erfianugrah/composer/internal/app"
+	selfupgrade "github.com/erfianugrah/composer/internal/app/selfupgrade"
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/infra/docker"
@@ -36,6 +37,7 @@ type Deps struct {
 	SessionRepo     auth.SessionRepository // needed for OAuth session persistence
 	WebhookRepo     *store.WebhookRepo     // nil disables webhook receiver
 	AuditRepo       *store.AuditRepo       // nil disables audit logging
+	UpgradeRepo     *store.UpgradeRepo     // nil disables self-upgrade
 	EventBus        event.Bus              // nil disables SSE events endpoint
 	DockerClient    *docker.Client         // nil disables container/SSE/terminal endpoints
 	Compose         *docker.Compose        // nil disables docker exec
@@ -110,6 +112,9 @@ func NewServer(deps Deps) *Server {
 	// Webhook receiver (raw chi handler -- validates signature, not session)
 	if deps.GitService != nil && deps.WebhookRepo != nil {
 		webhookHandler := handler.NewWebhookHandler(deps.GitService, deps.WebhookRepo, deps.Jobs, deps.PipelineService)
+		if deps.UpgradeRepo != nil && deps.DockerClient != nil {
+			webhookHandler.SetUpgradeService(selfupgrade.NewUpgradeService(deps.UpgradeRepo, deps.DockerClient, deps.DataDir, nil))
+		}
 		webhookHandler.RegisterRaw(router)
 	}
 

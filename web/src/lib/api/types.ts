@@ -1562,6 +1562,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request a self-upgrade
+         * @description Launches a detached helper container that upgrades composer to the given image. Admin only. Returns 202 with helper details; polls GET /api/v1/system/upgrade/status for progress.
+         */
+        post: operations["requestUpgrade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/upgrade/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get upgrade status
+         * @description Returns the current self-upgrade status. Public (no authentication required).
+         */
+        get: operations["upgradeStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/version": {
         parameters: {
             query?: never;
@@ -2967,6 +3007,37 @@ export interface components {
             updated_at: string;
             username: string;
         };
+        RequestUpgradeInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/RequestUpgradeInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Target Docker image (must match COMPOSER_UPGRADE_IMAGE_PREFIX or be rejected) */
+            image: string;
+        };
+        RequestUpgradeOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/RequestUpgradeOutputBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * @description How composer is deployed
+             * @enum {string}
+             */
+            deployment_type: "compose" | "docker_run" | "unknown";
+            /** @description Current Composer version */
+            from_version: string;
+            /** @description Docker container ID of the upgrade helper */
+            helper_id: string;
+            /** @description Poll this URL for upgrade progress */
+            status_url: string;
+            /** @description Image being upgraded to */
+            target_image: string;
+        };
         ResolvedStruct: {
             /** @description Where age key comes from (per-stack, env, file, none) */
             age_source: string;
@@ -3357,6 +3428,33 @@ export interface components {
              * @enum {string}
              */
             provider?: "github" | "gitlab" | "gitea" | "generic";
+        };
+        UpgradeStatusOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/UpgradeStatusOutputBody.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @enum {string} */
+            deployment_type: "compose" | "docker_run" | "unknown";
+            /** @description Error message if status is failed */
+            error_message?: string;
+            /** @description Current Composer version */
+            from_version: string;
+            /** @description Docker container ID of the upgrade helper */
+            helper_id?: string;
+            /**
+             * @description Current upgrade status
+             * @enum {string}
+             */
+            status: "pending" | "helper_running" | "completed" | "failed";
+            /** @description Image being upgraded to */
+            target_image: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         UserListOutputBody: {
             /**
@@ -9713,6 +9811,104 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    requestUpgrade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestUpgradeInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestUpgradeOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    upgradeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeStatusOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
                 headers: {
                     [name: string]: unknown;
                 };

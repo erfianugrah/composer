@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/erfianugrah/composer/internal/app"
+	selfupgrade "github.com/erfianugrah/composer/internal/app/selfupgrade"
 	infraGit "github.com/erfianugrah/composer/internal/infra/git"
 	"github.com/erfianugrah/composer/internal/infra/store"
 )
@@ -24,10 +26,16 @@ type WebhookHandler struct {
 	webhookRepo *store.WebhookRepo
 	jobs        *app.JobManager
 	pipelineSvc *app.PipelineService
+	upgradeSvc  *selfupgrade.UpgradeService
 }
 
 func NewWebhookHandler(gitSvc *app.GitService, webhookRepo *store.WebhookRepo, jobs *app.JobManager, pipelineSvc *app.PipelineService) *WebhookHandler {
 	return &WebhookHandler{gitSvc: gitSvc, webhookRepo: webhookRepo, jobs: jobs, pipelineSvc: pipelineSvc}
+}
+
+// SetUpgradeService wires the self-upgrade service for _system webhook dispatch.
+func (h *WebhookHandler) SetUpgradeService(svc *selfupgrade.UpgradeService) {
+	h.upgradeSvc = svc
 }
 
 func (h *WebhookHandler) RegisterRaw(router chi.Router) {
@@ -97,6 +105,33 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// _system webhooks dispatch to the self-upgrade service.
+	if webhook.StackName == "_system" {
+		if h.upgradeSvc == nil {
+			jsonError(w, http.StatusServiceUnavailable, "self-upgrade service not available")
+			return
+		}
+		// Resolve the target image from the webhook payload.
+		// release.yml sends {tag, image} in the generic payload.
+		// Prefer the explicit image; otherwise construct from tag + prefix.
+		targetImage := resolveUpgradeImage(payload)
+		if targetImage == "" {
+			jsonError(w, http.StatusBadRequest, "could not determine target image from webhook payload - include 'image' or 'tag'")
+			return
+		}
+		row, err := h.upgradeSvc.Request(context.Background(), targetImage)
+		if err != nil {
+			h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "failed", "", err.Error())
+			jsonError(w, http.StatusInternalServerError, "upgrade request failed: "+err.Error())
+			return
+		}
+		h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "success", "upgrade helper launched: "+row.HelperID, "")
+		jsonResponse(w, http.StatusOK, map[string]string{
+			"status": "accepted", "helper_id": row.HelperID, "delivery_id": dlvID,
+		})
+		return
+	}
+
 	// GitOps: sync + redeploy (runs async so we don't timeout waiting for deploy)
 	h.webhookRepo.UpdateDeliveryStatus(r.Context(), dlvID, "processing", "", "")
 
@@ -138,6 +173,23 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		resp["job_id"] = jobID
 	}
 	jsonResponse(w, http.StatusOK, resp)
+}
+
+// resolveUpgradeImage extracts the target image for a _system webhook.
+// Precedence: payload.Image (explicit full reference) > payload.Tag
+// (prefix + ":" + tag) > "".
+func resolveUpgradeImage(payload *infraGit.WebhookPayload) string {
+	if payload.Image != "" {
+		return payload.Image
+	}
+	if payload.Tag != "" {
+		prefix := "ghcr.io/erfianugrah/composer"
+		if p := os.Getenv("COMPOSER_UPGRADE_IMAGE_PREFIX"); p != "" {
+			prefix = p
+		}
+		return prefix + ":" + payload.Tag
+	}
+	return ""
 }
 
 func jsonError(w http.ResponseWriter, status int, detail string) {

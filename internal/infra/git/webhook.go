@@ -27,6 +27,8 @@ type WebhookPayload struct {
 	Branch    string // extracted branch name
 	CommitSHA string // head commit SHA
 	Ref       string // full ref (refs/heads/main)
+	Tag       string // release tag (for _system webhooks: the version to upgrade to)
+	Image     string // full image reference (if provided directly by the sender)
 }
 
 // ValidateSignature verifies the webhook signature using HMAC-SHA256.
@@ -154,6 +156,8 @@ func parseGenericPayload(p *WebhookPayload, body []byte) (*WebhookPayload, error
 		After     string `json:"after"`
 		CommitSHA string `json:"commit_sha"`
 		Branch    string `json:"branch"`
+		Tag       string `json:"tag"`
+		Image     string `json:"image"`
 	}
 	if err := json.Unmarshal(body, &data); err != nil {
 		return nil, fmt.Errorf("parsing generic payload: %w", err)
@@ -167,6 +171,8 @@ func parseGenericPayload(p *WebhookPayload, body []byte) (*WebhookPayload, error
 	if p.CommitSHA == "" {
 		p.CommitSHA = data.After
 	}
+	p.Tag = data.Tag
+	p.Image = data.Image
 	return p, nil
 }
 

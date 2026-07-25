@@ -9,6 +9,7 @@ import (
 	composer "github.com/erfianugrah/composer"
 	"github.com/erfianugrah/composer/internal/api/dto"
 	"github.com/erfianugrah/composer/internal/api/handler"
+	"github.com/erfianugrah/composer/internal/app/selfupgrade"
 )
 
 // HumaConfig returns the canonical Huma configuration for the Composer API.
@@ -176,6 +177,10 @@ func RegisterHumaHandlers(api huma.API, deps Deps, registerAll bool) {
 	})
 	register(deps.Compose != nil, func() {
 		handler.NewDockerExecHandler(deps.Compose).Register(api)
+	})
+	register(deps.UpgradeRepo != nil && deps.DockerClient != nil, func() {
+		svc := selfupgrade.NewUpgradeService(deps.UpgradeRepo, deps.DockerClient, deps.DataDir, nil)
+		handler.NewUpgradeHandler(svc).Register(api)
 	})
 }
 

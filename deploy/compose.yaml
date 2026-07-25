@@ -54,6 +54,7 @@ services:
       valkey:
         condition: service_started
     restart: unless-stopped
+    stop_grace_period: 35s
     # Security hardening
     tmpfs:
       - /tmp

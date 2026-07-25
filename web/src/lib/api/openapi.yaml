@@ -2244,6 +2244,60 @@ components:
         - created_at
         - updated_at
       type: object
+    RequestUpgradeInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/RequestUpgradeInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        image:
+          description: Target Docker image (must match COMPOSER_UPGRADE_IMAGE_PREFIX or be rejected)
+          maxLength: 256
+          minLength: 1
+          type: string
+      required:
+        - image
+      type: object
+    RequestUpgradeOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/RequestUpgradeOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        deployment_type:
+          description: How composer is deployed
+          enum:
+            - compose
+            - docker_run
+            - unknown
+          type: string
+        from_version:
+          description: Current Composer version
+          type: string
+        helper_id:
+          description: Docker container ID of the upgrade helper
+          type: string
+        status_url:
+          description: Poll this URL for upgrade progress
+          type: string
+        target_image:
+          description: Image being upgraded to
+          type: string
+      required:
+        - helper_id
+        - from_version
+        - target_image
+        - deployment_type
+        - status_url
+      type: object
     ResolvedStruct:
       additionalProperties: false
       properties:
@@ -3024,6 +3078,56 @@ components:
             - gitea
             - generic
           type: string
+      type: object
+    UpgradeStatusOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/UpgradeStatusOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        deployment_type:
+          enum:
+            - compose
+            - docker_run
+            - unknown
+          type: string
+        error_message:
+          description: Error message if status is failed
+          type: string
+        from_version:
+          description: Current Composer version
+          type: string
+        helper_id:
+          description: Docker container ID of the upgrade helper
+          type: string
+        status:
+          description: Current upgrade status
+          enum:
+            - pending
+            - helper_running
+            - completed
+            - failed
+          type: string
+        target_image:
+          description: Image being upgraded to
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - status
+        - from_version
+        - target_image
+        - deployment_type
+        - created_at
+        - updated_at
       type: object
     UserListOutputBody:
       additionalProperties: false
@@ -8307,6 +8411,77 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Service Unavailable
       summary: Docker engine info
+      tags:
+        - system
+  /api/v1/system/upgrade:
+    post:
+      description: Launches a detached helper container that upgrades composer to the given image. Admin only. Returns 202 with helper details; polls GET /api/v1/system/upgrade/status for progress.
+      operationId: requestUpgrade
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestUpgradeInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestUpgradeOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Request a self-upgrade
+      tags:
+        - system
+  /api/v1/system/upgrade/status:
+    get:
+      description: Returns the current self-upgrade status. Public (no authentication required).
+      operationId: upgradeStatus
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpgradeStatusOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security: []
+      summary: Get upgrade status
       tags:
         - system
   /api/v1/system/version:

@@ -15,6 +15,7 @@ import (
 	composer "github.com/erfianugrah/composer"
 	"github.com/erfianugrah/composer/internal/api"
 	"github.com/erfianugrah/composer/internal/app"
+	selfupgrade "github.com/erfianugrah/composer/internal/app/selfupgrade"
 	"github.com/erfianugrah/composer/internal/infra/cache"
 	"github.com/erfianugrah/composer/internal/infra/crypto"
 	"github.com/erfianugrah/composer/internal/infra/docker"
@@ -259,6 +260,7 @@ func main() {
 	// --- Pipeline Service ---
 	pipelineRepo := store.NewPipelineRepo(db.SQL)
 	runRepo := store.NewRunRepo(db.SQL)
+	upgradeRepo := store.NewUpgradeRepo(db.SQL)
 	var pipelineExecutor *app.PipelineExecutor
 	var pipelineSvc *app.PipelineService
 	if compose != nil {
@@ -277,6 +279,17 @@ func main() {
 		cronScheduler.Start(ctx)
 		defer cronScheduler.Stop()
 		logger.Info("cron scheduler started")
+	}
+
+	// --- Boot-time reconciliation ---
+	// Mark any pipeline runs that were left 'running' after an unclean shutdown.
+	if err := store.ReconcileStaleRuns(ctx, db.SQL); err != nil {
+		logger.Warn("failed to reconcile stale pipeline runs", zap.Error(err))
+	}
+	// Sweep orphan helper containers and reconcile the upgrade row.
+	if dockerClient != nil && upgradeRepo != nil {
+		upgradeSvc := selfupgrade.NewUpgradeService(upgradeRepo, dockerClient, cfg.DataDir, logger)
+		upgradeSvc.ReconcileAtBoot(ctx)
 	}
 
 	// --- Webhook + Audit Repos ---
@@ -301,6 +314,7 @@ func main() {
 		DockerClient:    dockerClient,
 		Compose:         compose,
 		Jobs:            jobManager,
+		UpgradeRepo:     upgradeRepo,
 		DataDir:         cfg.DataDir,
 	})
 
@@ -381,6 +395,13 @@ func main() {
 	}
 
 	appCancel() // stop background goroutines
+
+	// Stop pipeline service and wait for in-flight runs to drain.
+	if pipelineSvc != nil {
+		logger.Info("stopping pipeline service")
+		pipelineSvc.Stop()
+		logger.Info("pipeline service stopped")
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
