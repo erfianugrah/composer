@@ -789,6 +789,52 @@ func (s *StackService) UpdateCredentials(ctx context.Context, name string, creds
 	return s.gitCfgs.Upsert(ctx, name, cfg)
 }
 
+// ClearCredentialField clears a single per-stack credential field without touching others.
+// Valid fields: "token", "ssh_key", "ssh_key_file", "age_key", "username", "password".
+func (s *StackService) ClearCredentialField(ctx context.Context, name string, field string) error {
+	cfg, err := s.gitCfgs.GetByStackName(ctx, name)
+	if err != nil || cfg == nil {
+		return ErrNotFound
+	}
+	if cfg.Credentials == nil {
+		return nil // nothing to clear
+	}
+
+	switch field {
+	case "token":
+		cfg.Credentials.Token = ""
+	case "ssh_key":
+		cfg.Credentials.SSHKey = ""
+		cfg.Credentials.SSHKeyPassphrase = ""
+	case "ssh_key_file":
+		cfg.Credentials.SSHKeyFile = ""
+	case "age_key":
+		cfg.Credentials.AgeKey = ""
+	case "username":
+		cfg.Credentials.Username = ""
+	case "password":
+		cfg.Credentials.Password = ""
+	default:
+		return fmt.Errorf("unknown credential field %q", field)
+	}
+
+	// Recalculate auth method from remaining credentials.
+	creds := cfg.Credentials
+	if creds.Token != "" {
+		cfg.AuthMethod = stack.GitAuthToken
+	} else if creds.SSHKeyFile != "" {
+		cfg.AuthMethod = stack.GitAuthSSHFile
+	} else if creds.SSHKey != "" {
+		cfg.AuthMethod = stack.GitAuthSSH
+	} else if creds.Username != "" {
+		cfg.AuthMethod = stack.GitAuthBasic
+	} else {
+		cfg.AuthMethod = stack.GitAuthNone
+	}
+
+	return s.gitCfgs.Upsert(ctx, name, cfg)
+}
+
 // resolveComposeFile returns the compose file name for a stack.
 // Priority: git config compose_path > detect from disk (sane defaults).
 // Always returns a specific file to prevent docker compose from merging

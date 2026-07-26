@@ -4651,7 +4651,7 @@
       "name": "MIT"
     },
     "title": "Composer",
-    "version": "0.16.3"
+    "version": "0.16.4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10521,6 +10521,112 @@
           }
         },
         "summary": "Update per-stack credential overrides",
+        "tags": [
+          "stacks"
+        ]
+      }
+    },
+    "/api/v1/stacks/{name}/credentials/{field}": {
+      "delete": {
+        "description": "Removes one per-stack credential override (token, ssh_key, ssh_key_file, age_key, username, password) without affecting other fields. The global credential takes effect for the cleared field.",
+        "operationId": "clearStackCredentialField",
+        "parameters": [
+          {
+            "description": "Stack name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "Stack name",
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Credential field to clear",
+            "in": "path",
+            "name": "field",
+            "required": true,
+            "schema": {
+              "description": "Credential field to clear",
+              "enum": [
+                "token",
+                "ssh_key",
+                "ssh_key_file",
+                "age_key",
+                "username",
+                "password"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Clear a single per-stack credential field",
         "tags": [
           "stacks"
         ]

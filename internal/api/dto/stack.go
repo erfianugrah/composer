@@ -219,6 +219,12 @@ type UpdateStackCredentialsInput struct {
 	}
 }
 
+// ClearStackCredentialFieldInput clears a single per-stack credential field.
+type ClearStackCredentialFieldInput struct {
+	Name  string `path:"name" maxLength:"128" doc:"Stack name"`
+	Field string `path:"field" enum:"token,ssh_key,ssh_key_file,age_key,username,password" doc:"Credential field to clear"`
+}
+
 type ComposeOpOutput struct {
 	Body struct {
 		Stdout string `json:"stdout"`

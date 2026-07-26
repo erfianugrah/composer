@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 
@@ -30,10 +31,13 @@ export function StackCredentials({ stackName }: { stackName: string }) {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
 
-  // Edit form
+  // Edit form - secret fields start empty (user types to replace, leaves empty to clear).
   const [token, setToken] = useState("");
+  const [sshKey, setSshKey] = useState("");
   const [sshKeyFile, setSSHKeyFile] = useState("");
   const [ageKey, setAgeKey] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   function fetchCreds() {
     apiFetch<CredentialsData>(`/api/v1/stacks/${stackName}/credentials`).then(({ data, error: err }) => {
@@ -44,6 +48,20 @@ export function StackCredentials({ stackName }: { stackName: string }) {
   }
   useEffect(() => { fetchCreds(); }, [stackName]);
 
+  function startEdit() {
+    if (!creds) return;
+    // Pre-populate non-secret fields. Secret fields start empty;
+    // user types to replace, leaves empty to clear.
+    setToken("");
+    setSshKey("");
+    setSSHKeyFile(creds.per_stack.ssh_key_file || "");
+    setAgeKey("");
+    setUsername("");
+    setPassword("");
+    setSaveMsg("");
+    setEditing(true);
+  }
+
   async function handleSave() {
     setSaving(true);
     setSaveMsg("");
@@ -52,13 +70,22 @@ export function StackCredentials({ stackName }: { stackName: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         token: token.trim(),
+        ssh_key: sshKey.trim(),
         ssh_key_file: sshKeyFile.trim(),
         age_key: ageKey.trim(),
+        username: username.trim(),
+        password: password.trim(),
       }),
     });
     if (err) setSaveMsg(err);
     else { setSaveMsg("Saved"); setEditing(false); fetchCreds(); }
     setSaving(false);
+  }
+
+  /** Clear a single credential field via the DELETE endpoint (does not touch other fields). */
+  async function handleClearField(field: string) {
+    await apiFetch(`/api/v1/stacks/${stackName}/credentials/${field}`, { method: "DELETE" });
+    fetchCreds();
   }
 
   if (loading) return <div className="animate-pulse h-20 bg-muted rounded" />;
@@ -69,6 +96,33 @@ export function StackCredentials({ stackName }: { stackName: string }) {
     src === "none" ? "text-muted-foreground" :
     src.startsWith("per-stack") ? "text-cp-purple" :
     "text-cp-blue";
+
+  const anySet = creds.per_stack.token_set || creds.per_stack.ssh_key_set ||
+    !!creds.per_stack.ssh_key_file || creds.per_stack.age_key_set || creds.per_stack.username_set;
+
+  /** Render a per-field row in view mode with optional Remove button. */
+  function FieldRow({ label, value, isSet, field }: { label: string; value: string; isSet: boolean; field: string }) {
+    return (
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <span className="text-muted-foreground">{label}</span>
+          <p className="font-data truncate">{isSet ? value : "not set"}</p>
+        </div>
+        {isSet && (
+          <ConfirmButton
+            size="xs"
+            variant="ghost"
+            className="text-cp-red hover:text-cp-red shrink-0 mt-0.5"
+            message={`Clear ${label}?`}
+            confirmLabel="Clear"
+            onConfirm={() => handleClearField(field)}
+          >
+            Remove
+          </ConfirmButton>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -111,31 +165,136 @@ export function StackCredentials({ stackName }: { stackName: string }) {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm">Per-Stack Overrides</CardTitle>
-            {!editing && <Button size="xs" variant="outline" onClick={() => setEditing(true)}>Edit</Button>}
+            <div className="flex gap-2">
+              {anySet && !editing && (
+                <ConfirmButton
+                  size="xs"
+                  variant="ghost"
+                  className="text-cp-red hover:text-cp-red"
+                  message="Clear all per-stack credentials?"
+                  confirmLabel="Clear All"
+                  onConfirm={async () => {
+                    await apiFetch(`/api/v1/stacks/${stackName}/credentials`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ token: "", ssh_key: "", ssh_key_file: "", age_key: "", username: "", password: "" }),
+                    });
+                    fetchCreds();
+                  }}
+                >
+                  Clear All
+                </ConfirmButton>
+              )}
+              {!editing && <Button size="xs" variant="outline" onClick={startEdit}>Edit</Button>}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
           {!editing ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              <div><span className="text-muted-foreground">Token</span><p className="font-data">{creds.per_stack.token_set ? creds.per_stack.token_preview || "set" : "not set"}</p></div>
-              <div><span className="text-muted-foreground">SSH Key (inline)</span><p className="font-data">{creds.per_stack.ssh_key_set ? "set" : "not set"}</p></div>
-              <div><span className="text-muted-foreground">SSH Key File</span><p className="font-data">{creds.per_stack.ssh_key_file || "not set"}</p></div>
-              <div><span className="text-muted-foreground">Age Key</span><p className="font-data">{creds.per_stack.age_key_set ? "set" : "not set"}</p></div>
-              <div><span className="text-muted-foreground">Username</span><p className="font-data">{creds.per_stack.username_set ? "set" : "not set"}</p></div>
+              <FieldRow
+                label="Token"
+                value={creds.per_stack.token_preview || "set"}
+                isSet={creds.per_stack.token_set}
+                field="token"
+              />
+              <FieldRow
+                label="SSH Key (inline)"
+                value="set"
+                isSet={creds.per_stack.ssh_key_set}
+                field="ssh_key"
+              />
+              <FieldRow
+                label="SSH Key File"
+                value={creds.per_stack.ssh_key_file || ""}
+                isSet={!!creds.per_stack.ssh_key_file}
+                field="ssh_key_file"
+              />
+              <FieldRow
+                label="Age Key"
+                value="set"
+                isSet={creds.per_stack.age_key_set}
+                field="age_key"
+              />
+              <FieldRow
+                label="Username"
+                value="set"
+                isSet={creds.per_stack.username_set}
+                field="username"
+              />
             </div>
           ) : (
             <div className="space-y-3">
+              <p className="text-[11px] text-muted-foreground">
+                Leave a field empty to clear it. Previously-set secrets are not shown for security.
+              </p>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Git Token (overrides global)</label>
-                <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="ghp_... or empty to clear" className="font-data text-xs" />
+                <label className="text-xs text-muted-foreground">
+                  Git Token {creds.per_stack.token_set && <span className="text-cp-purple">(currently set)</span>}
+                </label>
+                <Input
+                  type="password"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="ghp_... or empty to clear"
+                  className="font-data text-xs"
+                />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">SSH Key File Path (overrides global keys)</label>
-                <Input value={sshKeyFile} onChange={(e) => setSSHKeyFile(e.target.value)} placeholder="/home/composer/.ssh/id_mykey" className="font-data text-xs" />
+                <label className="text-xs text-muted-foreground">
+                  SSH Private Key (inline PEM) {creds.per_stack.ssh_key_set && <span className="text-cp-purple">(currently set)</span>}
+                </label>
+                <textarea
+                  value={sshKey}
+                  onChange={(e) => setSshKey(e.target.value)}
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY----- or empty to clear"
+                  rows={4}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-data ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Age Key (overrides global SOPS key)</label>
-                <Input type="password" value={ageKey} onChange={(e) => setAgeKey(e.target.value)} placeholder="AGE-SECRET-KEY-... or empty to clear" className="font-data text-xs" />
+                <label className="text-xs text-muted-foreground">
+                  SSH Key File Path {creds.per_stack.ssh_key_file && <span className="text-cp-purple">(currently: {creds.per_stack.ssh_key_file})</span>}
+                </label>
+                <Input
+                  value={sshKeyFile}
+                  onChange={(e) => setSSHKeyFile(e.target.value)}
+                  placeholder="/home/composer/.ssh/id_mykey"
+                  className="font-data text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  Age Key {creds.per_stack.age_key_set && <span className="text-cp-purple">(currently set)</span>}
+                </label>
+                <Input
+                  type="password"
+                  value={ageKey}
+                  onChange={(e) => setAgeKey(e.target.value)}
+                  placeholder="AGE-SECRET-KEY-... or empty to clear"
+                  className="font-data text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  Username {creds.per_stack.username_set && <span className="text-cp-purple">(currently set)</span>}
+                </label>
+                <Input
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Basic auth username"
+                  className="font-data text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Password</label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Basic auth password"
+                  className="font-data text-xs"
+                />
               </div>
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? "..." : "Save"}</Button>

@@ -302,6 +302,82 @@ func TestUpdateCredentials_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
+func TestClearCredentialField_SSHKey(t *testing.T) {
+	gitCfgs := newMockGitConfigRepo()
+	gitCfgs.configs["mystack"] = &stack.GitSource{
+		RepoURL:    "git@github.com:test/repo.git",
+		AuthMethod: stack.GitAuthSSH,
+		Credentials: &stack.GitCredentials{
+			SSHKey:           "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----",
+			SSHKeyPassphrase: "secret",
+			AgeKey:           "AGE-SECRET-KEY-abc",
+		},
+	}
+
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
+	err := svc.ClearCredentialField(context.Background(), "mystack", "ssh_key")
+	require.NoError(t, err)
+
+	cfg := gitCfgs.configs["mystack"]
+	assert.Empty(t, cfg.Credentials.SSHKey)
+	assert.Empty(t, cfg.Credentials.SSHKeyPassphrase, "passphrase should be cleared with ssh_key")
+	assert.Equal(t, "AGE-SECRET-KEY-abc", cfg.Credentials.AgeKey, "other fields untouched")
+	assert.Equal(t, stack.GitAuthNone, cfg.AuthMethod, "auth method recalculated")
+}
+
+func TestClearCredentialField_Token(t *testing.T) {
+	gitCfgs := newMockGitConfigRepo()
+	gitCfgs.configs["mystack"] = &stack.GitSource{
+		RepoURL:    "https://github.com/test/repo",
+		AuthMethod: stack.GitAuthToken,
+		Credentials: &stack.GitCredentials{
+			Token:  "ghp_abc123",
+			AgeKey: "AGE-SECRET-KEY-abc",
+		},
+	}
+
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
+	err := svc.ClearCredentialField(context.Background(), "mystack", "token")
+	require.NoError(t, err)
+
+	cfg := gitCfgs.configs["mystack"]
+	assert.Empty(t, cfg.Credentials.Token)
+	assert.Equal(t, "AGE-SECRET-KEY-abc", cfg.Credentials.AgeKey)
+	assert.Equal(t, stack.GitAuthNone, cfg.AuthMethod)
+}
+
+func TestClearCredentialField_InvalidField(t *testing.T) {
+	gitCfgs := newMockGitConfigRepo()
+	gitCfgs.configs["mystack"] = &stack.GitSource{
+		RepoURL:    "https://github.com/test/repo",
+		AuthMethod: stack.GitAuthToken,
+		Credentials: &stack.GitCredentials{Token: "ghp_abc"},
+	}
+
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
+	err := svc.ClearCredentialField(context.Background(), "mystack", "bogus")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown credential field")
+}
+
+func TestClearCredentialField_NotFound(t *testing.T) {
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
+	err := svc.ClearCredentialField(context.Background(), "nonexistent", "token")
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestClearCredentialField_NilCreds(t *testing.T) {
+	gitCfgs := newMockGitConfigRepo()
+	gitCfgs.configs["mystack"] = &stack.GitSource{
+		RepoURL:    "https://github.com/test/repo",
+		AuthMethod: stack.GitAuthNone,
+	}
+
+	svc := NewStackService(newMockStackRepo(), gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks())
+	err := svc.ClearCredentialField(context.Background(), "mystack", "token")
+	assert.NoError(t, err, "nil credentials is a no-op")
+}
+
 // ---------------------------------------------------------------------------
 // deriveStackStatus (pure function, no deps)
 // ---------------------------------------------------------------------------

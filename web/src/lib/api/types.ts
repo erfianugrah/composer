@@ -1118,6 +1118,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stacks/{name}/credentials/{field}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Clear a single per-stack credential field
+         * @description Removes one per-stack credential override (token, ssh_key, ssh_key_file, age_key, username, password) without affecting other fields. The global credential takes effect for the cleared field.
+         */
+        delete: operations["clearStackCredentialField"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stacks/{name}/deploy": {
         parameters: {
             query?: never;
@@ -8149,6 +8169,83 @@ export interface operations {
                 "application/json": components["schemas"]["UpdateStackCredentialsInputBody"];
             };
         };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    clearStackCredentialField: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Stack name */
+                name: string;
+                /** @description Credential field to clear */
+                field: "token" | "ssh_key" | "ssh_key_file" | "age_key" | "username" | "password";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description No Content */
             204: {

@@ -222,6 +222,16 @@ func (h *StackHandler) Register(api huma.API) {
 	}, h.UpdateCredentials)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "clearStackCredentialField",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/stacks/{name}/credentials/{field}",
+		Summary:     "Clear a single per-stack credential field",
+		Description: "Removes one per-stack credential override (token, ssh_key, ssh_key_file, age_key, username, password) without affecting other fields. The global credential takes effect for the cleared field.",
+		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
+	}, h.ClearCredentialField)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "importStacks",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/import",
@@ -837,6 +847,20 @@ func (h *StackHandler) UpdateCredentials(ctx context.Context, input *dto.UpdateS
 		Username:   input.Body.Username,
 		Password:   input.Body.Password,
 	}); err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		return nil, serverError(ctx, err)
+	}
+	return nil, nil
+}
+
+func (h *StackHandler) ClearCredentialField(ctx context.Context, input *dto.ClearStackCredentialFieldInput) (*struct{}, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+
+	if err := h.stacks.ClearCredentialField(ctx, input.Name, input.Field); err != nil {
 		if errors.Is(err, app.ErrNotFound) {
 			return nil, huma.Error404NotFound("stack not found")
 		}
