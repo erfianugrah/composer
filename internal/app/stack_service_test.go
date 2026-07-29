@@ -349,8 +349,8 @@ func TestClearCredentialField_Token(t *testing.T) {
 func TestClearCredentialField_InvalidField(t *testing.T) {
 	gitCfgs := newMockGitConfigRepo()
 	gitCfgs.configs["mystack"] = &stack.GitSource{
-		RepoURL:    "https://github.com/test/repo",
-		AuthMethod: stack.GitAuthToken,
+		RepoURL:     "https://github.com/test/repo",
+		AuthMethod:  stack.GitAuthToken,
 		Credentials: &stack.GitCredentials{Token: "ghp_abc"},
 	}
 

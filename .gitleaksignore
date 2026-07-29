@@ -1,0 +1,7 @@
+118e78ce9d74fa5a0761f370c652c3d1c3d554a5:internal/infra/sops/agekey_test.go:generic-api-key:31
+39dc9ae5f55fa691d23696462dcc508d28cf6e50:web/public/stoplight-elements.js:generic-api-key:2
+7128a2567315fcd81df4fbbe76c7cff450cd53f0:docs/api-reference.md:curl-auth-header:28
+a2ba36fb2b827749a3dfddbe9d7a82d1ca6af292:internal/infra/crypto/keystore_test.go:private-key:102
+a2ba36fb2b827749a3dfddbe9d7a82d1ca6af292:internal/infra/crypto/keystore_test.go:private-key:196
+a2ba36fb2b827749a3dfddbe9d7a82d1ca6af292:internal/infra/crypto/keystore_test.go:private-key:199
+ac8269b5830d209d93ddc4ae98080046fdf7c45e:docs/api-reference.md:curl-auth-header:22
