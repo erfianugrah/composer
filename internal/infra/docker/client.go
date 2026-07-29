@@ -38,7 +38,14 @@ func NewClient(explicitHost string) (*Client, error) {
 		host = detectSocket()
 	}
 
+	// FromEnv must come BEFORE WithHost: it applies DOCKER_TLS_VERIFY /
+	// DOCKER_CERT_PATH (mTLS, e.g. a TLS-terminated remote engine) and would otherwise override
+	// nothing we care about - WithHost (applied after) always wins on the
+	// host itself, so COMPOSER_DOCKER_HOST/DOCKER_HOST probing in
+	// detectSocket() stays authoritative. Without DOCKER_CERT_PATH set,
+	// FromEnv is a no-op and local-socket behavior is unchanged.
 	opts := []dockerclient.Opt{
+		dockerclient.FromEnv,
 		dockerclient.WithHost(host),
 		dockerclient.WithAPIVersionNegotiation(),
 	}
