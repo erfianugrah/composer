@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+
+interface DockerHost {
+  id: number;
+  name: string;
+}
 
 interface Props {
   onCreated: (name: string) => void;
@@ -13,6 +18,14 @@ export function RawComposeForm({ onCreated }: Props) {
   const [compose, setCompose] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [host, setHost] = useState("");
+  const [hosts, setHosts] = useState<DockerHost[]>([]);
+
+  useEffect(() => {
+    apiFetch<{ hosts: DockerHost[] }>("/api/v1/hosts").then(({ data }) => {
+      if (data?.hosts) setHosts(data.hosts);
+    });
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,7 +35,7 @@ export function RawComposeForm({ onCreated }: Props) {
     const { error: err } = await apiFetch("/api/v1/stacks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), compose }),
+      body: JSON.stringify({ name: name.trim(), compose, ...(host && { host }) }),
     });
 
     if (err) {
@@ -44,6 +57,17 @@ export function RawComposeForm({ onCreated }: Props) {
             <label className="text-xs uppercase tracking-wider text-muted-foreground">Stack Name</label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-stack" required pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" title="Letters, numbers, dots, hyphens, underscores. Must start with alphanumeric." data-testid="raw-stack-name" />
           </div>
+          {hosts.length > 0 && (
+            <div className="space-y-1">
+              <label className="text-xs uppercase tracking-wider text-muted-foreground">Docker Host</label>
+              <select value={host} onChange={(e) => setHost(e.target.value)} className="flex h-9 w-full rounded border border-input bg-transparent px-3 py-1 text-sm font-data" data-testid="raw-host">
+                <option value="">Local (default)</option>
+                {hosts.map((h) => (
+                  <option key={h.id} value={h.name}>{h.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="space-y-1">
             <label className="text-xs uppercase tracking-wider text-muted-foreground">compose.yaml</label>
             <textarea

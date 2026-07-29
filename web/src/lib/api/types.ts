@@ -2085,6 +2085,7 @@ export interface components {
         };
         ContainerHealthChanged: {
             container_id: string;
+            host?: string;
             new: string;
             old: string;
             stack: string;
@@ -2134,6 +2135,7 @@ export interface components {
         };
         ContainerStateChanged: {
             container_id: string;
+            host?: string;
             new: string;
             old: string;
             stack: string;
@@ -2211,6 +2213,8 @@ export interface components {
             compose_path?: string;
             /** @description Path to .env file in repo, relative to repo root (default: .env at repo root) */
             env_path?: string;
+            /** @description Docker host name (empty or 'local' = default host) */
+            host?: string;
             /** @description Stack name */
             name: string;
             /** @description Password for basic auth */
@@ -2285,6 +2289,8 @@ export interface components {
             readonly $schema?: string;
             /** @description compose.yaml content (max 512 KB) */
             compose: string;
+            /** @description Docker host name (empty or 'local' = default host) */
+            host?: string;
             /** @description Stack name (filesystem-safe, alphanumerics, dashes, underscores only) */
             name: string;
         };
@@ -2557,6 +2563,8 @@ export interface components {
              * @enum {string}
              */
             action: "redeployed" | "synced_pending_manual" | "accepted" | "no_change";
+            /** @description Docker host targeted (omitted when 'local') */
+            host?: string;
             /** @description Background job ID (async mode) */
             job_id?: string;
         };
@@ -3261,6 +3269,8 @@ export interface components {
             /** @description True when .env is SOPS-encrypted */
             env_sops_encrypted?: boolean;
             git_config?: components["schemas"]["GitSourceOutput"];
+            /** @description Docker host name (omitted when 'local') */
+            host?: string;
             name: string;
             path: string;
             /** @enum {string} */
@@ -3304,6 +3314,8 @@ export interface components {
             container_count: number;
             /** Format: date-time */
             created_at: string;
+            /** @description Docker host name (omitted when 'local') */
+            host?: string;
             /** @description Stack name */
             name: string;
             /**
@@ -4127,7 +4139,10 @@ export interface operations {
     };
     listContainers: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4154,6 +4169,15 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5970,7 +5994,10 @@ export interface operations {
     };
     listNetworks: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5997,6 +6024,15 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7270,6 +7306,8 @@ export interface operations {
                 tail?: string;
                 /** @description Show logs since RFC3339 timestamp or Go duration */
                 since?: string;
+                /** @description Docker host name (empty or 'local' = default host) */
+                host?: string;
             };
             header?: never;
             path: {
@@ -7349,7 +7387,10 @@ export interface operations {
     };
     streamContainerStats: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty or 'local' = default host) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Container ID */
@@ -7660,6 +7701,8 @@ export interface operations {
                 tail?: string;
                 /** @description Since timestamp */
                 since?: string;
+                /** @description Docker host name (empty or 'local' = default host) */
+                host?: string;
             };
             header?: never;
             path: {

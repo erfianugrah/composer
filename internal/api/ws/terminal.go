@@ -16,11 +16,11 @@ import (
 
 // TerminalHandler handles WebSocket connections for interactive container terminals.
 type TerminalHandler struct {
-	dockerClient *docker.Client
+	factory *docker.Factory
 }
 
-func NewTerminalHandler(dockerClient *docker.Client) *TerminalHandler {
-	return &TerminalHandler{dockerClient: dockerClient}
+func NewTerminalHandler(factory *docker.Factory) *TerminalHandler {
+	return &TerminalHandler{factory: factory}
 }
 
 // resizeMsg is sent from the client to resize the terminal.
@@ -39,6 +39,12 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cli, err := h.factory.ClientForName(r.Context(), r.URL.Query().Get("host"))
+	if err != nil {
+		http.Error(w, "unknown docker host", http.StatusUnprocessableEntity)
+		return
+	}
+
 	shell := r.URL.Query().Get("shell")
 	if shell == "" {
 		shell = "/bin/sh"
@@ -54,7 +60,7 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Container scope validation (S7) -- only Compose-managed containers
-	info, err := h.dockerClient.InspectContainer(r.Context(), containerID)
+	info, err := cli.InspectContainer(r.Context(), containerID)
 	if err != nil {
 		http.Error(w, "container not found", http.StatusNotFound)
 		return
@@ -82,7 +88,7 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// Create exec session
-	exec, err := h.dockerClient.ExecAttach(ctx, containerID, []string{shell}, true)
+	exec, err := cli.ExecAttach(ctx, containerID, []string{shell}, true)
 	if err != nil {
 		conn.Close(websocket.StatusInternalError, "exec failed: "+err.Error())
 		return
@@ -133,7 +139,7 @@ func (h *TerminalHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if msgType == websocket.MessageText {
 				var msg resizeMsg
 				if json.Unmarshal(data, &msg) == nil && msg.Type == "resize" {
-					h.dockerClient.ExecResize(ctx, exec.ExecID, msg.Rows, msg.Cols)
+					cli.ExecResize(ctx, exec.ExecID, msg.Rows, msg.Cols)
 				}
 				continue
 			}

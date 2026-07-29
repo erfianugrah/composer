@@ -20,6 +20,7 @@ interface StackSummary {
   name: string;
   source: string;
   status: string;
+  host?: string;
   container_count: number;
   running_count: number;
   created_at: string;
@@ -202,6 +203,7 @@ export function DashboardOverview() {
                   <SelectAllTH rows={sorted} selection={sel} testId="select-all-stacks" />
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
+                  <TH className={cn("text-right", hideOnNarrow)}>Host</TH>
                   <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className={cn("text-right", hideOnNarrow)}>Containers</SortHeader>
                   <SortHeader active={sortKey === "source"} direction={direction} onSort={() => toggle("source")} className={hideOnNarrow}>Source</SortHeader>
                   <SortHeader active={sortKey === "updated"} direction={direction} onSort={() => toggle("updated")} className={hideOnNarrow}>Updated</SortHeader>
@@ -232,6 +234,13 @@ export function DashboardOverview() {
                     </TD>
                     <TD>
                       <Badge className={statusColor[stack.status] || statusColor.unknown}>{stack.status}</Badge>
+                    </TD>
+                    <TD className={cn("text-right font-data text-muted-foreground", hideOnNarrow)}>
+                      {stack.host ? (
+                        <Badge className="bg-cp-purple/20 text-cp-purple border-cp-purple/30">{stack.host}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground/50 text-xs">local</span>
+                      )}
                     </TD>
                     <TD className={cn("text-right font-data tabular-nums text-muted-foreground", hideOnNarrow)}>
                       {stack.container_count > 0 ? `${stack.running_count}/${stack.container_count}` : "—"}

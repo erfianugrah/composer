@@ -18,11 +18,12 @@ import (
 
 // ContainerHandler registers container management endpoints.
 type ContainerHandler struct {
-	docker *docker.Client
+	docker  *docker.Client
+	factory *docker.Factory // optional; nil in tests or when no remotes configured
 }
 
-func NewContainerHandler(docker *docker.Client) *ContainerHandler {
-	return &ContainerHandler{docker: docker}
+func NewContainerHandler(docker *docker.Client, factory *docker.Factory) *ContainerHandler {
+	return &ContainerHandler{docker: docker, factory: factory}
 }
 
 func (h *ContainerHandler) Register(api huma.API) {
@@ -99,12 +100,19 @@ func (h *ContainerHandler) Register(api huma.API) {
 	}, h.Unpause)
 }
 
-func (h *ContainerHandler) List(ctx context.Context, input *struct{}) (*dto.ContainerListOutput, error) {
+func (h *ContainerHandler) List(ctx context.Context, input *struct {
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*dto.ContainerListOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
 
-	containers, err := h.docker.ListContainers(ctx, "")
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+
+	containers, err := cli.ListContainers(ctx, "")
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -258,4 +266,12 @@ func (h *ContainerHandler) Logs(ctx context.Context, input *dto.ContainerLogsInp
 	out := &dto.ContainerLogsOutput{}
 	out.Body.Lines = lines
 	return out, nil
+}
+
+// resolveClient picks the docker client for the given host name.
+func (h *ContainerHandler) resolveClient(ctx context.Context, name string) (*docker.Client, error) {
+	if h.factory != nil && name != "" && name != "local" {
+		return h.factory.ClientForName(ctx, name)
+	}
+	return h.docker, nil
 }

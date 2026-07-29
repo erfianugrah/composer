@@ -5,6 +5,7 @@ type ContainerLogInput struct {
 	ID    string `path:"id" maxLength:"128" doc:"Container ID"`
 	Tail  string `query:"tail" default:"100" doc:"Number of lines from the end"`
 	Since string `query:"since" default:"" doc:"Show logs since RFC3339 timestamp or Go duration"`
+	Host  string `query:"host" default:"" doc:"Docker host name (empty or 'local' = default host)"`
 }
 
 // StackLogInput defines the path/query params for stack-level log streaming.
@@ -12,6 +13,7 @@ type StackLogInput struct {
 	Name  string `path:"name" maxLength:"128" doc:"Stack name"`
 	Tail  string `query:"tail" default:"50" doc:"Lines per container"`
 	Since string `query:"since" default:"" doc:"Since timestamp"`
+	Host  string `query:"host" default:"" doc:"Docker host name (empty or 'local' = default host)"`
 }
 
 // PipelineRunSSEInput defines the path params for pipeline run streaming.
@@ -22,5 +24,6 @@ type PipelineRunSSEInput struct {
 
 // ContainerStatsInput defines the path params for stats streaming.
 type ContainerStatsInput struct {
-	ID string `path:"id" maxLength:"128" doc:"Container ID"`
+	ID   string `path:"id" maxLength:"128" doc:"Container ID"`
+	Host string `query:"host" default:"" doc:"Docker host name (empty or 'local' = default host)"`
 }

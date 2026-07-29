@@ -26,7 +26,8 @@ type StepExecutor func(ctx context.Context, step pipeline.Step) (output string, 
 // PipelineExecutor runs pipeline steps in DAG order with concurrency.
 type PipelineExecutor struct {
 	compose   *docker.Compose
-	docker    *docker.Client // required for docker_exec steps; may be nil in tests
+	docker    *docker.Client  // required for docker_exec steps; may be nil in tests
+	factory   *docker.Factory // optional per-host compose/client resolver
 	bus       domevent.Bus
 	stacks    stack.StackRepository     // resolve stack name → path
 	gitCfgs   stack.GitConfigRepository // per-stack SOPS age key
@@ -47,6 +48,7 @@ func NewPipelineExecutor(
 	gitCfgs stack.GitConfigRepository,
 	stacksDir string,
 	locks *StackLocks,
+	factory *docker.Factory,
 ) *PipelineExecutor {
 	return &PipelineExecutor{
 		compose:   compose,
@@ -56,6 +58,7 @@ func NewPipelineExecutor(
 		gitCfgs:   gitCfgs,
 		stacksDir: stacksDir,
 		locks:     locks,
+		factory:   factory,
 	}
 }
 
@@ -276,12 +279,14 @@ func (e *PipelineExecutor) executeComposeStep(ctx context.Context, step pipeline
 
 	// Resolve stack name → filesystem path
 	var stackPath, composePath string
+	var hostID *int64
 	if e.stacks != nil {
 		st, err := e.stacks.GetByName(ctx, stackName)
 		if err != nil {
 			return "", fmt.Errorf("stack %q not found: %w", stackName, err)
 		}
 		stackPath = st.Path
+		hostID = st.HostID
 
 		// SOPS decrypt if available
 		if sops.IsAvailable() && e.gitCfgs != nil {
@@ -307,17 +312,25 @@ func (e *PipelineExecutor) executeComposeStep(ctx context.Context, step pipeline
 		stackPath = stackName
 	}
 
+	// Resolve the compose instance for this stack's host.
+	compose := e.compose // default
+	if e.factory != nil && hostID != nil {
+		if c, err := e.factory.ComposeFor(ctx, hostID); err == nil {
+			compose = c
+		}
+	}
+
 	var result *docker.ComposeResult
 	var err error
 	switch op {
 	case "up":
-		result, err = e.compose.Up(ctx, stackPath, composePath)
+		result, err = compose.Up(ctx, stackPath, composePath)
 	case "down":
-		result, err = e.compose.Down(ctx, stackPath, composePath, false)
+		result, err = compose.Down(ctx, stackPath, composePath, false)
 	case "pull":
-		result, err = e.compose.Pull(ctx, stackPath, composePath)
+		result, err = compose.Pull(ctx, stackPath, composePath)
 	case "restart":
-		result, err = e.compose.Restart(ctx, stackPath, composePath)
+		result, err = compose.Restart(ctx, stackPath, composePath)
 	default:
 		return "", fmt.Errorf("unknown compose op %q", op)
 	}
@@ -342,7 +355,15 @@ func (e *PipelineExecutor) executeComposeStep(ctx context.Context, step pipeline
 // `command` is wrapped in `sh -c` for shell-operator convenience; requires
 // the container to actually have a shell.
 func (e *PipelineExecutor) executeDockerExec(ctx context.Context, step pipeline.Step) (string, error) {
-	if e.docker == nil {
+	// Resolve docker client: if a 'host' config key is present, use the factory.
+	dockerClient := e.docker
+	hostName, _ := step.Config["host"].(string)
+	if hostName != "" && e.factory != nil {
+		if c, err := e.factory.ClientForName(ctx, hostName); err == nil {
+			dockerClient = c
+		}
+	}
+	if dockerClient == nil {
 		return "", fmt.Errorf("docker_exec: docker client not available")
 	}
 
@@ -356,7 +377,7 @@ func (e *PipelineExecutor) executeDockerExec(ctx context.Context, step pipeline.
 		return "", err
 	}
 
-	result, err := e.docker.ExecRun(ctx, containerName, argv)
+	result, err := dockerClient.ExecRun(ctx, containerName, argv)
 	if err != nil {
 		return "", fmt.Errorf("docker_exec: %w", err)
 	}

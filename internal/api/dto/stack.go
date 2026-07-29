@@ -8,6 +8,7 @@ type CreateStackInput struct {
 	Body struct {
 		Name    string `json:"name" minLength:"1" maxLength:"128" pattern:"^[A-Za-z0-9_-]+$" doc:"Stack name (filesystem-safe, alphanumerics, dashes, underscores only)"`
 		Compose string `json:"compose" minLength:"1" maxLength:"524288" doc:"compose.yaml content (max 512 KB)"`
+		Host    string `json:"host,omitempty" maxLength:"64" doc:"Docker host name (empty or 'local' = default host)"`
 	}
 }
 
@@ -18,6 +19,7 @@ type CreateGitStackInput struct {
 		Branch      string `json:"branch,omitempty" maxLength:"255" doc:"Branch to track (default: main)"`
 		ComposePath string `json:"compose_path,omitempty" maxLength:"512" doc:"Path to compose file in repo (default: compose.yaml)"`
 		EnvPath     string `json:"env_path,omitempty" maxLength:"512" doc:"Path to .env file in repo, relative to repo root (default: .env at repo root)"`
+		Host        string `json:"host,omitempty" maxLength:"64" doc:"Docker host name (empty or 'local' = default host)"`
 		AuthMethod  string `json:"auth_method,omitempty" enum:"none,token,ssh_key,ssh_file,basic" doc:"Auth method"`
 		Token       string `json:"token,omitempty" maxLength:"512" doc:"Access token for token auth"`
 		SSHKey      string `json:"ssh_key,omitempty" maxLength:"16384" doc:"PEM-encoded SSH private key (inline)"`
@@ -56,6 +58,7 @@ type StackSummary struct {
 	Name           string    `json:"name" doc:"Stack name"`
 	Source         string    `json:"source" enum:"local,git" doc:"Where the stack's compose lives"`
 	Status         string    `json:"status" enum:"running,stopped,partial,error,syncing,unknown" doc:"Current stack status derived from container states"`
+	Host           string    `json:"host,omitempty" doc:"Docker host name (omitted when 'local')"`
 	ContainerCount int       `json:"container_count" doc:"Number of containers in this stack"`
 	RunningCount   int       `json:"running_count" doc:"Number of running containers"`
 	CreatedAt      time.Time `json:"created_at"`
@@ -74,6 +77,7 @@ type StackDetailOutput struct {
 		Path             string            `json:"path"`
 		Source           string            `json:"source" enum:"local,git"`
 		Status           string            `json:"status" enum:"running,stopped,partial,error,syncing,unknown"`
+		Host             string            `json:"host,omitempty" doc:"Docker host name (omitted when 'local')"`
 		ComposeContent   string            `json:"compose_content"`
 		EnvContent       string            `json:"env_content,omitempty"`
 		EnvSopsEncrypted bool              `json:"env_sops_encrypted,omitempty" doc:"True when .env is SOPS-encrypted"`

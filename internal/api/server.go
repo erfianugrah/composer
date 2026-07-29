@@ -16,6 +16,7 @@ import (
 	selfupgrade "github.com/erfianugrah/composer/internal/app/selfupgrade"
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/domain/event"
+	"github.com/erfianugrah/composer/internal/domain/host"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	"github.com/erfianugrah/composer/internal/infra/store"
 )
@@ -34,6 +35,7 @@ type Deps struct {
 	PipelineService *app.PipelineService   // nil disables pipeline operations
 	RegistryService *app.RegistryService   // nil disables registry credential endpoints
 	HostService     *app.HostService       // nil disables docker host endpoints
+	HostRepo        host.Repository        // passed to handlers that resolve host names
 	DockerFactory   *docker.Factory        // per-host docker client/compose resolver
 	UserRepo        auth.UserRepository    // nil disables user management
 	SessionRepo     auth.SessionRepository // needed for OAuth session persistence
@@ -91,7 +93,7 @@ func NewServer(deps Deps) *Server {
 
 	// WebSocket terminal (raw HTTP handler with RBAC -- operator+)
 	if deps.DockerClient != nil {
-		termHandler := ws.NewTerminalHandler(deps.DockerClient)
+		termHandler := ws.NewTerminalHandler(deps.DockerFactory)
 		router.With(authmw.RequireRole(auth.RoleOperator)).
 			Get("/api/v1/ws/terminal/{id}", termHandler.ServeHTTP)
 	}

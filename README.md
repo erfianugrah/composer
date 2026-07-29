@@ -88,6 +88,22 @@ The `DOCKER_CERT_PATH` directory must contain three PEM files:
 
 2. **CLI path** (`internal/infra/docker/compose.go`): `applyExtraEnv` and `RunPTY` both build the subprocess environment from `cmd.Environ()`, which inherits the process environment. The env vars pass through to the `docker` / `docker compose` CLI, which reads `DOCKER_TLS_VERIFY` and `DOCKER_CERT_PATH` natively.
 
+## Multiple docker hosts
+
+One composerd can manage stacks across several Docker daemons. The daemon configured via `COMPOSER_DOCKER_HOST` (or socket auto-detection) is the **default host**; additional daemons are registered as named **docker hosts** in the database (`docker_hosts` table) via `POST /api/v1/hosts` or Settings -> Docker Hosts in the UI.
+
+Each registered host has:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Unique handle used across the API/UI (lowercase, e.g. `remote1`) |
+| `endpoint` | `tcp://<host>:2376` (mTLS), `tcp://<host>:2375` (plain), or `unix:///path.sock` |
+| `cert_dir` | Optional directory holding `ca.pem`/`cert.pem`/`key.pem` for mTLS endpoints |
+
+**Assigning stacks:** pass `host: "<name>"` when creating a stack (git or local). Empty (or `local`) pins the stack to the default host - existing stacks need no migration. Deploys, auto-deploys, compose actions, and `docker compose` PTY sessions for that stack then run against its host, with the host's own mTLS material exported to the CLI (`DOCKER_HOST`/`DOCKER_TLS_VERIFY`/`DOCKER_CERT_PATH` per invocation, never shared process env).
+
+**Elsewhere hosts apply:** the stack list/detail show a host badge; container/network/volume/image endpoints accept `?host=<name>`; SSE log/stats streams and the container terminal accept `host=<name>`; pipeline `docker_exec` steps accept an optional `"host"` config key, and compose steps automatically use the stack's host. Docker events are collected per host and domain events carry the host name. Self-upgrade always acts on the default host only.
+
 ## Tech Stack
 
 | Backend | Frontend |

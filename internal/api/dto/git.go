@@ -123,6 +123,7 @@ type WebhookCreatedOutput struct {
 type GitDeployOutput struct {
 	Body struct {
 		Action string `json:"action" enum:"redeployed,synced_pending_manual,accepted,no_change" doc:"Deploy action taken"`
+		Host   string `json:"host,omitempty" doc:"Docker host targeted (omitted when 'local')"`
 		JobID  string `json:"job_id,omitempty" doc:"Background job ID (async mode)"`
 	}
 }

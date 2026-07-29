@@ -246,6 +246,62 @@ test.describe("Settings Page", () => {
   });
 });
 
+test.describe("Docker Hosts", () => {
+  test("settings page shows the docker hosts form", async ({ page }) => {
+    await page.route("**/api/v1/hosts*", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"hosts":[]}' })
+    );
+    await page.goto("/settings");
+
+    await expect(page.getByTestId("hosts-form")).toBeVisible();
+  });
+
+  test("creating a host adds it to the table", async ({ page }) => {
+    let hosts: unknown[] = [];
+    await page.route("**/api/v1/hosts*", (route) => {
+      const method = route.request().method();
+      if (method === "GET") {
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ hosts }) });
+      }
+      if (method === "POST") {
+        hosts = [{
+          id: 1, name: "remote1", endpoint: "tcp://docker-remote.example:2376",
+          cert_dir: "/certs", tls: true,
+          created_at: "2026-07-29T00:00:00Z", updated_at: "2026-07-29T00:00:00Z",
+        }];
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ host: hosts[0] }) });
+      }
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await page.goto("/settings");
+
+    const form = page.getByTestId("hosts-form");
+    await form.getByPlaceholder("Name (e.g. nas)").fill("remote1");
+    await form.getByPlaceholder("tcp://docker-remote.example:2376").fill("tcp://docker-remote.example:2376");
+    await form.getByPlaceholder("Cert dir (optional, for mTLS)").fill("/certs");
+    await page.getByTestId("hosts-submit").click();
+
+    await expect(page.getByText("remote1")).toBeVisible();
+    await expect(page.getByText("tcp://docker-remote.example:2376")).toBeVisible();
+  });
+
+  test("stack list shows the host badge", async ({ page }) => {
+    await page.route("**/api/v1/stacks*", (route) =>
+      route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({ stacks: [{
+          name: "demo", source: "git", status: "running", host: "remote1",
+          container_count: 2, running_count: 2,
+          created_at: "2026-07-29T00:00:00Z", updated_at: "2026-07-29T00:00:00Z",
+        }] }),
+      })
+    );
+    await page.goto("/stacks");
+
+    await expect(page.getByText("remote1")).toBeVisible();
+  });
+});
+
 test.describe("Navigation", () => {
   test("sidebar links navigate between pages", async ({ page }) => {
     await page.goto("/");

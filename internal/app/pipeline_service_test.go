@@ -115,7 +115,7 @@ func TestPipelineService_Run_PersistsOnCompletion(t *testing.T) {
 	pipelineRepo := newMockPipelineRepo()
 	runRepo := newMockRunRepo()
 	runRepo.updateCh = make(chan struct{}, 8)
-	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks())
+	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks(), nil)
 	svc := NewPipelineService(pipelineRepo, runRepo, executor)
 	defer svc.Stop()
 
@@ -154,7 +154,7 @@ func TestPipelineService_CancelRun_ExecutorSkipsPersist(t *testing.T) {
 	pipelineRepo := newMockPipelineRepo()
 	runRepo := newMockRunRepo()
 	runRepo.updateCh = make(chan struct{}, 8)
-	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks())
+	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks(), nil)
 	svc := NewPipelineService(pipelineRepo, runRepo, executor)
 	defer svc.Stop()
 
@@ -207,7 +207,7 @@ func TestRunByWebhookTrigger_MatchesStackAndBranch(t *testing.T) {
 	pipelineRepo := newMockPipelineRepo()
 	runRepo := newMockRunRepo()
 	runRepo.updateCh = make(chan struct{}, 8)
-	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks())
+	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks(), nil)
 	svc := NewPipelineService(pipelineRepo, runRepo, executor)
 	defer svc.Stop()
 
@@ -240,7 +240,7 @@ func TestRunByWebhookTrigger_SkipsNonMatchingStack(t *testing.T) {
 
 	pipelineRepo := newMockPipelineRepo()
 	runRepo := newMockRunRepo()
-	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks())
+	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks(), nil)
 	svc := NewPipelineService(pipelineRepo, runRepo, executor)
 	defer svc.Stop()
 
@@ -271,7 +271,7 @@ func TestRunByWebhookTrigger_SkipsNonMatchingBranch(t *testing.T) {
 
 	pipelineRepo := newMockPipelineRepo()
 	runRepo := newMockRunRepo()
-	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks())
+	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks(), nil)
 	svc := NewPipelineService(pipelineRepo, runRepo, executor)
 	defer svc.Stop()
 
@@ -303,7 +303,7 @@ func TestRunByWebhookTrigger_EmptyBranchMatchesAny(t *testing.T) {
 	pipelineRepo := newMockPipelineRepo()
 	runRepo := newMockRunRepo()
 	runRepo.updateCh = make(chan struct{}, 8)
-	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks())
+	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks(), nil)
 	svc := NewPipelineService(pipelineRepo, runRepo, executor)
 	defer svc.Stop()
 
@@ -341,7 +341,7 @@ func newEventTriggerFixture(t *testing.T) (*PipelineService, *eventbus.MemoryBus
 	pipelineRepo := newMockPipelineRepo()
 	runRepo := newMockRunRepo()
 	runRepo.updateCh = make(chan struct{}, 8)
-	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks())
+	executor := NewPipelineExecutor(nil, nil, bus, nil, nil, "", NewStackLocks(), nil)
 	svc := NewPipelineService(pipelineRepo, runRepo, executor)
 	t.Cleanup(svc.Stop)
 	svc.SubscribeBus(bus)

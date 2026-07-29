@@ -277,6 +277,8 @@ components:
       properties:
         container_id:
           type: string
+        host:
+          type: string
         new:
           type: string
         old:
@@ -389,6 +391,8 @@ components:
       additionalProperties: false
       properties:
         container_id:
+          type: string
+        host:
           type: string
         new:
           type: string
@@ -550,6 +554,10 @@ components:
           description: "Path to .env file in repo, relative to repo root (default: .env at repo root)"
           maxLength: 512
           type: string
+        host:
+          description: Docker host name (empty or 'local' = default host)
+          maxLength: 64
+          type: string
         name:
           description: Stack name
           maxLength: 128
@@ -689,6 +697,10 @@ components:
           description: compose.yaml content (max 512 KB)
           maxLength: 524288
           minLength: 1
+          type: string
+        host:
+          description: Docker host name (empty or 'local' = default host)
+          maxLength: 64
           type: string
         name:
           description: Stack name (filesystem-safe, alphanumerics, dashes, underscores only)
@@ -1208,6 +1220,9 @@ components:
             - synced_pending_manual
             - accepted
             - no_change
+          type: string
+        host:
+          description: Docker host targeted (omitted when 'local')
           type: string
         job_id:
           description: Background job ID (async mode)
@@ -2650,6 +2665,9 @@ components:
           type: boolean
         git_config:
           $ref: "#/components/schemas/GitSourceOutput"
+        host:
+          description: Docker host name (omitted when 'local')
+          type: string
         name:
           type: string
         path:
@@ -2749,6 +2767,9 @@ components:
           type: integer
         created_at:
           format: date-time
+          type: string
+        host:
+          description: Docker host name (omitted when 'local')
           type: string
         name:
           description: Stack name
@@ -3872,6 +3893,14 @@ paths:
     get:
       description: Returns every container visible to the Docker daemon, including non-compose ones. For stack-scoped views call `getStack` instead.
       operationId: listContainers
+      parameters:
+        - description: Docker host name (empty = default)
+          explode: false
+          in: query
+          name: host
+          schema:
+            description: Docker host name (empty = default)
+            type: string
       responses:
         "200":
           content:
@@ -3891,6 +3920,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Forbidden
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
         "500":
           content:
             application/problem+json:
@@ -5251,6 +5286,14 @@ paths:
     get:
       description: Returns all Docker networks visible to the daemon including the default bridge and compose-created networks.
       operationId: listNetworks
+      parameters:
+        - description: Docker host name (empty = default)
+          explode: false
+          in: query
+          name: host
+          schema:
+            description: Docker host name (empty = default)
+            type: string
       responses:
         "200":
           content:
@@ -5270,6 +5313,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Forbidden
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
         "500":
           content:
             application/problem+json:
@@ -6275,6 +6324,13 @@ paths:
           schema:
             description: Show logs since RFC3339 timestamp or Go duration
             type: string
+        - description: Docker host name (empty or 'local' = default host)
+          explode: false
+          in: query
+          name: host
+          schema:
+            description: Docker host name (empty or 'local' = default host)
+            type: string
       responses:
         "200":
           content:
@@ -6349,6 +6405,13 @@ paths:
           schema:
             description: Container ID
             maxLength: 128
+            type: string
+        - description: Docker host name (empty or 'local' = default host)
+          explode: false
+          in: query
+          name: host
+          schema:
+            description: Docker host name (empty or 'local' = default host)
             type: string
       responses:
         "200":
@@ -6720,6 +6783,13 @@ paths:
           name: since
           schema:
             description: Since timestamp
+            type: string
+        - description: Docker host name (empty or 'local' = default host)
+          explode: false
+          in: query
+          name: host
+          schema:
+            description: Docker host name (empty or 'local' = default host)
             type: string
       responses:
         "200":

@@ -15,6 +15,7 @@ import (
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
+	"github.com/erfianugrah/composer/internal/domain/host"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	sopsInfra "github.com/erfianugrah/composer/internal/infra/sops"
@@ -22,12 +23,13 @@ import (
 
 // StackHandler registers stack management API endpoints.
 type StackHandler struct {
-	stacks *app.StackService
-	jobs   *app.JobManager
+	stacks   *app.StackService
+	jobs     *app.JobManager
+	hostRepo host.Repository
 }
 
-func NewStackHandler(stacks *app.StackService, jobs *app.JobManager) *StackHandler {
-	return &StackHandler{stacks: stacks, jobs: jobs}
+func NewStackHandler(stacks *app.StackService, jobs *app.JobManager, hostRepo host.Repository) *StackHandler {
+	return &StackHandler{stacks: stacks, jobs: jobs, hostRepo: hostRepo}
 }
 
 // composeOp is the signature shared by Deploy, BuildAndDeploy, Stop, Restart, Pull.
@@ -293,10 +295,12 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 	out.Body.Stacks = make([]dto.StackSummary, 0, len(stacks))
 	for _, s := range stacks {
 		b := byStack[s.Name]
+		hostName := resolveHostName(ctx, h.hostRepo, s.HostID)
 		out.Body.Stacks = append(out.Body.Stacks, dto.StackSummary{
 			Name:           s.Name,
 			Source:         string(s.Source),
 			Status:         string(s.Status),
+			Host:           hostName,
 			ContainerCount: b.total,
 			RunningCount:   b.running,
 			CreatedAt:      s.CreatedAt,
@@ -310,7 +314,13 @@ func (h *StackHandler) Create(ctx context.Context, input *dto.CreateStackInput) 
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	st, err := h.stacks.Create(ctx, input.Body.Name, input.Body.Compose)
+
+	hostID, err := app.ResolveHostIDVia(ctx, h.hostRepo, input.Body.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+
+	st, err := h.stacks.Create(ctx, input.Body.Name, input.Body.Compose, hostID)
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
@@ -339,6 +349,7 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 	out.Body.Path = st.Path
 	out.Body.Source = string(st.Source)
 	out.Body.Status = string(st.Status)
+	out.Body.Host = resolveHostName(ctx, h.hostRepo, st.HostID)
 	out.Body.ComposeContent = st.ComposeContent
 	out.Body.CreatedAt = st.CreatedAt
 	out.Body.UpdatedAt = st.UpdatedAt
@@ -414,6 +425,7 @@ func (h *StackHandler) Update(ctx context.Context, input *dto.UpdateStackInput) 
 	out.Body.Path = st.Path
 	out.Body.Source = string(st.Source)
 	out.Body.Status = string(st.Status)
+	out.Body.Host = resolveHostName(ctx, h.hostRepo, st.HostID)
 	out.Body.ComposeContent = st.ComposeContent
 	out.Body.CreatedAt = st.CreatedAt
 	out.Body.UpdatedAt = st.UpdatedAt
@@ -914,4 +926,17 @@ func (h *StackHandler) Diff(ctx context.Context, input *dto.GetStackInput) (*dto
 		})
 	}
 	return out, nil
+}
+
+// resolveHostName maps a host ID to its display name, returning "" for
+// the default host so omitempty drops the field in JSON output.
+func resolveHostName(ctx context.Context, repo host.Repository, hostID *int64) string {
+	if repo == nil || hostID == nil {
+		return ""
+	}
+	h, err := repo.GetByID(ctx, *hostID)
+	if err != nil || h == nil {
+		return ""
+	}
+	return h.Name
 }

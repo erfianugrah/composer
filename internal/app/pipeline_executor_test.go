@@ -20,7 +20,7 @@ func TestPipelineExecutor_SimpleShellSteps(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks()) // no compose needed for shell steps
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil) // no compose needed for shell steps
 
 	p, _ := pipeline.NewPipeline("test", "Shell test", "user1")
 	p.AddStep(pipeline.Step{
@@ -47,7 +47,7 @@ func TestPipelineExecutor_ParallelSteps(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
 
 	p, _ := pipeline.NewPipeline("test", "Parallel test", "user1")
 	// Two independent steps should run concurrently
@@ -81,7 +81,7 @@ func TestPipelineExecutor_StepFailure(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
 
 	p, _ := pipeline.NewPipeline("test", "Failure test", "user1")
 	p.AddStep(pipeline.Step{
@@ -107,7 +107,7 @@ func TestPipelineExecutor_ContinueOnError(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
 
 	p, _ := pipeline.NewPipeline("test", "Continue on error", "user1")
 	p.AddStep(pipeline.Step{
@@ -136,7 +136,7 @@ func TestPipelineExecutor_ContextCancellation(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
 
 	p, _ := pipeline.NewPipeline("test", "Cancellation", "user1")
 	p.AddStep(pipeline.Step{
@@ -162,7 +162,7 @@ func TestPipelineExecutor_ShellCommand_OutputCap(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
 
 	p, err := pipeline.NewPipeline("test", "shell output cap", "user1")
 	require.NoError(t, err)
@@ -192,7 +192,7 @@ func TestPipelineExecutor_DockerExec_NilClient(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
 
 	p, _ := pipeline.NewPipeline("test", "docker_exec missing client", "user1")
 	require.NoError(t, p.AddStep(pipeline.Step{
@@ -215,7 +215,7 @@ func TestPipelineExecutor_DockerExec_MissingContainer(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
 	defer bus.Close()
 
-	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
 
 	p, _ := pipeline.NewPipeline("test", "docker_exec missing container", "user1")
 	require.NoError(t, p.AddStep(pipeline.Step{
@@ -249,7 +249,7 @@ func TestPipelineExecutor_Events(t *testing.T) {
 		return true
 	})
 
-	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks())
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
 
 	p, _ := pipeline.NewPipeline("test", "Events", "user1")
 	p.AddStep(pipeline.Step{

@@ -50,12 +50,12 @@ func splitDockerTimestamp(line string) (time.Time, string, bool) {
 
 // SSEHandler registers Server-Sent Events streaming endpoints.
 type SSEHandler struct {
-	bus          event.Bus
-	dockerClient *docker.Client
+	bus     event.Bus
+	factory *docker.Factory
 }
 
-func NewSSEHandler(bus event.Bus, dockerClient *docker.Client) *SSEHandler {
-	return &SSEHandler{bus: bus, dockerClient: dockerClient}
+func NewSSEHandler(bus event.Bus, factory *docker.Factory) *SSEHandler {
+	return &SSEHandler{bus: bus, factory: factory}
 }
 
 func (h *SSEHandler) Register(api huma.API) {
@@ -167,7 +167,17 @@ func (h *SSEHandler) StreamContainerLogs(ctx context.Context, input *dto.Contain
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return
 	}
-	reader, err := h.dockerClient.ContainerLogs(ctx, input.ID, true, input.Tail, input.Since)
+	cli, err := h.factory.ClientForName(ctx, input.Host)
+	if err != nil {
+		send.Data(event.LogEntry{
+			ContainerID: input.ID,
+			Stream:      "stderr",
+			Message:     "error: " + err.Error(),
+			Timestamp:   time.Now(),
+		})
+		return
+	}
+	reader, err := cli.ContainerLogs(ctx, input.ID, true, input.Tail, input.Since)
 	if err != nil {
 		send.Data(event.LogEntry{
 			ContainerID: input.ID,
@@ -245,7 +255,11 @@ func (h *SSEHandler) StreamContainerStats(ctx context.Context, input *dto.Contai
 		return
 	}
 
-	reader, err := h.dockerClient.ContainerStats(ctx, input.ID, true)
+	cli, err := h.factory.ClientForName(ctx, input.Host)
+	if err != nil {
+		return
+	}
+	reader, err := cli.ContainerStats(ctx, input.ID, true)
 	if err != nil {
 		return
 	}
@@ -410,8 +424,13 @@ func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *dto.StackLogInp
 		return
 	}
 
+	cli, err := h.factory.ClientForName(ctx, input.Host)
+	if err != nil {
+		return
+	}
+
 	// List containers for this stack
-	containers, err := h.dockerClient.ListContainers(ctx, input.Name)
+	containers, err := cli.ListContainers(ctx, input.Name)
 	if err != nil || len(containers) == 0 {
 		return
 	}
@@ -421,7 +440,7 @@ func (h *SSEHandler) StreamStackLogs(ctx context.Context, input *dto.StackLogInp
 	var mu sync.Mutex
 	for _, c := range containers {
 		go func(containerID, containerName string) {
-			reader, err := h.dockerClient.ContainerLogs(ctx, containerID, true, input.Tail, input.Since)
+			reader, err := cli.ContainerLogs(ctx, containerID, true, input.Tail, input.Since)
 			if err != nil {
 				return
 			}

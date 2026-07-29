@@ -370,6 +370,9 @@
           "container_id": {
             "type": "string"
           },
+          "host": {
+            "type": "string"
+          },
           "new": {
             "type": "string"
           },
@@ -522,6 +525,9 @@
         "additionalProperties": false,
         "properties": {
           "container_id": {
+            "type": "string"
+          },
+          "host": {
             "type": "string"
           },
           "new": {
@@ -728,6 +734,11 @@
             "maxLength": 512,
             "type": "string"
           },
+          "host": {
+            "description": "Docker host name (empty or 'local' = default host)",
+            "maxLength": 64,
+            "type": "string"
+          },
           "name": {
             "description": "Stack name",
             "maxLength": 128,
@@ -905,6 +916,11 @@
             "description": "compose.yaml content (max 512 KB)",
             "maxLength": 524288,
             "minLength": 1,
+            "type": "string"
+          },
+          "host": {
+            "description": "Docker host name (empty or 'local' = default host)",
+            "maxLength": 64,
             "type": "string"
           },
           "name": {
@@ -1599,6 +1615,10 @@
               "accepted",
               "no_change"
             ],
+            "type": "string"
+          },
+          "host": {
+            "description": "Docker host targeted (omitted when 'local')",
             "type": "string"
           },
           "job_id": {
@@ -3563,6 +3583,10 @@
           "git_config": {
             "$ref": "#/components/schemas/GitSourceOutput"
           },
+          "host": {
+            "description": "Docker host name (omitted when 'local')",
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -3697,6 +3721,10 @@
           },
           "created_at": {
             "format": "date-time",
+            "type": "string"
+          },
+          "host": {
+            "description": "Docker host name (omitted when 'local')",
             "type": "string"
           },
           "name": {
@@ -5290,6 +5318,18 @@
       "get": {
         "description": "Returns every container visible to the Docker daemon, including non-compose ones. For stack-scoped views call `getStack` instead.",
         "operationId": "listContainers",
+        "parameters": [
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5320,6 +5360,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
@@ -7504,6 +7554,18 @@
       "get": {
         "description": "Returns all Docker networks visible to the daemon including the default bridge and compose-created networks.",
         "operationId": "listNetworks",
+        "parameters": [
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -7534,6 +7596,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
@@ -9134,6 +9206,16 @@
               "description": "Show logs since RFC3339 timestamp or Go duration",
               "type": "string"
             }
+          },
+          {
+            "description": "Docker host name (empty or 'local' = default host)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty or 'local' = default host)",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -9249,6 +9331,16 @@
             "schema": {
               "description": "Container ID",
               "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty or 'local' = default host)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty or 'local' = default host)",
               "type": "string"
             }
           }
@@ -9807,6 +9899,16 @@
             "name": "since",
             "schema": {
               "description": "Since timestamp",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty or 'local' = default host)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty or 'local' = default host)",
               "type": "string"
             }
           }

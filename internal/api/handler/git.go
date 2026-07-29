@@ -13,17 +13,19 @@ import (
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
 	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
+	"github.com/erfianugrah/composer/internal/domain/host"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 )
 
 // GitHandler registers git operation endpoints for stacks.
 type GitHandler struct {
-	git  *app.GitService
-	jobs *app.JobManager
+	git      *app.GitService
+	jobs     *app.JobManager
+	hostRepo host.Repository
 }
 
-func NewGitHandler(git *app.GitService, jobs *app.JobManager) *GitHandler {
-	return &GitHandler{git: git, jobs: jobs}
+func NewGitHandler(git *app.GitService, jobs *app.JobManager, hostRepo host.Repository) *GitHandler {
+	return &GitHandler{git: git, jobs: jobs, hostRepo: hostRepo}
 }
 
 func (h *GitHandler) Register(api huma.API) {
@@ -259,6 +261,11 @@ func (h *GitHandler) CreateGitStack(ctx context.Context, input *dto.CreateGitSta
 		return nil, err
 	}
 
+	hostID, err := app.ResolveHostIDVia(ctx, h.hostRepo, input.Body.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+
 	branch := input.Body.Branch
 	if branch == "" {
 		branch = "main"
@@ -293,7 +300,7 @@ func (h *GitHandler) CreateGitStack(ctx context.Context, input *dto.CreateGitSta
 		}
 	}
 
-	st, err := h.git.CreateGitStack(ctx, input.Body.Name, gitCfg)
+	st, err := h.git.CreateGitStack(ctx, input.Body.Name, gitCfg, hostID)
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}

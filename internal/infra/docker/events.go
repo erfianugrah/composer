@@ -11,14 +11,16 @@ import (
 
 // EventListener listens to Docker daemon events and translates them to domain events.
 type EventListener struct {
-	client *Client
-	bus    domevent.Bus
-	cancel context.CancelFunc
+	client   *Client
+	bus      domevent.Bus
+	hostName string // display name for this host ("" = default)
+	cancel   context.CancelFunc
 }
 
 // NewEventListener creates a listener that bridges Docker events to the domain event bus.
-func NewEventListener(client *Client, bus domevent.Bus) *EventListener {
-	return &EventListener{client: client, bus: bus}
+// hostName is the display name (empty string for the default host).
+func NewEventListener(client *Client, bus domevent.Bus, hostName string) *EventListener {
+	return &EventListener{client: client, bus: bus, hostName: hostName}
 }
 
 // Start begins listening for Docker events in a background goroutine.
@@ -92,6 +94,7 @@ func (l *EventListener) handleEvent(msg events.Message) {
 			l.bus.Publish(domevent.ContainerStateChanged{
 				ContainerID: msg.Actor.ID[:12],
 				StackName:   stack,
+				HostName:    l.hostName,
 				OldStatus:   "", // Docker events don't provide old state
 				NewStatus:   string(msg.Action),
 				Timestamp:   now,
@@ -102,6 +105,7 @@ func (l *EventListener) handleEvent(msg events.Message) {
 			l.bus.Publish(domevent.ContainerHealthChanged{
 				ContainerID: msg.Actor.ID[:12],
 				StackName:   stack,
+				HostName:    l.hostName,
 				OldHealth:   "",
 				NewHealth:   health,
 				Timestamp:   now,

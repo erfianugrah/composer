@@ -22,14 +22,12 @@ import (
 // Runs docker compose commands with a PTY so the client gets full ANSI output
 // (progress bars, colors, cursor movement) rendered via xterm.js.
 type ComposeHandler struct {
-	stacks  *app.StackService
-	compose *docker.Compose
+	stacks *app.StackService
 }
 
 func NewComposeHandler(stacks *app.StackService) *ComposeHandler {
 	return &ComposeHandler{
-		stacks:  stacks,
-		compose: stacks.GetCompose(),
+		stacks: stacks,
 	}
 }
 
@@ -123,9 +121,17 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ac.Cleanup()
 
+	// Resolve the compose wrapper for this stack's docker host.
+	compose, err := h.stacks.ComposeForStack(ctx, stackName)
+	if err != nil {
+		sendStatus(ctx, conn, composeStatusMsg{Type: "error", Message: err.Error()})
+		conn.Close(websocket.StatusInternalError, "host resolution failed")
+		return
+	}
+
 	// Track whether cancel was user-requested (immediate) vs disconnect (grace
 	// period). Read from the WS read goroutine, the ctx.Done goroutine, and the
-	// main phase loop — atomic to keep all three races-free.
+	// main phase loop - atomic to keep all three races-free.
 	var userCancelled atomic.Bool
 
 	// Listen for resize messages from client
@@ -236,7 +242,7 @@ func (h *ComposeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sizeMu.Unlock()
 
 		// Start compose with PTY (uses opCtx so disconnect doesn't instant-kill)
-		proc, err := h.compose.RunPTY(opCtx, ac.StackPath, ac.ComposeFile, c, r, args...)
+		proc, err := compose.RunPTY(opCtx, ac.StackPath, ac.ComposeFile, c, r, args...)
 		if err != nil {
 			lastErr = err
 			sendStatus(ctx, conn, composeStatusMsg{Type: "error", Message: fmt.Sprintf("Failed to start: %v", err)})

@@ -13,6 +13,7 @@ import (
 
 	domcontainer "github.com/erfianugrah/composer/internal/domain/container"
 	"github.com/erfianugrah/composer/internal/domain/event"
+	"github.com/erfianugrah/composer/internal/domain/host"
 	domreg "github.com/erfianugrah/composer/internal/domain/registry"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
@@ -25,6 +26,8 @@ type StackService struct {
 	stacks       stack.StackRepository
 	gitCfgs      stack.GitConfigRepository
 	registryRepo domreg.Repository // optional; nil disables registry auth
+	hostRepo     host.Repository   // optional; nil disables host resolution
+	factory      *docker.Factory   // optional per-host compose resolver
 	docker       *docker.Client
 	compose      *docker.Compose
 	bus          event.Bus
@@ -32,6 +35,16 @@ type StackService struct {
 	stacksDir    string
 	dataDir      string
 	locks        *StackLocks // per-stack mutex to prevent concurrent compose operations (shared)
+}
+
+// composeFor resolves the Compose wrapper for a stack's host.
+func (s *StackService) composeFor(ctx context.Context, st *stack.Stack) *docker.Compose {
+	if s.factory != nil && st.HostID != nil {
+		if c, err := s.factory.ComposeFor(ctx, st.HostID); err == nil {
+			return c
+		}
+	}
+	return s.compose
 }
 
 // SetRegistryRepo wires an optional registry credentials repository. When set,
@@ -89,6 +102,8 @@ func NewStackService(
 	stacksDir string,
 	dataDir string,
 	locks *StackLocks,
+	hostRepo host.Repository,
+	factory *docker.Factory,
 ) *StackService {
 	if log == nil {
 		log = zap.NewNop()
@@ -103,17 +118,20 @@ func NewStackService(
 		stacksDir: stacksDir,
 		dataDir:   dataDir,
 		locks:     locks,
+		hostRepo:  hostRepo,
+		factory:   factory,
 	}
 }
 
 // Create creates a new local stack with the given compose content.
-func (s *StackService) Create(ctx context.Context, name, composeContent string) (*stack.Stack, error) {
+func (s *StackService) Create(ctx context.Context, name, composeContent string, hostID *int64) (*stack.Stack, error) {
+	// Resolve HostID: nil = default (local), non-nil = remote docker_hosts row.
 	s.locks.Lock(name)
 	defer s.locks.Unlock(name)
 
 	stackPath := filepath.Join(s.stacksDir, name)
 
-	st, err := stack.NewStack(name, stackPath, stack.SourceLocal)
+	st, err := stack.NewStackWithHost(name, stackPath, stack.SourceLocal, hostID)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +147,7 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string) 
 
 	// Validate compose syntax before persisting to DB
 	if s.compose != nil {
-		if _, err := s.compose.Validate(ctx, stackPath); err != nil {
+		if _, err := s.composeFor(ctx, st).Validate(ctx, stackPath); err != nil {
 			os.RemoveAll(stackPath)
 			return nil, fmt.Errorf("invalid compose file: %w", err)
 		}
@@ -151,7 +169,7 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string) 
 	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
-	if _, err := s.compose.Up(deployCtx, st.Path, cf); err != nil {
+	if _, err := s.composeFor(ctx, st).Up(deployCtx, st.Path, cf); err != nil {
 		s.log.Warn("auto-deploy failed (stack created but not running)", zap.String("stack", name), zap.Error(err))
 		// Don't fail the create -- stack is saved, user can deploy manually
 	} else {
@@ -298,7 +316,7 @@ func (s *StackService) Delete(ctx context.Context, name string, removeVolumes bo
 
 	// Stop containers first (best effort)
 	cf := s.resolveComposeFile(ctx, name)
-	s.compose.Down(ctx, st.Path, cf, removeVolumes)
+	s.composeFor(ctx, st).Down(ctx, st.Path, cf, removeVolumes)
 
 	if err := s.stacks.Delete(ctx, name); err != nil {
 		return err
@@ -334,7 +352,7 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 
-	result, err := s.compose.Up(deployCtx, st.Path, cf)
+	result, err := s.composeFor(ctx, st).Up(deployCtx, st.Path, cf)
 	if err != nil {
 		s.log.Error("deploy failed", zap.String("stack", name), zap.Error(err))
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
@@ -366,7 +384,7 @@ func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 
-	result, err := s.compose.BuildAndUp(deployCtx, st.Path, cf)
+	result, err := s.composeFor(ctx, st).BuildAndUp(deployCtx, st.Path, cf)
 	if err != nil {
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
 		return result, err
@@ -391,7 +409,7 @@ func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeRe
 
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("stopping stack", zap.String("stack", name))
-	result, err := s.compose.Down(ctx, st.Path, cf, false)
+	result, err := s.composeFor(ctx, st).Down(ctx, st.Path, cf, false)
 	if err != nil {
 		s.log.Error("stop failed", zap.String("stack", name), zap.Error(err))
 		return result, err
@@ -417,7 +435,7 @@ func (s *StackService) Restart(ctx context.Context, name string) (*docker.Compos
 
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("restarting stack", zap.String("stack", name))
-	result, err := s.compose.Restart(ctx, st.Path, cf)
+	result, err := s.composeFor(ctx, st).Restart(ctx, st.Path, cf)
 	if err == nil {
 		s.log.Info("restart completed", zap.String("stack", name))
 		s.publishEvent(event.StackDeployed{Name: name, Timestamp: time.Now()})
@@ -449,7 +467,7 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
 	pullCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
-	result, err := s.compose.Pull(pullCtx, st.Path, cf)
+	result, err := s.composeFor(ctx, st).Pull(pullCtx, st.Path, cf)
 	if err == nil {
 		s.log.Info("pull completed", zap.String("stack", name))
 		s.publishEvent(event.StackUpdated{Name: name, Timestamp: time.Now()})
@@ -471,7 +489,7 @@ func (s *StackService) Config(ctx context.Context, name string) (*docker.Compose
 	if st == nil {
 		return nil, ErrNotFound
 	}
-	return s.compose.Config(ctx, st.Path)
+	return s.composeFor(ctx, st).Config(ctx, st.Path)
 }
 
 // Validate runs docker compose config to validate the compose syntax.
@@ -483,7 +501,7 @@ func (s *StackService) Validate(ctx context.Context, name string) (*docker.Compo
 	if st == nil {
 		return nil, ErrNotFound
 	}
-	return s.compose.Validate(ctx, st.Path)
+	return s.composeFor(ctx, st).Validate(ctx, st.Path)
 }
 
 // ImportResult holds the outcome of an import operation.
@@ -1028,9 +1046,17 @@ func (s *StackService) PublishActionEvent(name, action string, actionErr error) 
 	}
 }
 
-// GetCompose returns the Compose CLI wrapper for direct use (e.g., streaming WS handlers).
-func (s *StackService) GetCompose() *docker.Compose {
-	return s.compose
+// ComposeForStack returns the Compose CLI wrapper for the stack's docker host
+// (e.g., streaming WS handlers). Falls back to the default host's wrapper.
+func (s *StackService) ComposeForStack(ctx context.Context, name string) (*docker.Compose, error) {
+	st, err := s.stacks.GetByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if st == nil {
+		return nil, fmt.Errorf("stack %q not found", name)
+	}
+	return s.composeFor(ctx, st), nil
 }
 
 // DecryptEnvContent returns the decrypted .env content for display in the UI.
@@ -1068,7 +1094,7 @@ func (s *StackService) ExecCompose(ctx context.Context, name string, args []stri
 	if st == nil {
 		return nil, ErrNotFound
 	}
-	return s.compose.Exec(ctx, st.Path, args)
+	return s.composeFor(ctx, st).Exec(ctx, st.Path, args)
 }
 
 func deriveStackStatus(containers []domcontainer.Container) stack.Status {

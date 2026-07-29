@@ -65,6 +65,8 @@ func setupStackServer(t *testing.T) *api.Server {
 		stacksDir,
 		t.TempDir(), // dataDir
 		app.NewStackLocks(),
+		nil, // no host repo in tests
+		nil, // no docker factory in tests
 	)
 
 	jobManager := app.NewJobManager()

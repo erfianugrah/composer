@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"go.uber.org/zap"
 
 	"github.com/erfianugrah/composer/internal/api/ws"
 	"github.com/erfianugrah/composer/internal/infra/docker"
@@ -44,7 +45,7 @@ func TestTerminal_ExecEcho(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { dockerClient.Close() })
 
-	termHandler := ws.NewTerminalHandler(dockerClient)
+	termHandler := ws.NewTerminalHandler(docker.NewFactory(dockerClient, nil, nil, zap.NewNop()))
 
 	// Set up chi router with the terminal endpoint
 	router := chi.NewMux()

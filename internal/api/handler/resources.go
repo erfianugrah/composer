@@ -18,12 +18,13 @@ import (
 
 // ResourceHandler manages Docker networks, volumes, and images.
 type ResourceHandler struct {
-	docker *docker.Client
-	jobs   *app.JobManager // optional — enables ?async=true on prune endpoints
+	docker  *docker.Client
+	factory *docker.Factory // optional; nil when no remotes configured
+	jobs    *app.JobManager // optional — enables ?async=true on prune endpoints
 }
 
-func NewResourceHandler(docker *docker.Client, jobs *app.JobManager) *ResourceHandler {
-	return &ResourceHandler{docker: docker, jobs: jobs}
+func NewResourceHandler(docker *docker.Client, factory *docker.Factory, jobs *app.JobManager) *ResourceHandler {
+	return &ResourceHandler{docker: docker, factory: factory, jobs: jobs}
 }
 
 // runPruneAsync wraps a prune operation in a background job. The caller
@@ -206,7 +207,9 @@ func (h *ResourceHandler) Register(api huma.API) {
 
 // --- Networks ---
 
-func (h *ResourceHandler) ListNetworks(ctx context.Context, input *struct{}) (*dto.NetworkListOutput, error) {
+func (h *ResourceHandler) ListNetworks(ctx context.Context, input *struct {
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*dto.NetworkListOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}

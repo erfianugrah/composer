@@ -64,6 +64,7 @@ func (e StackError) EventTime() time.Time { return e.Timestamp }
 type ContainerStateChanged struct {
 	ContainerID string    `json:"container_id"`
 	StackName   string    `json:"stack"`
+	HostName    string    `json:"host,omitempty"`
 	OldStatus   string    `json:"old"`
 	NewStatus   string    `json:"new"`
 	Timestamp   time.Time `json:"ts"`
@@ -75,6 +76,7 @@ func (e ContainerStateChanged) EventTime() time.Time { return e.Timestamp }
 type ContainerHealthChanged struct {
 	ContainerID string    `json:"container_id"`
 	StackName   string    `json:"stack"`
+	HostName    string    `json:"host,omitempty"`
 	OldHealth   string    `json:"old"`
 	NewHealth   string    `json:"new"`
 	Timestamp   time.Time `json:"ts"`

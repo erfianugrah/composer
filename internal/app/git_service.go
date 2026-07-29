@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	domevent "github.com/erfianugrah/composer/internal/domain/event"
+	"github.com/erfianugrah/composer/internal/domain/host"
 	domreg "github.com/erfianugrah/composer/internal/domain/registry"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/docker"
@@ -24,6 +25,8 @@ type GitService struct {
 	stacks       stack.StackRepository
 	gitCfgs      stack.GitConfigRepository
 	registryRepo domreg.Repository // optional; nil disables registry auth
+	hostRepo     host.Repository   // optional; nil disables host resolution
+	factory      *docker.Factory   // optional per-host compose resolver
 	gitClient    *git.Client
 	compose      *docker.Compose
 	bus          domevent.Bus
@@ -68,6 +71,8 @@ func NewGitService(
 	log *zap.Logger,
 	stacksDir string,
 	locks *StackLocks,
+	hostRepo host.Repository,
+	factory *docker.Factory,
 ) *GitService {
 	if log == nil {
 		log = zap.NewNop()
@@ -75,12 +80,13 @@ func NewGitService(
 	return &GitService{
 		stacks: stacks, gitCfgs: gitCfgs, gitClient: gitClient,
 		compose: compose, bus: bus, log: log.Named("git"), stacksDir: stacksDir,
-		locks: locks,
+		locks: locks, hostRepo: hostRepo, factory: factory,
 	}
 }
 
 // CreateGitStack clones a git repo and creates a git-backed stack.
-func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *stack.GitSource) (*stack.Stack, error) {
+func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *stack.GitSource, hostID *int64) (*stack.Stack, error) {
+	// Resolve HostID: nil = default (local), non-nil = remote docker_hosts row.
 	stackPath := filepath.Join(s.stacksDir, name)
 	s.log.Info("cloning git stack", zap.String("stack", name), zap.String("repo", gitCfg.RepoURL), zap.String("branch", gitCfg.Branch))
 
@@ -104,7 +110,7 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 	}
 
 	// Create stack in DB
-	st, err := stack.NewGitStack(name, stackPath, gitCfg)
+	st, err := stack.NewGitStackWithHost(name, stackPath, gitCfg, hostID)
 	if err != nil {
 		os.RemoveAll(stackPath)
 		return nil, err
@@ -152,7 +158,14 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 	}
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
-	if _, err := s.compose.Up(deployCtx, stackPath, gitCfg.ComposePath); err != nil {
+	// Resolve compose for this stack's host.
+	compose := s.compose // default
+	if s.factory != nil && hostID != nil {
+		if c, err := s.factory.ComposeFor(deployCtx, hostID); err == nil {
+			compose = c
+		}
+	}
+	if _, err := compose.Up(deployCtx, stackPath, gitCfg.ComposePath); err != nil {
 		s.log.Warn("auto-deploy failed (stack cloned but not running)", zap.String("stack", name), zap.Error(err))
 	} else {
 		s.publishEvent(domevent.StackDeployed{Name: name, Timestamp: time.Now()})

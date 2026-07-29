@@ -153,16 +153,16 @@ func RegisterHumaHandlers(api huma.API, deps Deps, registerAll bool) {
 		handler.NewHostHandler(deps.HostService).Register(api)
 	})
 	register(deps.StackService != nil, func() {
-		handler.NewStackHandler(deps.StackService, deps.Jobs).Register(api)
+		handler.NewStackHandler(deps.StackService, deps.Jobs, deps.HostRepo).Register(api)
 	})
 	register(deps.DockerClient != nil, func() {
-		handler.NewContainerHandler(deps.DockerClient).Register(api)
+		handler.NewContainerHandler(deps.DockerClient, deps.DockerFactory).Register(api)
 	})
 	register(deps.EventBus != nil || deps.DockerClient != nil, func() {
-		handler.NewSSEHandler(deps.EventBus, deps.DockerClient).Register(api)
+		handler.NewSSEHandler(deps.EventBus, deps.DockerFactory).Register(api)
 	})
 	register(deps.GitService != nil, func() {
-		handler.NewGitHandler(deps.GitService, deps.Jobs).Register(api)
+		handler.NewGitHandler(deps.GitService, deps.Jobs, deps.HostRepo).Register(api)
 	})
 	register(deps.PipelineService != nil, func() {
 		handler.NewPipelineHandler(deps.PipelineService).Register(api)
@@ -177,7 +177,7 @@ func RegisterHumaHandlers(api huma.API, deps Deps, registerAll bool) {
 		handler.NewJobHandler(deps.Jobs).Register(api)
 	})
 	register(deps.DockerClient != nil, func() {
-		handler.NewResourceHandler(deps.DockerClient, deps.Jobs).Register(api)
+		handler.NewResourceHandler(deps.DockerClient, deps.DockerFactory, deps.Jobs).Register(api)
 	})
 	register(deps.Compose != nil, func() {
 		handler.NewDockerExecHandler(deps.Compose).Register(api)

@@ -219,10 +219,31 @@ func main() {
 
 	// --- Docker Event Listener (bridges Docker events to domain events) ---
 	if dockerClient != nil {
-		eventListener := docker.NewEventListener(dockerClient, bus)
-		eventListener.Start(ctx)
-		defer eventListener.Stop()
-		logger.Info("docker event listener started")
+		// Default host listener
+		defaultListener := docker.NewEventListener(dockerClient, bus, "local")
+		defaultListener.Start(ctx)
+		defer defaultListener.Stop()
+		logger.Info("docker event listener started for local")
+
+		// Per-host listeners for registered remote hosts
+		if hostRepo != nil {
+			hosts, err := hostRepo.List(ctx)
+			if err != nil {
+				logger.Warn("failed to list docker hosts for event listeners", zap.Error(err))
+			} else {
+				for _, h := range hosts {
+					cl, err := factory.ClientFor(ctx, &h.ID)
+					if err != nil {
+						logger.Warn("skipping event listener for host", zap.String("host", h.Name), zap.Error(err))
+						continue
+					}
+					hl := docker.NewEventListener(cl, bus, h.Name)
+					hl.Start(ctx)
+					defer hl.Stop()
+					logger.Info("docker event listener started", zap.String("host", h.Name))
+				}
+			}
+		}
 	}
 
 	// --- Git Client ---
@@ -259,9 +280,9 @@ func main() {
 		logger.Warn("registry env bootstrap failed", zap.Error(err))
 	}
 	if dockerClient != nil {
-		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, logger, cfg.StacksDir, cfg.DataDir, stackLocks)
+		stackSvc = app.NewStackService(stackRepo, gitConfigRepo, dockerClient, compose, bus, logger, cfg.StacksDir, cfg.DataDir, stackLocks, hostRepo, factory)
 		stackSvc.SetRegistryRepo(registryRepo)
-		gitSvc = app.NewGitService(stackRepo, gitConfigRepo, gitClient, compose, bus, logger, cfg.StacksDir, stackLocks)
+		gitSvc = app.NewGitService(stackRepo, gitConfigRepo, gitClient, compose, bus, logger, cfg.StacksDir, stackLocks, hostRepo, factory)
 		gitSvc.SetRegistryRepo(registryRepo)
 	}
 
@@ -272,7 +293,7 @@ func main() {
 	var pipelineExecutor *app.PipelineExecutor
 	var pipelineSvc *app.PipelineService
 	if compose != nil {
-		pipelineExecutor = app.NewPipelineExecutor(compose, dockerClient, bus, stackRepo, gitConfigRepo, cfg.StacksDir, stackLocks)
+		pipelineExecutor = app.NewPipelineExecutor(compose, dockerClient, bus, stackRepo, gitConfigRepo, cfg.StacksDir, stackLocks, factory)
 		pipelineSvc = app.NewPipelineService(pipelineRepo, runRepo, pipelineExecutor)
 		pipelineSvc.SetLogger(logger)
 		// Subscribe to the event bus so pipelines with `event` triggers fire
@@ -315,6 +336,7 @@ func main() {
 		PipelineService: pipelineSvc,
 		RegistryService: registrySvc,
 		HostService:     hostSvc,
+		HostRepo:        hostRepo,
 		DockerFactory:   factory,
 		UserRepo:        userRepo,
 		SessionRepo:     sessionRepo,

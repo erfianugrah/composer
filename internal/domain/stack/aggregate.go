@@ -76,6 +76,24 @@ type GitCredentials struct {
 
 // NewStack creates a new local stack.
 func NewStack(name, path string, source Source) (*Stack, error) {
+	s, err := newStack(name, path, source)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// NewStackWithHost creates a new local stack optionally targeting a remote host.
+func NewStackWithHost(name, path string, source Source, hostID *int64) (*Stack, error) {
+	s, err := newStack(name, path, source)
+	if err != nil {
+		return nil, err
+	}
+	s.HostID = hostID
+	return s, nil
+}
+
+func newStack(name, path string, source Source) (*Stack, error) {
 	if err := validateName(name); err != nil {
 		return nil, err
 	}
@@ -99,6 +117,11 @@ func NewStack(name, path string, source Source) (*Stack, error) {
 
 // NewGitStack creates a new git-backed stack.
 func NewGitStack(name, path string, gitConfig *GitSource) (*Stack, error) {
+	return NewGitStackWithHost(name, path, gitConfig, nil)
+}
+
+// NewGitStackWithHost creates a new git-backed stack optionally targeting a remote host.
+func NewGitStackWithHost(name, path string, gitConfig *GitSource, hostID *int64) (*Stack, error) {
 	if gitConfig == nil {
 		return nil, errors.New("git config is required for git-backed stacks")
 	}
@@ -106,13 +129,14 @@ func NewGitStack(name, path string, gitConfig *GitSource) (*Stack, error) {
 		return nil, fmt.Errorf("invalid git config: %w", err)
 	}
 
-	s, err := NewStack(name, path, SourceGit)
+	s, err := newStack(name, path, SourceGit)
 	if err != nil {
 		return nil, err
 	}
 
 	gitConfig.SyncStatus = GitSynced
 	s.GitConfig = gitConfig
+	s.HostID = hostID
 	return s, nil
 }
 
