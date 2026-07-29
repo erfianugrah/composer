@@ -65,6 +65,29 @@ See [docs/getting-started.md](docs/getting-started.md) for detailed setup.
 | [Reverse Proxy](docs/reverse-proxy.md) | Caddy, Traefik, nginx configs for TLS |
 | [Contributing](docs/contributing.md) | Dev setup, TDD workflow, test tiers |
 
+## Remote Docker hosts (mTLS)
+
+Composer supports connecting to a remote Docker engine over TLS with mutual authentication. Both the Go SDK (container/stack/image operations) and the `docker compose` CLI (deploys, builds, pulls) honor the same environment variables -- the CLI inherits them from the process environment.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `COMPOSER_DOCKER_HOST` | No | Docker host URL, e.g. `tcp://<host>:2376`. Takes precedence over `DOCKER_HOST`. |
+| `DOCKER_TLS_VERIFY` | Yes | Set to `1` to enable TLS verification with client certificates. |
+| `DOCKER_CERT_PATH` | Yes | Directory containing `ca.pem`, `cert.pem`, and `key.pem`. |
+
+### Certificate naming
+
+The `DOCKER_CERT_PATH` directory must contain three PEM files:
+- `ca.pem` -- CA certificate that signed the server's certificate
+- `cert.pem` -- Client certificate (the CN is what the remote engine's audit log records)
+- `key.pem` -- Client private key
+
+### How it works
+
+1. **SDK path** (`internal/infra/docker/client.go`): `NewClient` calls `dockerclient.FromEnv` before `dockerclient.WithHost`. When `DOCKER_TLS_VERIFY=1` and `DOCKER_CERT_PATH` are set, `FromEnv` configures the Docker SDK's TLS client config so all API calls (container inspect, image pull, etc.) use mTLS.
+
+2. **CLI path** (`internal/infra/docker/compose.go`): `applyExtraEnv` and `RunPTY` both build the subprocess environment from `cmd.Environ()`, which inherits the process environment. The env vars pass through to the `docker` / `docker compose` CLI, which reads `DOCKER_TLS_VERIFY` and `DOCKER_CERT_PATH` natively.
+
 ## Tech Stack
 
 | Backend | Frontend |
