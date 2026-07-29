@@ -84,6 +84,24 @@ func NewGitService(
 	}
 }
 
+// composeForHost resolves the compose wrapper for a stack's docker host.
+// nil hostID means the default (local) daemon. A host-pinned stack must
+// NEVER silently fall back to the local daemon -- that creates networks,
+// pulls images, and starts containers on the wrong host.
+func (s *GitService) composeForHost(ctx context.Context, hostID *int64) (*docker.Compose, error) {
+	if hostID == nil {
+		return s.compose, nil
+	}
+	if s.factory == nil {
+		return nil, fmt.Errorf("stack is pinned to docker host %d but no host factory is configured", *hostID)
+	}
+	c, err := s.factory.ComposeFor(ctx, hostID)
+	if err != nil {
+		return nil, fmt.Errorf("resolving compose for docker host %d: %w", *hostID, err)
+	}
+	return c, nil
+}
+
 // CreateGitStack clones a git repo and creates a git-backed stack.
 func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *stack.GitSource, hostID *int64) (*stack.Stack, error) {
 	// Resolve HostID: nil = default (local), non-nil = remote docker_hosts row.
@@ -158,12 +176,13 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 	}
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
-	// Resolve compose for this stack's host.
-	compose := s.compose // default
-	if s.factory != nil && hostID != nil {
-		if c, err := s.factory.ComposeFor(deployCtx, hostID); err == nil {
-			compose = c
-		}
+	// Resolve compose for this stack's host. A host-pinned stack must NEVER
+	// silently fall back to the local daemon -- that creates networks and
+	// containers on the wrong host. Skip the deploy on resolution failure.
+	compose, err := s.composeForHost(deployCtx, hostID)
+	if err != nil {
+		s.log.Error("auto-deploy skipped", zap.String("stack", name), zap.Error(err))
+		return st, nil
 	}
 	if _, err := compose.Up(deployCtx, stackPath, gitCfg.ComposePath); err != nil {
 		s.log.Warn("auto-deploy failed (stack cloned but not running)", zap.String("stack", name), zap.Error(err))
@@ -284,7 +303,15 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 	upCtx := deployCtx
-	if _, pullErr := s.compose.Pull(deployCtx, st.Path, cfg.ComposePath); pullErr != nil {
+	// Resolve compose for this stack's host. A host-pinned stack must NEVER
+	// silently fall back to the local daemon -- that creates networks and
+	// containers on the wrong host. Fail the redeploy instead.
+	compose, err := s.composeForHost(deployCtx, st.HostID)
+	if err != nil {
+		s.publishEvent(domevent.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
+		return "error", err
+	}
+	if _, pullErr := compose.Pull(deployCtx, st.Path, cfg.ComposePath); pullErr != nil {
 		s.log.Warn("image pull failed, deploying with cached images",
 			zap.String("stack", name), zap.Error(pullErr))
 		// A slow registry can exhaust deployCtx's deadline during the pull
@@ -300,7 +327,7 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 		}
 	}
 
-	_, err = s.compose.Up(upCtx, st.Path, cfg.ComposePath)
+	_, err = compose.Up(upCtx, st.Path, cfg.ComposePath)
 	if err != nil {
 		s.publishEvent(domevent.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
 		return "error", fmt.Errorf("redeploying: %w", err)
