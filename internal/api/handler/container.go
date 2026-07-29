@@ -129,12 +129,20 @@ func (h *ContainerHandler) List(ctx context.Context, input *struct {
 	return out, nil
 }
 
-func (h *ContainerHandler) Get(ctx context.Context, input *dto.ContainerIDInput) (*dto.ContainerDetailOutput, error) {
+func (h *ContainerHandler) Get(ctx context.Context, input *struct {
+	ID   string `path:"id" maxLength:"128" doc:"Container ID (short 12-char or full 64-char)"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*dto.ContainerDetailOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
 
-	c, err := h.docker.InspectContainer(ctx, input.ID)
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+
+	c, err := cli.InspectContainer(ctx, input.ID)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -151,8 +159,8 @@ func (h *ContainerHandler) Get(ctx context.Context, input *dto.ContainerIDInput)
 // validateContainerScope checks that a container is managed by Docker Compose
 // (has the com.docker.compose.project label). Prevents operating on infrastructure
 // containers like Composer itself, Postgres, Valkey, etc.
-func (h *ContainerHandler) validateScope(ctx context.Context, id string) error {
-	c, err := h.docker.InspectContainer(ctx, id)
+func (h *ContainerHandler) validateScope(ctx context.Context, cli *docker.Client, id string) error {
+	c, err := cli.InspectContainer(ctx, id)
 	if err != nil {
 		return fmt.Errorf("container not found")
 	}
@@ -162,77 +170,122 @@ func (h *ContainerHandler) validateScope(ctx context.Context, id string) error {
 	return nil
 }
 
-func (h *ContainerHandler) Start(ctx context.Context, input *dto.ContainerIDInput) (*struct{}, error) {
+func (h *ContainerHandler) Start(ctx context.Context, input *struct {
+	ID   string `path:"id" maxLength:"128" doc:"Container ID (short 12-char or full 64-char)"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	if err := h.validateScope(ctx, input.ID); err != nil {
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err := h.validateScope(ctx, cli, input.ID); err != nil {
 		return nil, huma.Error403Forbidden(err.Error())
 	}
-	if err := h.docker.StartContainer(ctx, input.ID); err != nil {
+	if err := cli.StartContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
 	}
 	return nil, nil
 }
 
-func (h *ContainerHandler) Stop(ctx context.Context, input *dto.ContainerIDInput) (*struct{}, error) {
+func (h *ContainerHandler) Stop(ctx context.Context, input *struct {
+	ID   string `path:"id" maxLength:"128" doc:"Container ID (short 12-char or full 64-char)"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	if err := h.validateScope(ctx, input.ID); err != nil {
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err := h.validateScope(ctx, cli, input.ID); err != nil {
 		return nil, huma.Error403Forbidden(err.Error())
 	}
-	if err := h.docker.StopContainer(ctx, input.ID); err != nil {
+	if err := cli.StopContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
 	}
 	return nil, nil
 }
 
-func (h *ContainerHandler) Restart(ctx context.Context, input *dto.ContainerIDInput) (*struct{}, error) {
+func (h *ContainerHandler) Restart(ctx context.Context, input *struct {
+	ID   string `path:"id" maxLength:"128" doc:"Container ID (short 12-char or full 64-char)"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	if err := h.validateScope(ctx, input.ID); err != nil {
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err := h.validateScope(ctx, cli, input.ID); err != nil {
 		return nil, huma.Error403Forbidden(err.Error())
 	}
-	if err := h.docker.RestartContainer(ctx, input.ID); err != nil {
+	if err := cli.RestartContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
 	}
 	return nil, nil
 }
 
-func (h *ContainerHandler) Pause(ctx context.Context, input *dto.ContainerIDInput) (*struct{}, error) {
+func (h *ContainerHandler) Pause(ctx context.Context, input *struct {
+	ID   string `path:"id" maxLength:"128" doc:"Container ID (short 12-char or full 64-char)"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	if err := h.validateScope(ctx, input.ID); err != nil {
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err := h.validateScope(ctx, cli, input.ID); err != nil {
 		return nil, huma.Error403Forbidden(err.Error())
 	}
-	if err := h.docker.PauseContainer(ctx, input.ID); err != nil {
+	if err := cli.PauseContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
 	}
 	return nil, nil
 }
 
-func (h *ContainerHandler) Unpause(ctx context.Context, input *dto.ContainerIDInput) (*struct{}, error) {
+func (h *ContainerHandler) Unpause(ctx context.Context, input *struct {
+	ID   string `path:"id" maxLength:"128" doc:"Container ID (short 12-char or full 64-char)"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	if err := h.validateScope(ctx, input.ID); err != nil {
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err := h.validateScope(ctx, cli, input.ID); err != nil {
 		return nil, huma.Error403Forbidden(err.Error())
 	}
-	if err := h.docker.UnpauseContainer(ctx, input.ID); err != nil {
+	if err := cli.UnpauseContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
 	}
 	return nil, nil
 }
 
-func (h *ContainerHandler) Logs(ctx context.Context, input *dto.ContainerLogsInput) (*dto.ContainerLogsOutput, error) {
+func (h *ContainerHandler) Logs(ctx context.Context, input *struct {
+	ID    string `path:"id" maxLength:"128" doc:"Container ID"`
+	Host  string `query:"host" doc:"Docker host name (empty = default)"`
+	Tail  string `query:"tail" default:"100" doc:"Number of lines from the end ('all' for full history)"`
+	Since string `query:"since" default:"" doc:"Show logs since RFC3339 timestamp or Go duration (e.g. 5m, 2h)"`
+}) (*dto.ContainerLogsOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
 
-	reader, err := h.docker.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+
+	reader, err := cli.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -246,7 +299,7 @@ func (h *ContainerHandler) Logs(ctx context.Context, input *dto.ContainerLogsInp
 	if err != nil && err != io.EOF {
 		// Fallback: TTY mode containers don't use multiplex framing.
 		// Re-read as raw text.
-		reader2, err2 := h.docker.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
+		reader2, err2 := cli.ContainerLogs(ctx, input.ID, false, input.Tail, input.Since)
 		if err2 != nil {
 			return nil, serverError(ctx, err)
 		}

@@ -823,13 +823,13 @@
         ],
         "type": "object"
       },
-      "CreateNetworkInputBody": {
+      "CreateNetworkRequest": {
         "additionalProperties": false,
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
             "examples": [
-              "//schemas/CreateNetworkInputBody.json"
+              "//schemas/CreateNetworkRequest.json"
             ],
             "format": "uri",
             "readOnly": true,
@@ -5244,6 +5244,16 @@
               "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5403,6 +5413,16 @@
               "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5488,6 +5508,16 @@
               "maxLength": 128,
               "type": "string"
             }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5571,6 +5601,16 @@
             "schema": {
               "description": "Container ID",
               "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
               "type": "string"
             }
           },
@@ -5679,6 +5719,16 @@
               "maxLength": 128,
               "type": "string"
             }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5765,6 +5815,16 @@
             "schema": {
               "description": "Container ID (short 12-char or full 64-char)",
               "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
               "type": "string"
             }
           }
@@ -5855,6 +5915,16 @@
               "maxLength": 128,
               "type": "string"
             }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5941,6 +6011,16 @@
             "schema": {
               "description": "Container ID (short 12-char or full 64-char)",
               "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
               "type": "string"
             }
           }
@@ -6031,6 +6111,16 @@
               "maxLength": 128,
               "type": "string"
             }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -6117,6 +6207,16 @@
             "schema": {
               "default": "5m",
               "description": "How far back to look, as Go duration (e.g. 5m, 1h, 30m)",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
               "type": "string"
             }
           }
@@ -6297,6 +6397,16 @@
               "default": false,
               "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended on hosts with significant accumulated cruft.",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
             }
           }
         ],
@@ -6784,6 +6894,18 @@
       "get": {
         "description": "Returns all local Docker images with tags, sizes, and creation timestamps.",
         "operationId": "listImages",
+        "parameters": [
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6814,6 +6936,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
@@ -6857,6 +6989,16 @@
               "default": false,
               "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Strongly recommended when All=true on a host with many tagged images.",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
             }
           }
         ],
@@ -6932,6 +7074,18 @@
       "post": {
         "description": "Pulls an image from its registry. Accepts any valid image ref (nginx, nginx:alpine, ghcr.io/owner/repo:tag).",
         "operationId": "pullImage",
+        "parameters": [
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -7026,6 +7180,16 @@
             "schema": {
               "description": "Image ID or tag",
               "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
               "type": "string"
             }
           }
@@ -7626,11 +7790,23 @@
       "post": {
         "description": "Creates a new network with the specified driver. Defaults to `bridge` driver when omitted.",
         "operationId": "createNetwork",
+        "parameters": [
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateNetworkInputBody"
+                "$ref": "#/components/schemas/CreateNetworkRequest"
               }
             }
           },
@@ -7722,6 +7898,16 @@
               "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -7805,6 +7991,16 @@
             "schema": {
               "description": "Network ID or name",
               "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
               "type": "string"
             }
           }
@@ -7891,6 +8087,16 @@
             "schema": {
               "description": "Network ID or name",
               "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
               "type": "string"
             }
           }
@@ -13971,6 +14177,18 @@
       "get": {
         "description": "Returns all named Docker volumes on the daemon.",
         "operationId": "listVolumes",
+        "parameters": [
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -14002,6 +14220,16 @@
             },
             "description": "Forbidden"
           },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
           "500": {
             "content": {
               "application/problem+json": {
@@ -14021,6 +14249,18 @@
       "post": {
         "description": "Creates a new named volume. Defaults to `local` driver.",
         "operationId": "createVolume",
+        "parameters": [
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -14117,6 +14357,16 @@
               "description": "Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes.",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -14200,6 +14450,16 @@
             "schema": {
               "description": "Volume name",
               "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
               "type": "string"
             }
           }
@@ -14286,6 +14546,16 @@
             "schema": {
               "description": "Volume name",
               "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Docker host name (empty = default)",
+            "explode": false,
+            "in": "query",
+            "name": "host",
+            "schema": {
+              "description": "Docker host name (empty = default)",
               "type": "string"
             }
           }

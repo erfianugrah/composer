@@ -2250,11 +2250,11 @@ export interface components {
              */
             role: "admin" | "operator" | "viewer";
         };
-        CreateNetworkInputBody: {
+        CreateNetworkRequest: {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example //schemas/CreateNetworkInputBody.json
+             * @example //schemas/CreateNetworkRequest.json
              */
             readonly $schema?: string;
             /** @description Network driver (default: bridge) */
@@ -4074,6 +4074,8 @@ export interface operations {
             query?: {
                 /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes. */
                 async?: boolean;
+                /** @description Docker host name (empty = default) */
+                host?: string;
             };
             header?: never;
             path?: never;
@@ -4201,6 +4203,8 @@ export interface operations {
             query?: {
                 /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes. */
                 async?: boolean;
+                /** @description Docker host name (empty = default) */
+                host?: string;
             };
             header?: never;
             path?: never;
@@ -4266,7 +4270,10 @@ export interface operations {
     };
     getContainer: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Container ID (short 12-char or full 64-char) */
@@ -4335,6 +4342,8 @@ export interface operations {
     containerLogs: {
         parameters: {
             query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
                 /** @description Number of lines from the end ('all' for full history) */
                 tail?: string;
                 /** @description Show logs since RFC3339 timestamp or Go duration (e.g. 5m, 2h) */
@@ -4407,7 +4416,10 @@ export interface operations {
     };
     pauseContainer: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Container ID (short 12-char or full 64-char) */
@@ -4482,7 +4494,10 @@ export interface operations {
     };
     restartContainer: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Container ID (short 12-char or full 64-char) */
@@ -4557,7 +4572,10 @@ export interface operations {
     };
     startContainer: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Container ID (short 12-char or full 64-char) */
@@ -4632,7 +4650,10 @@ export interface operations {
     };
     stopContainer: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Container ID (short 12-char or full 64-char) */
@@ -4707,7 +4728,10 @@ export interface operations {
     };
     unpauseContainer: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Container ID (short 12-char or full 64-char) */
@@ -4785,6 +4809,8 @@ export interface operations {
             query?: {
                 /** @description How far back to look, as Go duration (e.g. 5m, 1h, 30m) */
                 since?: string;
+                /** @description Docker host name (empty = default) */
+                host?: string;
             };
             header?: never;
             path?: never;
@@ -4917,6 +4943,8 @@ export interface operations {
                 volumes?: boolean;
                 /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended on hosts with significant accumulated cruft. */
                 async?: boolean;
+                /** @description Docker host name (empty = default) */
+                host?: string;
             };
             header?: never;
             path?: never;
@@ -5343,7 +5371,10 @@ export interface operations {
     };
     listImages: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5377,6 +5408,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ErrorModel"];
                 };
             };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -5395,6 +5435,8 @@ export interface operations {
                 all?: boolean;
                 /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Strongly recommended when All=true on a host with many tagged images. */
                 async?: boolean;
+                /** @description Docker host name (empty = default) */
+                host?: string;
             };
             header?: never;
             path?: never;
@@ -5460,7 +5502,10 @@ export interface operations {
     };
     pullImage: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5536,7 +5581,10 @@ export interface operations {
     };
     removeImage: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Image ID or tag */
@@ -6053,14 +6101,17 @@ export interface operations {
     };
     createNetwork: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateNetworkInputBody"];
+                "application/json": components["schemas"]["CreateNetworkRequest"];
             };
         };
         responses: {
@@ -6132,6 +6183,8 @@ export interface operations {
             query?: {
                 /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes. */
                 async?: boolean;
+                /** @description Docker host name (empty = default) */
+                host?: string;
             };
             header?: never;
             path?: never;
@@ -6197,7 +6250,10 @@ export interface operations {
     };
     inspectNetwork: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Network ID or name */
@@ -6265,7 +6321,10 @@ export interface operations {
     };
     removeNetwork: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Network ID or name */
@@ -10970,7 +11029,10 @@ export interface operations {
     };
     listVolumes: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11004,6 +11066,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ErrorModel"];
                 };
             };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -11017,7 +11088,10 @@ export interface operations {
     };
     createVolume: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11096,6 +11170,8 @@ export interface operations {
             query?: {
                 /** @description Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes. */
                 async?: boolean;
+                /** @description Docker host name (empty = default) */
+                host?: string;
             };
             header?: never;
             path?: never;
@@ -11161,7 +11237,10 @@ export interface operations {
     };
     inspectVolume: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Volume name */
@@ -11229,7 +11308,10 @@ export interface operations {
     };
     removeVolume: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Docker host name (empty = default) */
+                host?: string;
+            };
             header?: never;
             path: {
                 /** @description Volume name */

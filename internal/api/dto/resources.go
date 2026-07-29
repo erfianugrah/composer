@@ -24,6 +24,7 @@ type NetworkListOutput struct {
 
 // CreateNetworkInput is the request body for createNetwork.
 type CreateNetworkInput struct {
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
 	Body struct {
 		Name   string `json:"name" minLength:"1" maxLength:"128" doc:"Network name"`
 		Driver string `json:"driver,omitempty" maxLength:"32" doc:"Network driver (default: bridge)"`
@@ -32,7 +33,8 @@ type CreateNetworkInput struct {
 
 // NetworkIDInput is a path parameter for network operations.
 type NetworkIDInput struct {
-	ID string `path:"id" maxLength:"256" doc:"Network ID or name"`
+	ID   string `path:"id" maxLength:"256" doc:"Network ID or name"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
 }
 
 // NetworkInspectIPAM describes IPAM config for a network.
@@ -82,6 +84,7 @@ type VolumeListOutput struct {
 
 // CreateVolumeInput is the request body for createVolume.
 type CreateVolumeInput struct {
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
 	Body struct {
 		Name   string `json:"name" minLength:"1" maxLength:"128" doc:"Volume name"`
 		Driver string `json:"driver,omitempty" maxLength:"32" doc:"Volume driver (default: local)"`
@@ -91,6 +94,7 @@ type CreateVolumeInput struct {
 // VolumeNameInput is a path parameter for volume operations.
 type VolumeNameInput struct {
 	Name string `path:"name" maxLength:"128" doc:"Volume name"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
 }
 
 // VolumeInspectOutput is a curated subset of Docker's full volume inspect response.
@@ -125,6 +129,7 @@ type ImageListOutput struct {
 
 // PullImageInput is the request body for pullImage.
 type PullImageInput struct {
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
 	Body struct {
 		Ref string `json:"ref" minLength:"1" maxLength:"512" doc:"Image reference (e.g. nginx:alpine, ghcr.io/user/image:tag)"`
 	}
@@ -132,7 +137,8 @@ type PullImageInput struct {
 
 // ImageIDInput is a path parameter for image operations.
 type ImageIDInput struct {
-	ID string `path:"id" maxLength:"256" doc:"Image ID or tag"`
+	ID   string `path:"id" maxLength:"256" doc:"Image ID or tag"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
 }
 
 // --- Prune ---
@@ -153,13 +159,15 @@ type PruneOutput struct {
 // PruneAsyncInput is the shared `?async=true` toggle for prune endpoints
 // whose only knob is whether to detach the call from the request lifetime.
 type PruneAsyncInput struct {
-	Async bool `query:"async" default:"false" doc:"Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes."`
+	Async bool   `query:"async" default:"false" doc:"Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended for hosts with many images / containers where the prune can take minutes."`
+	Host  string `query:"host" doc:"Docker host name (empty = default)"`
 }
 
 // PruneImagesInput configures image pruning.
 type PruneImagesInput struct {
-	All   bool `query:"all" default:"false" doc:"Remove all unused images, not just dangling/untagged"`
-	Async bool `query:"async" default:"false" doc:"Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Strongly recommended when All=true on a host with many tagged images."`
+	All   bool   `query:"all" default:"false" doc:"Remove all unused images, not just dangling/untagged"`
+	Async bool   `query:"async" default:"false" doc:"Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Strongly recommended when All=true on a host with many tagged images."`
+	Host  string `query:"host" doc:"Docker host name (empty = default)"`
 }
 
 // PruneNetworksOutput is the result of network pruning.
@@ -172,9 +180,10 @@ type PruneNetworksOutput struct {
 
 // SystemPruneInput configures a system-wide prune.
 type SystemPruneInput struct {
-	All     bool `query:"all" default:"true" doc:"Remove all unused images (not just dangling)"`
-	Volumes bool `query:"volumes" default:"false" doc:"Also prune unused volumes"`
-	Async   bool `query:"async" default:"false" doc:"Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended on hosts with significant accumulated cruft."`
+	All     bool   `query:"all" default:"true" doc:"Remove all unused images (not just dangling)"`
+	Volumes bool   `query:"volumes" default:"false" doc:"Also prune unused volumes"`
+	Async   bool   `query:"async" default:"false" doc:"Run the prune in a background job. Returns a job_id immediately; poll /api/v1/jobs/{id} for completion. Recommended on hosts with significant accumulated cruft."`
+	Host    string `query:"host" doc:"Docker host name (empty = default)"`
 }
 
 // SystemPruneOutput reports the results of a system-wide prune.
@@ -204,6 +213,7 @@ type DockerEventItem struct {
 // RecentEventsInput configures the look-back window for recent events.
 type RecentEventsInput struct {
 	Since string `query:"since" default:"5m" doc:"How far back to look, as Go duration (e.g. 5m, 1h, 30m)"`
+	Host  string `query:"host" doc:"Docker host name (empty = default)"`
 }
 
 // RecentEventsOutput returns up to 100 recent events.

@@ -1,7 +1,8 @@
 package dto
 
 type ContainerIDInput struct {
-	ID string `path:"id" maxLength:"128" doc:"Container ID (short 12-char or full 64-char)"`
+	ID   string `path:"id" maxLength:"128" doc:"Container ID (short 12-char or full 64-char)"`
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
 }
 
 type ContainerListOutput struct {
@@ -18,6 +19,7 @@ type ContainerDetailOutput struct {
 // For streaming logs use GET /api/v1/sse/containers/{id}/logs.
 type ContainerLogsInput struct {
 	ID    string `path:"id" maxLength:"128" doc:"Container ID"`
+	Host  string `query:"host" doc:"Docker host name (empty = default)"`
 	Tail  string `query:"tail" default:"100" doc:"Number of lines from the end ('all' for full history)"`
 	Since string `query:"since" default:"" doc:"Show logs since RFC3339 timestamp or Go duration (e.g. 5m, 2h)"`
 }

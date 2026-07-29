@@ -213,7 +213,11 @@ func (h *ResourceHandler) ListNetworks(ctx context.Context, input *struct {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
-	nets, err := h.docker.ListNetworks(ctx)
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	nets, err := cli.ListNetworks(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -228,15 +232,25 @@ func (h *ResourceHandler) ListNetworks(ctx context.Context, input *struct {
 	return out, nil
 }
 
-func (h *ResourceHandler) CreateNetwork(ctx context.Context, input *dto.CreateNetworkInput) (*struct{}, error) {
+func (h *ResourceHandler) CreateNetwork(ctx context.Context, input *struct {
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+	Body struct {
+		Name   string `json:"name" minLength:"1" maxLength:"128" doc:"Network name"`
+		Driver string `json:"driver,omitempty" maxLength:"32" doc:"Network driver (default: bridge)"`
+	}
+}) (*struct{}, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
+	}
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	driver := input.Body.Driver
 	if driver == "" {
 		driver = "bridge"
 	}
-	if err := h.docker.CreateNetwork(ctx, input.Body.Name, driver); err != nil {
+	if err := cli.CreateNetwork(ctx, input.Body.Name, driver); err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return nil, nil
@@ -246,7 +260,11 @@ func (h *ResourceHandler) RemoveNetwork(ctx context.Context, input *dto.NetworkI
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	if err := h.docker.RemoveNetwork(ctx, input.ID); err != nil {
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err := cli.RemoveNetwork(ctx, input.ID); err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return nil, nil
@@ -256,7 +274,11 @@ func (h *ResourceHandler) InspectNetwork(ctx context.Context, input *dto.Network
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
-	data, err := h.docker.InspectNetwork(ctx, input.ID)
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	data, err := cli.InspectNetwork(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("network not found: " + err.Error())
 	}
@@ -295,11 +317,17 @@ func (h *ResourceHandler) InspectNetwork(ctx context.Context, input *dto.Network
 
 // --- Volumes ---
 
-func (h *ResourceHandler) ListVolumes(ctx context.Context, input *struct{}) (*dto.VolumeListOutput, error) {
+func (h *ResourceHandler) ListVolumes(ctx context.Context, input *struct {
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*dto.VolumeListOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
-	vols, err := h.docker.ListVolumes(ctx)
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	vols, err := cli.ListVolumes(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -318,11 +346,15 @@ func (h *ResourceHandler) CreateVolume(ctx context.Context, input *dto.CreateVol
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
 	driver := input.Body.Driver
 	if driver == "" {
 		driver = "local"
 	}
-	if err := h.docker.CreateVolume(ctx, input.Body.Name, driver); err != nil {
+	if err := cli.CreateVolume(ctx, input.Body.Name, driver); err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return nil, nil
@@ -332,7 +364,11 @@ func (h *ResourceHandler) RemoveVolume(ctx context.Context, input *dto.VolumeNam
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	if err := h.docker.RemoveVolume(ctx, input.Name); err != nil {
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err := cli.RemoveVolume(ctx, input.Name); err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return nil, nil
@@ -342,7 +378,11 @@ func (h *ResourceHandler) InspectVolume(ctx context.Context, input *dto.VolumeNa
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
-	data, err := h.docker.InspectVolume(ctx, input.Name)
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	data, err := cli.InspectVolume(ctx, input.Name)
 	if err != nil {
 		return nil, huma.Error404NotFound("volume not found: " + err.Error())
 	}
@@ -361,10 +401,14 @@ func (h *ResourceHandler) PruneVolumes(ctx context.Context, input *dto.PruneAsyn
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
 	out := &dto.PruneOutput{}
 	if input.Async && h.jobs != nil {
 		out.Body.JobID = h.runPruneAsync("prune_volumes", "all unused volumes", func(opCtx context.Context) (string, error) {
-			reclaimed, err := h.docker.PruneVolumes(opCtx)
+			reclaimed, err := cli.PruneVolumes(opCtx)
 			if err != nil {
 				return "", err
 			}
@@ -372,7 +416,7 @@ func (h *ResourceHandler) PruneVolumes(ctx context.Context, input *dto.PruneAsyn
 		})
 		return out, nil
 	}
-	reclaimed, err := h.docker.PruneVolumes(ctx)
+	reclaimed, err := cli.PruneVolumes(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -382,11 +426,17 @@ func (h *ResourceHandler) PruneVolumes(ctx context.Context, input *dto.PruneAsyn
 
 // --- Images ---
 
-func (h *ResourceHandler) ListImages(ctx context.Context, input *struct{}) (*dto.ImageListOutput, error) {
+func (h *ResourceHandler) ListImages(ctx context.Context, input *struct {
+	Host string `query:"host" doc:"Docker host name (empty = default)"`
+}) (*dto.ImageListOutput, error) {
 	if err := authmw.CheckRole(ctx, auth.RoleViewer); err != nil {
 		return nil, err
 	}
-	imgs, err := h.docker.ListImages(ctx)
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	imgs, err := cli.ListImages(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -408,7 +458,11 @@ func (h *ResourceHandler) PullImage(ctx context.Context, input *dto.PullImageInp
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	if err := h.docker.PullImage(ctx, input.Body.Ref); err != nil {
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err := cli.PullImage(ctx, input.Body.Ref); err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return nil, nil
@@ -418,7 +472,11 @@ func (h *ResourceHandler) RemoveImage(ctx context.Context, input *dto.ImageIDInp
 	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
 		return nil, err
 	}
-	if err := h.docker.RemoveImage(ctx, input.ID); err != nil {
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err := cli.RemoveImage(ctx, input.ID); err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return nil, nil
@@ -428,6 +486,10 @@ func (h *ResourceHandler) PruneImages(ctx context.Context, input *dto.PruneImage
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
 	out := &dto.PruneOutput{}
 	target := "dangling images"
 	if input.All {
@@ -435,7 +497,7 @@ func (h *ResourceHandler) PruneImages(ctx context.Context, input *dto.PruneImage
 	}
 	if input.Async && h.jobs != nil {
 		out.Body.JobID = h.runPruneAsync("prune_images", target, func(opCtx context.Context) (string, error) {
-			reclaimed, err := h.docker.PruneImages(opCtx, input.All)
+			reclaimed, err := cli.PruneImages(opCtx, input.All)
 			if err != nil {
 				return "", err
 			}
@@ -446,7 +508,7 @@ func (h *ResourceHandler) PruneImages(ctx context.Context, input *dto.PruneImage
 	// Decouple from HTTP request context — prune can take minutes on large hosts.
 	opCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	reclaimed, err := h.docker.PruneImages(opCtx, input.All)
+	reclaimed, err := cli.PruneImages(opCtx, input.All)
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
@@ -485,7 +547,12 @@ func (h *ResourceHandler) RecentEvents(ctx context.Context, input *dto.RecentEve
 	evtCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	msgCh, errCh := h.docker.EventsSince(evtCtx, sinceUnix)
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+
+	msgCh, errCh := cli.EventsSince(evtCtx, sinceUnix)
 
 	out := &dto.RecentEventsOutput{}
 	out.Body.Events = []dto.DockerEventItem{}
@@ -529,10 +596,14 @@ func (h *ResourceHandler) PruneContainers(ctx context.Context, input *dto.PruneA
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
 	out := &dto.PruneOutput{}
 	if input.Async && h.jobs != nil {
 		out.Body.JobID = h.runPruneAsync("prune_containers", "all stopped containers", func(opCtx context.Context) (string, error) {
-			reclaimed, err := h.docker.PruneContainers(opCtx)
+			reclaimed, err := cli.PruneContainers(opCtx)
 			if err != nil {
 				return "", err
 			}
@@ -540,7 +611,7 @@ func (h *ResourceHandler) PruneContainers(ctx context.Context, input *dto.PruneA
 		})
 		return out, nil
 	}
-	reclaimed, err := h.docker.PruneContainers(ctx)
+	reclaimed, err := cli.PruneContainers(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -552,10 +623,14 @@ func (h *ResourceHandler) PruneNetworks(ctx context.Context, input *dto.PruneAsy
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
 	out := &dto.PruneNetworksOutput{}
 	if input.Async && h.jobs != nil {
 		out.Body.JobID = h.runPruneAsync("prune_networks", "all unused networks", func(opCtx context.Context) (string, error) {
-			deleted, err := h.docker.PruneNetworks(opCtx)
+			deleted, err := cli.PruneNetworks(opCtx)
 			if err != nil {
 				return "", err
 			}
@@ -566,7 +641,7 @@ func (h *ResourceHandler) PruneNetworks(ctx context.Context, input *dto.PruneAsy
 		})
 		return out, nil
 	}
-	deleted, err := h.docker.PruneNetworks(ctx)
+	deleted, err := cli.PruneNetworks(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -578,10 +653,14 @@ func (h *ResourceHandler) PruneBuildCache(ctx context.Context, input *dto.PruneA
 	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
 	out := &dto.PruneOutput{}
 	if input.Async && h.jobs != nil {
 		out.Body.JobID = h.runPruneAsync("prune_buildcache", "BuildKit cache", func(opCtx context.Context) (string, error) {
-			reclaimed, err := h.docker.PruneBuildCache(opCtx)
+			reclaimed, err := cli.PruneBuildCache(opCtx)
 			if err != nil {
 				return "", err
 			}
@@ -589,7 +668,7 @@ func (h *ResourceHandler) PruneBuildCache(ctx context.Context, input *dto.PruneA
 		})
 		return out, nil
 	}
-	reclaimed, err := h.docker.PruneBuildCache(ctx)
+	reclaimed, err := cli.PruneBuildCache(ctx)
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
@@ -602,6 +681,11 @@ func (h *ResourceHandler) SystemPrune(ctx context.Context, input *dto.SystemPrun
 		return nil, err
 	}
 
+	cli, err := h.resolveClient(ctx, input.Host)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+
 	out := &dto.SystemPruneOutput{}
 
 	if input.Async && h.jobs != nil {
@@ -610,7 +694,7 @@ func (h *ResourceHandler) SystemPrune(ctx context.Context, input *dto.SystemPrun
 			target += " + volumes"
 		}
 		out.Body.JobID = h.runPruneAsync("system_prune", target, func(opCtx context.Context) (string, error) {
-			return h.runSystemPrune(opCtx, input.All, input.Volumes), nil
+			return h.runSystemPrune(opCtx, cli, input.All, input.Volumes), nil
 		})
 		return out, nil
 	}
@@ -623,27 +707,27 @@ func (h *ResourceHandler) SystemPrune(ctx context.Context, input *dto.SystemPrun
 	var total uint64
 
 	// 1. Containers
-	cr, _ := h.docker.PruneContainers(opCtx)
+	cr, _ := cli.PruneContainers(opCtx)
 	total += cr
 	out.Body.ContainersReclaimed = formatBytes(cr)
 
 	// 2. Networks
-	nd, _ := h.docker.PruneNetworks(opCtx)
+	nd, _ := cli.PruneNetworks(opCtx)
 	out.Body.NetworksDeleted = nd
 
 	// 3. Images
-	ir, _ := h.docker.PruneImages(opCtx, input.All)
+	ir, _ := cli.PruneImages(opCtx, input.All)
 	total += ir
 	out.Body.ImagesReclaimed = formatBytes(ir)
 
 	// 4. Build cache
-	br, _ := h.docker.PruneBuildCache(opCtx)
+	br, _ := cli.PruneBuildCache(opCtx)
 	total += br
 	out.Body.BuildCacheReclaimed = formatBytes(br)
 
 	// 5. Volumes (optional — destructive)
 	if input.Volumes {
-		vr, _ := h.docker.PruneVolumes(opCtx)
+		vr, _ := cli.PruneVolumes(opCtx)
 		total += vr
 		out.Body.VolumesReclaimed = formatBytes(vr)
 	}
@@ -655,30 +739,38 @@ func (h *ResourceHandler) SystemPrune(ctx context.Context, input *dto.SystemPrun
 // runSystemPrune executes a full system prune and returns a human-readable
 // summary line. Used by both the async job path and reusable by future
 // schedulers without going through the HTTP layer.
-func (h *ResourceHandler) runSystemPrune(ctx context.Context, all, volumes bool) string {
+func (h *ResourceHandler) runSystemPrune(ctx context.Context, cli *docker.Client, all, volumes bool) string {
 	var total uint64
 	parts := make([]string, 0, 5)
 
-	if cr, err := h.docker.PruneContainers(ctx); err == nil {
+	if cr, err := cli.PruneContainers(ctx); err == nil {
 		total += cr
 		parts = append(parts, fmt.Sprintf("containers %s", formatBytes(cr)))
 	}
-	if nd, err := h.docker.PruneNetworks(ctx); err == nil && len(nd) > 0 {
+	if nd, err := cli.PruneNetworks(ctx); err == nil && len(nd) > 0 {
 		parts = append(parts, fmt.Sprintf("%d networks", len(nd)))
 	}
-	if ir, err := h.docker.PruneImages(ctx, all); err == nil {
+	if ir, err := cli.PruneImages(ctx, all); err == nil {
 		total += ir
 		parts = append(parts, fmt.Sprintf("images %s", formatBytes(ir)))
 	}
-	if br, err := h.docker.PruneBuildCache(ctx); err == nil {
+	if br, err := cli.PruneBuildCache(ctx); err == nil {
 		total += br
 		parts = append(parts, fmt.Sprintf("build-cache %s", formatBytes(br)))
 	}
 	if volumes {
-		if vr, err := h.docker.PruneVolumes(ctx); err == nil {
+		if vr, err := cli.PruneVolumes(ctx); err == nil {
 			total += vr
 			parts = append(parts, fmt.Sprintf("volumes %s", formatBytes(vr)))
 		}
 	}
 	return fmt.Sprintf("Total reclaimed %s (%s)", formatBytes(total), strings.Join(parts, ", "))
+}
+
+// resolveClient picks the docker client for the given host name.
+func (h *ResourceHandler) resolveClient(ctx context.Context, name string) (*docker.Client, error) {
+	if h.factory != nil && name != "" && name != "local" {
+		return h.factory.ClientForName(ctx, name)
+	}
+	return h.docker, nil
 }
