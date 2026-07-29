@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 // TestApplyExtraEnv_PropagatesMTLSEnv verifies that applyExtraEnv preserves
@@ -110,5 +112,99 @@ func TestRunPTYEnv_PropagatesMTLSEnv(t *testing.T) {
 	}
 	if !hasTERM {
 		t.Error("PTY-path: TERM not found in cmd.Env")
+	}
+}
+
+// TestComposeTLS_applyExtraEnv: with NewComposeTLS, applyExtraEnv includes
+// DOCKER_TLS_VERIFY=1 and DOCKER_CERT_PATH in the env that came from
+// cmd.Environ() (the process env). The certDir is set explicitly, not from
+// the process env.
+func TestComposeTLS_applyExtraEnv(t *testing.T) {
+	// Environment should NOT carry mTLS env -- we set them explicitly on the Compose.
+	t.Setenv("DOCKER_TLS_VERIFY", "")
+	t.Setenv("DOCKER_CERT_PATH", "")
+
+	c := NewComposeTLS("tcp://example:2376", &TLSConfig{CertDir: "/certs"}, zap.NewNop())
+	cmd := exec.Command("echo")
+	ctx := context.Background()
+
+	env := c.applyExtraEnv(ctx, cmd)
+
+	dockerHostFound := false
+	tlsVerifyFound := false
+	certPathFound := false
+	for _, e := range env {
+		switch {
+		case e == "DOCKER_HOST=tcp://example:2376":
+			dockerHostFound = true
+		case e == "DOCKER_TLS_VERIFY=1":
+			tlsVerifyFound = true
+		case e == "DOCKER_CERT_PATH=/certs":
+			certPathFound = true
+		}
+	}
+
+	if !dockerHostFound {
+		t.Error("expected DOCKER_HOST=tcp://example:2376 in applyExtraEnv output")
+	}
+	if !tlsVerifyFound {
+		t.Error("expected DOCKER_TLS_VERIFY=1 in applyExtraEnv output")
+	}
+	if !certPathFound {
+		t.Error("expected DOCKER_CERT_PATH=/certs in applyExtraEnv output")
+	}
+}
+
+// TestComposeTLS_RunPTY: with NewComposeTLS, the env constructed in the
+// RunPTY pattern includes the explicit DOCKER_TLS_VERIFY and DOCKER_CERT_PATH.
+func TestComposeTLS_RunPTY(t *testing.T) {
+	t.Setenv("DOCKER_TLS_VERIFY", "")
+	t.Setenv("DOCKER_CERT_PATH", "")
+
+	c := NewComposeTLS("tcp://example:2376", &TLSConfig{CertDir: "/certs"}, zap.NewNop())
+
+	// Construct env the same way RunPTY does.
+	cmd := exec.Command("echo")
+	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
+	if c.dockerHost != "" {
+		cmd.Env = append(cmd.Env, "DOCKER_HOST="+c.dockerHost)
+	}
+	if tlsEnv := c.dockerEnv(); tlsEnv != nil {
+		cmd.Env = append(cmd.Env, tlsEnv...)
+	}
+
+	tlsVerifyFound := false
+	certPathFound := false
+	for _, e := range cmd.Env {
+		switch {
+		case e == "DOCKER_TLS_VERIFY=1":
+			tlsVerifyFound = true
+		case e == "DOCKER_CERT_PATH=/certs":
+			certPathFound = true
+		}
+	}
+	if !tlsVerifyFound {
+		t.Error("expected DOCKER_TLS_VERIFY=1 in PTY env")
+	}
+	if !certPathFound {
+		t.Error("expected DOCKER_CERT_PATH=/certs in PTY env")
+	}
+}
+
+// TestComposeTLS_legacyPlain: plain NewCompose (not TLS) does NOT add TLS vars.
+func TestComposeTLS_legacyPlain(t *testing.T) {
+	t.Setenv("DOCKER_TLS_VERIFY", "")
+	t.Setenv("DOCKER_CERT_PATH", "")
+
+	c := NewCompose("tcp://example:2376", zap.NewNop())
+	cmd := exec.Command("echo")
+	ctx := context.Background()
+
+	env := c.applyExtraEnv(ctx, cmd)
+
+	for _, e := range env {
+		if e == "DOCKER_TLS_VERIFY=1" || e == "DOCKER_CERT_PATH=/certs" {
+			t.Errorf("plain NewCompose should NOT carry TLS vars, but found %q", e)
+		}
 	}
 }

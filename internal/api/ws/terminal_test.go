@@ -40,7 +40,7 @@ func TestTerminal_ExecEcho(t *testing.T) {
 	require.NotEmpty(t, containerID)
 
 	// Create docker client + terminal handler
-	dockerClient, err := docker.NewClient("")
+	dockerClient, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { dockerClient.Close() })
 

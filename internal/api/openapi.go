@@ -70,6 +70,7 @@ func HumaConfig(version string) huma.Config {
 		{Name: "users", Description: "User management (admin only)"},
 		{Name: "keys", Description: "API key management (plaintext shown once at creation)"},
 		{Name: "registries", Description: "Docker registry credentials (global + per-stack, encrypted at rest)"},
+		{Name: "hosts", Description: "Remote docker host management"},
 		{Name: "stacks", Description: "Docker Compose stack lifecycle"},
 		{Name: "git", Description: "Git-backed stack sync, rollback, and deploy pipeline"},
 		{Name: "containers", Description: "Container inspection and lifecycle"},
@@ -147,6 +148,9 @@ func RegisterHumaHandlers(api huma.API, deps Deps, registerAll bool) {
 
 	register(deps.RegistryService != nil, func() {
 		handler.NewRegistryHandler(deps.RegistryService).Register(api)
+	})
+	register(deps.HostService != nil, func() {
+		handler.NewHostHandler(deps.HostService).Register(api)
 	})
 	register(deps.StackService != nil, func() {
 		handler.NewStackHandler(deps.StackService, deps.Jobs).Register(api)

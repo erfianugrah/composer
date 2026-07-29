@@ -48,7 +48,7 @@ func setupStackServer(t *testing.T) *api.Server {
 	)
 
 	// Docker client for stack operations
-	dockerClient, err := docker.NewClient("")
+	dockerClient, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { dockerClient.Close() })
 

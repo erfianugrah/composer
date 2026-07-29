@@ -33,6 +33,8 @@ type Deps struct {
 	GitService      *app.GitService        // nil disables git operations
 	PipelineService *app.PipelineService   // nil disables pipeline operations
 	RegistryService *app.RegistryService   // nil disables registry credential endpoints
+	HostService     *app.HostService       // nil disables docker host endpoints
+	DockerFactory   *docker.Factory        // per-host docker client/compose resolver
 	UserRepo        auth.UserRepository    // nil disables user management
 	SessionRepo     auth.SessionRepository // needed for OAuth session persistence
 	WebhookRepo     *store.WebhookRepo     // nil disables webhook receiver

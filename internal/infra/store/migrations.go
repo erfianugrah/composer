@@ -25,6 +25,16 @@ func goMigrations(dbType DBType) []*goose.Migration {
 				return execAll(ctx, tx, registryCredentialsDown())
 			}},
 		),
+		// 008: docker_hosts + stacks.host_id (multi-host support).
+		goose.NewGoMigration(
+			8,
+			&goose.GoFunc{RunTx: func(ctx context.Context, tx *sql.Tx) error {
+				return execAll(ctx, tx, dockerHostsUp(dbType))
+			}},
+			&goose.GoFunc{RunTx: func(ctx context.Context, tx *sql.Tx) error {
+				return execAll(ctx, tx, dockerHostsDown())
+			}},
+		),
 	}
 }
 
@@ -69,5 +79,37 @@ func registryCredentialsDown() []string {
 	return []string{
 		`DROP INDEX IF EXISTS idx_registry_credentials_stack_name`,
 		`DROP TABLE IF EXISTS registry_credentials`,
+	}
+}
+
+func dockerHostsUp(dbType DBType) []string {
+	var idCol string
+	switch dbType {
+	case DBTypeSQLite:
+		idCol = "id INTEGER PRIMARY KEY AUTOINCREMENT"
+	default: // Postgres
+		idCol = "id BIGSERIAL PRIMARY KEY"
+	}
+	return []string{
+		`CREATE TABLE IF NOT EXISTS docker_hosts (
+		    ` + idCol + `,
+		    name       TEXT NOT NULL UNIQUE,
+		    endpoint   TEXT NOT NULL,
+		    cert_dir   TEXT NOT NULL DEFAULT '',
+		    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// NULL = default host (the daemon composerd was configured with).
+		`ALTER TABLE stacks ADD COLUMN host_id INTEGER NULL
+		    REFERENCES docker_hosts(id)`,
+		`CREATE INDEX IF NOT EXISTS idx_stacks_host_id ON stacks(host_id)`,
+	}
+}
+
+func dockerHostsDown() []string {
+	return []string{
+		`DROP INDEX IF EXISTS idx_stacks_host_id`,
+		`ALTER TABLE stacks DROP COLUMN host_id`,
+		`DROP TABLE IF EXISTS docker_hosts`,
 	}
 }

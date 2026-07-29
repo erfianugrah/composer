@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+
+interface DockerHost {
+  id: number;
+  name: string;
+}
 
 interface Props {
   onCreated: (name: string) => void;
@@ -21,8 +26,16 @@ export function GitCloneForm({ onCreated }: Props) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [ageKey, setAgeKey] = useState("");
+  const [host, setHost] = useState("");
+  const [hosts, setHosts] = useState<DockerHost[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    apiFetch<{ hosts: DockerHost[] }>("/api/v1/hosts").then(({ data }) => {
+      if (data?.hosts) setHosts(data.hosts);
+    });
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,6 +57,7 @@ export function GitCloneForm({ onCreated }: Props) {
         ...(authMethod === "ssh_file" && { ssh_key_file: sshKeyFile.trim() }),
         ...(authMethod === "basic" && { username: username.trim(), password: password.trim() }),
         ...(ageKey.trim() && { age_key: ageKey.trim() }),
+        ...(host && { host }),
       }),
     });
 
@@ -86,6 +100,22 @@ export function GitCloneForm({ onCreated }: Props) {
               <label className="text-xs uppercase tracking-wider text-muted-foreground">.env Path</label>
               <Input value={envPath} onChange={(e) => setEnvPath(e.target.value)} placeholder=".env" title="Path to .env relative to repo root. Leave empty for .env at repo root." data-testid="git-env-path" />
             </div>
+            {hosts.length > 0 && (
+              <div className="space-y-1">
+                <label className="text-xs uppercase tracking-wider text-muted-foreground">Docker Host</label>
+                <select
+                  value={host}
+                  onChange={(e) => setHost(e.target.value)}
+                  className="flex h-9 w-full rounded border border-input bg-transparent px-3 py-1 text-sm"
+                  data-testid="git-host"
+                >
+                  <option value="">local (default)</option>
+                  {hosts.map((h) => (
+                    <option key={h.id} value={h.name}>{h.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="space-y-1">
               <label className="text-xs uppercase tracking-wider text-muted-foreground">Auth Method</label>
               <select

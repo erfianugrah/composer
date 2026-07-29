@@ -966,6 +966,59 @@ components:
         - stderr
         - exit_code
       type: object
+    DockerHostBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/DockerHostBody.json
+          format: uri
+          readOnly: true
+          type: string
+        cert_dir:
+          description: Directory holding ca.pem/cert.pem/key.pem for mTLS; empty = no TLS
+          type: string
+        endpoint:
+          description: tcp://host:2376 | tcp://host:2375 | unix:///path.sock
+          minLength: 1
+          type: string
+        name:
+          description: Unique host name (lowercase, dns-label-ish)
+          maxLength: 63
+          minLength: 1
+          type: string
+      required:
+        - name
+        - endpoint
+      type: object
+    DockerHostOutput:
+      additionalProperties: false
+      properties:
+        cert_dir:
+          type: string
+        created_at:
+          type: string
+        endpoint:
+          type: string
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+        tls:
+          description: true when cert_dir is set
+          type: boolean
+        updated_at:
+          type: string
+      required:
+        - id
+        - name
+        - endpoint
+        - tls
+        - created_at
+        - updated_at
+      type: object
     DockerStruct:
       additionalProperties: false
       properties:
@@ -1350,6 +1403,21 @@ components:
         - status
         - version
       type: object
+    HostOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/HostOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        host:
+          $ref: "#/components/schemas/DockerHostOutput"
+      required:
+        - host
+      type: object
     ImageInfo:
       additionalProperties: false
       properties:
@@ -1630,6 +1698,25 @@ components:
         - name
         - role
         - created_at
+      type: object
+    ListHostsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ListHostsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        hosts:
+          items:
+            $ref: "#/components/schemas/DockerHostOutput"
+          type:
+            - array
+            - "null"
+      required:
+        - hosts
       type: object
     ListRegistryCredentialsOutputBody:
       additionalProperties: false
@@ -4453,6 +4540,235 @@ paths:
       summary: Inbound git webhook receiver
       tags:
         - webhooks
+  /api/v1/hosts:
+    get:
+      operationId: listHosts
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListHostsOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: List docker hosts
+      tags:
+        - hosts
+    post:
+      operationId: createHost
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DockerHostBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Create a docker host
+      tags:
+        - hosts
+  /api/v1/hosts/{id}:
+    delete:
+      operationId: deleteHost
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Delete a docker host
+      tags:
+        - hosts
+    get:
+      operationId: getHost
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Get a docker host
+      tags:
+        - hosts
+    put:
+      operationId: updateHost
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DockerHostBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Update a docker host
+      tags:
+        - hosts
   /api/v1/images:
     get:
       description: Returns all local Docker images with tags, sizes, and creation timestamps.
@@ -9514,6 +9830,8 @@ tags:
     name: keys
   - description: Docker registry credentials (global + per-stack, encrypted at rest)
     name: registries
+  - description: Remote docker host management
+    name: hosts
   - description: Docker Compose stack lifecycle
     name: stacks
   - description: Git-backed stack sync, rollback, and deploy pipeline

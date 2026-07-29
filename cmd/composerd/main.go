@@ -126,13 +126,14 @@ func main() {
 	apiKeyRepo := store.NewAPIKeyRepo(db.SQL)
 	stackRepo := store.NewStackRepo(db.SQL)
 	gitConfigRepo := store.NewGitConfigRepo(db.SQL)
+	hostRepo := store.NewHostRepo(db.SQL)
 
 	// --- Docker (optional -- graceful degradation) ---
 	var dockerClient *docker.Client
 	var compose *docker.Compose
 	var stackSvc *app.StackService
 
-	dockerClient, err = docker.NewClient(cfg.DockerHost)
+	dockerClient, err = docker.NewClient(cfg.DockerHost, nil)
 	if err != nil {
 		logger.Warn("docker not available, stack management disabled", zap.Error(err))
 	} else {
@@ -141,6 +142,13 @@ func main() {
 			zap.String("host", dockerClient.Host()),
 		)
 		compose = docker.NewCompose(dockerClient.Host(), logger)
+	}
+
+	// --- Docker Host Repository + Service + Factory ---
+	hostSvc := app.NewHostService(hostRepo, logger)
+	var factory *docker.Factory
+	if dockerClient != nil {
+		factory = docker.NewFactory(dockerClient, compose, hostRepo, logger)
 	}
 
 	// --- Valkey Cache (optional) ---
@@ -306,6 +314,8 @@ func main() {
 		GitService:      gitSvc,
 		PipelineService: pipelineSvc,
 		RegistryService: registrySvc,
+		HostService:     hostSvc,
+		DockerFactory:   factory,
 		UserRepo:        userRepo,
 		SessionRepo:     sessionRepo,
 		WebhookRepo:     webhookRepo,
@@ -411,8 +421,8 @@ func main() {
 	}
 
 	bus.Close()
-	if dockerClient != nil {
-		dockerClient.Close()
+	if factory != nil {
+		factory.Close()
 	}
 	// db.Close() handled by defer on line 117
 	logger.Info("server stopped")

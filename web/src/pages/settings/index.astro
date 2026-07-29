@@ -4,6 +4,7 @@ import { SystemConfig } from "@/components/layout/SystemConfig";
 import { SelfUpgrade } from "@/components/layout/SelfUpgrade";
 import { CredentialsOverview } from "@/components/layout/CredentialsOverview";
 import { RegistryAuthSettings } from "@/components/layout/RegistryAuthSettings";
+import { DockerHosts } from "@/components/layout/DockerHosts";
 import { UserManagement } from "@/components/layout/UserManagement";
 import { ApiKeyManagement } from "@/components/layout/ApiKeyManagement";
 import { ImportStacks } from "@/components/stack/ImportStacks";
@@ -17,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
     <SelfUpgrade client:load />
     <CredentialsOverview client:load />
     <RegistryAuthSettings client:load />
+    <DockerHosts client:load />
     <UserManagement client:load />
     <ApiKeyManagement client:load />
     <ImportStacks client:load />

@@ -22,7 +22,7 @@ import (
 // "cannot start a paused container, try unpause instead". The fix routes paused
 // containers through UnpauseContainer (ContainerUnpause) instead of StartContainer.
 func TestClient_PauseUnpauseLifecycle(t *testing.T) {
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -60,7 +60,7 @@ func TestClient_PauseUnpauseLifecycle(t *testing.T) {
 }
 
 func TestClient_Ping(t *testing.T) {
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -69,7 +69,7 @@ func TestClient_Ping(t *testing.T) {
 }
 
 func TestClient_Info(t *testing.T) {
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -80,7 +80,7 @@ func TestClient_Info(t *testing.T) {
 }
 
 func TestClient_ListContainers(t *testing.T) {
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -102,7 +102,7 @@ func TestCompose_ValidateAndUp(t *testing.T) {
 	err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(compose), 0644)
 	require.NoError(t, err)
 
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -139,7 +139,7 @@ func TestCompose_ValidateAndUp(t *testing.T) {
 }
 
 func TestClient_ListImages(t *testing.T) {
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -149,7 +149,7 @@ func TestClient_ListImages(t *testing.T) {
 }
 
 func TestClient_PullAndRemoveImage(t *testing.T) {
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -189,7 +189,7 @@ func TestClient_PullAndRemoveImage(t *testing.T) {
 }
 
 func TestClient_PruneImages(t *testing.T) {
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -212,7 +212,7 @@ func TestCompose_ValidateInvalid(t *testing.T) {
 	err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("this is not valid yaml: ["), 0644)
 	require.NoError(t, err)
 
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -247,7 +247,7 @@ func TestCompose_Config_NoInterpolate(t *testing.T) {
 	env := "DB_PASSWORD=" + dbSecret + "\nAPI_TOKEN=" + apiSecret + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0644))
 
-	c, err := docker.NewClient("")
+	c, err := docker.NewClient("", nil)
 	require.NoError(t, err)
 	defer c.Close()
 

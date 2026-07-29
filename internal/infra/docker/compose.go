@@ -53,6 +53,9 @@ func (c *Compose) applyExtraEnv(ctx context.Context, cmd *exec.Cmd) []string {
 	if c.dockerHost != "" {
 		env = append(env, "DOCKER_HOST="+c.dockerHost)
 	}
+	if tlsEnv := c.dockerEnv(); tlsEnv != nil {
+		env = append(env, tlsEnv...)
+	}
 	if cfgDir := dockerConfigDirFromCtx(ctx); cfgDir != "" {
 		env = append(env, "DOCKER_CONFIG="+cfgDir)
 	}
@@ -70,6 +73,7 @@ type ComposeResult struct {
 // Compose wraps the `docker compose` CLI for stack operations.
 type Compose struct {
 	dockerHost string // passed as DOCKER_HOST env var
+	certDir    string // when non-empty: DOCKER_TLS_VERIFY=1 + DOCKER_CERT_PATH
 	log        *zap.Logger
 }
 
@@ -79,6 +83,26 @@ func NewCompose(dockerHost string, log *zap.Logger) *Compose {
 		log = zap.NewNop()
 	}
 	return &Compose{dockerHost: dockerHost, log: log}
+}
+
+// NewComposeTLS is the per-remote-host variant: the docker CLI child gets
+// explicit mTLS env instead of relying on composerd's process env (which is
+// the default host's material - wrong for any other host).
+func NewComposeTLS(dockerHost string, tls *TLSConfig, log *zap.Logger) *Compose {
+	c := NewCompose(dockerHost, log)
+	if tls != nil && tls.CertDir != "" {
+		c.certDir = tls.CertDir
+	}
+	return c
+}
+
+// dockerEnv returns the per-host TLS env vars for this Compose.
+// Empty when certDir is not set (legacy behaviour: inherit from process env).
+func (c *Compose) dockerEnv() []string {
+	if c.certDir == "" {
+		return nil
+	}
+	return []string{"DOCKER_TLS_VERIFY=1", "DOCKER_CERT_PATH=" + c.certDir}
 }
 
 // Up runs `docker compose up -d --no-build` in the given stack directory.
@@ -325,6 +349,9 @@ func (c *Compose) RunPTY(ctx context.Context, workDir, composeFile string, cols,
 	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
 	if c.dockerHost != "" {
 		cmd.Env = append(cmd.Env, "DOCKER_HOST="+c.dockerHost)
+	}
+	if tlsEnv := c.dockerEnv(); tlsEnv != nil {
+		cmd.Env = append(cmd.Env, tlsEnv...)
 	}
 	if cfgDir := dockerConfigDirFromCtx(ctx); cfgDir != "" {
 		cmd.Env = append(cmd.Env, "DOCKER_CONFIG="+cfgDir)

@@ -31,23 +31,51 @@ type Client struct {
 	runtime string // "docker" or "podman"
 }
 
+// TLSConfig pins explicit mTLS material for a remote host. CertDir must
+// contain ca.pem, cert.pem, key.pem (docker CLI naming). When nil, NewClient
+// falls back to the legacy env behaviour (FromEnv: DOCKER_TLS_VERIFY /
+// DOCKER_CERT_PATH) - which is correct for the DEFAULT host only.
+type TLSConfig struct{ CertDir string }
+
 // NewClient creates a Docker/Podman client with auto-detection.
-func NewClient(explicitHost string) (*Client, error) {
+// Pass tls=nil for legacy env behaviour (the default host); pass non-nil
+// for explicit per-host mTLS material.
+func NewClient(explicitHost string, tls *TLSConfig) (*Client, error) {
 	host := explicitHost
 	if host == "" {
 		host = detectSocket()
 	}
 
-	// FromEnv must come BEFORE WithHost: it applies DOCKER_TLS_VERIFY /
-	// DOCKER_CERT_PATH (mTLS, e.g. a TLS-terminated remote engine) and would otherwise override
-	// nothing we care about - WithHost (applied after) always wins on the
-	// host itself, so COMPOSER_DOCKER_HOST/DOCKER_HOST probing in
-	// detectSocket() stays authoritative. Without DOCKER_CERT_PATH set,
-	// FromEnv is a no-op and local-socket behavior is unchanged.
-	opts := []dockerclient.Opt{
-		dockerclient.FromEnv,
-		dockerclient.WithHost(host),
-		dockerclient.WithAPIVersionNegotiation(),
+	var opts []dockerclient.Opt
+	if tls != nil {
+		if tls.CertDir == "" {
+			return nil, fmt.Errorf("TLS config requires CertDir")
+		}
+		ca := filepath.Join(tls.CertDir, "ca.pem")
+		cert := filepath.Join(tls.CertDir, "cert.pem")
+		key := filepath.Join(tls.CertDir, "key.pem")
+		for _, f := range []string{ca, cert, key} {
+			if _, err := os.Stat(f); err != nil {
+				return nil, fmt.Errorf("TLS material: %w", err)
+			}
+		}
+		opts = []dockerclient.Opt{
+			dockerclient.WithTLSClientConfig(ca, cert, key),
+			dockerclient.WithHost(host),
+			dockerclient.WithAPIVersionNegotiation(),
+		}
+	} else {
+		// FromEnv BEFORE WithHost is load-bearing: it applies
+		// DOCKER_TLS_VERIFY / DOCKER_CERT_PATH (mTLS for a
+		// TLS-terminated remote engine). WithHost (applied after)
+		// always wins on the host itself, so DOCKER_HOST probing
+		// stays authoritative. client_fromenv_test.go pins this opt
+		// order.
+		opts = []dockerclient.Opt{
+			dockerclient.FromEnv,
+			dockerclient.WithHost(host),
+			dockerclient.WithAPIVersionNegotiation(),
+		}
 	}
 
 	cli, err := dockerclient.NewClientWithOpts(opts...)

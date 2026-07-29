@@ -125,7 +125,7 @@ func TestNewClient_ExplicitHostBeatsDockerHostEnv(t *testing.T) {
 	t.Setenv("COMPOSER_DOCKER_HOST", "")
 	t.Setenv("DOCKER_CERT_PATH", "")
 
-	c, err := NewClient("tcp://127.0.0.1:1")
+	c, err := NewClient("tcp://127.0.0.1:1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestNewClient_mTLSConnectsWithEnv(t *testing.T) {
 	t.Setenv("DOCKER_TLS_VERIFY", "1")
 	t.Setenv("DOCKER_HOST", "")
 
-	c, err := NewClient(host)
+	c, err := NewClient(host, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestNewClient_mTLSRejectedWithoutEnv(t *testing.T) {
 	t.Setenv("DOCKER_TLS_VERIFY", "")
 	t.Setenv("DOCKER_HOST", "")
 
-	c, err := NewClient(host)
+	c, err := NewClient(host, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestNewClient_mTLSRejectedWrongCA(t *testing.T) {
 	t.Setenv("DOCKER_TLS_VERIFY", "1")
 	t.Setenv("DOCKER_HOST", "")
 
-	c, err := NewClient(host)
+	c, err := NewClient(host, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

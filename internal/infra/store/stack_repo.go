@@ -23,9 +23,9 @@ func NewStackRepo(db *sql.DB) *StackRepo {
 
 func (r *StackRepo) Create(ctx context.Context, s *stack.Stack) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO stacks (name, path, source, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5)`,
-		s.Name, s.Path, string(s.Source), s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO stacks (name, path, source, host_id, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		s.Name, s.Path, string(s.Source), s.HostID, s.CreatedAt, s.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("inserting stack: %w", err)
@@ -46,9 +46,9 @@ func (r *StackRepo) GetByName(ctx context.Context, name string) (*stack.Stack, e
 	s := &stack.Stack{}
 	var source string
 	err := r.db.QueryRowContext(ctx,
-		`SELECT name, path, source, created_at, updated_at
+		`SELECT name, path, source, host_id, created_at, updated_at
 		 FROM stacks WHERE name = $1`, name,
-	).Scan(&s.Name, &s.Path, &source, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.Name, &s.Path, &source, &s.HostID, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -62,7 +62,7 @@ func (r *StackRepo) GetByName(ctx context.Context, name string) (*stack.Stack, e
 
 func (r *StackRepo) List(ctx context.Context) ([]*stack.Stack, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT name, path, source, created_at, updated_at
+		`SELECT name, path, source, host_id, created_at, updated_at
 		 FROM stacks WHERE name != $1 ORDER BY name ASC LIMIT 500`, systemStackName)
 	if err != nil {
 		return nil, fmt.Errorf("listing stacks: %w", err)
@@ -73,7 +73,7 @@ func (r *StackRepo) List(ctx context.Context) ([]*stack.Stack, error) {
 	for rows.Next() {
 		s := &stack.Stack{}
 		var source string
-		if err := rows.Scan(&s.Name, &s.Path, &source, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.Name, &s.Path, &source, &s.HostID, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning stack row: %w", err)
 		}
 		s.Source = stack.Source(source)
@@ -85,8 +85,8 @@ func (r *StackRepo) List(ctx context.Context) ([]*stack.Stack, error) {
 
 func (r *StackRepo) Update(ctx context.Context, s *stack.Stack) error {
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE stacks SET path=$2, source=$3, updated_at=$4 WHERE name=$1`,
-		s.Name, s.Path, string(s.Source), s.UpdatedAt,
+		`UPDATE stacks SET path=$2, source=$3, host_id=$4, updated_at=$5 WHERE name=$1`,
+		s.Name, s.Path, string(s.Source), s.HostID, s.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("updating stack: %w", err)

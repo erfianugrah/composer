@@ -16,8 +16,11 @@ type Stack struct {
 	Status         Status
 	ComposeContent string
 	GitConfig      *GitSource
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// HostID selects which docker daemon this stack deploys to.
+	// nil = default host (host.DefaultName). Non-nil = docker_hosts.id.
+	HostID    *int64
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // GitAuthMethod defines how to authenticate with a git remote.
