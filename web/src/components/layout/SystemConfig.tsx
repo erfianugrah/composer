@@ -343,7 +343,7 @@ function SSHKeysCard({
     if (!sshKeyName.trim() || !sshKeyContent.trim()) return;
     setSSHKeySaving(true);
     setSSHKeyMsg("");
-    const { error: err } = await apiFetch("/api/v1/system/config/ssh-keys", {
+    const { data, error: err } = await apiFetch<{ path: string; encrypted: boolean; fingerprint?: string }>("/api/v1/system/config/ssh-keys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: sshKeyName.trim(), content: sshKeyContent.trim() }),
@@ -351,7 +351,7 @@ function SSHKeysCard({
     if (err) {
       setSSHKeyMsg(err);
     } else {
-      setSSHKeyMsg("Saved + encrypted");
+      setSSHKeyMsg(`Saved + encrypted${data?.fingerprint ? ` (${data.fingerprint})` : ""}`);
       setSSHKeyName("");
       setSSHKeyContent("");
       await refresh();

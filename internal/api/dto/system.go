@@ -114,8 +114,9 @@ type AddSSHKeyInput struct {
 // AddSSHKeyOutput describes where the key was stored.
 type AddSSHKeyOutput struct {
 	Body struct {
-		Path      string `json:"path"`
-		Encrypted bool   `json:"encrypted"`
+		Path        string `json:"path"`
+		Encrypted   bool   `json:"encrypted"`
+		Fingerprint string `json:"fingerprint,omitempty" doc:"SHA256 fingerprint of the stored key, e.g. SHA256:abc..."`
 	}
 }
 

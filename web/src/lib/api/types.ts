@@ -1955,6 +1955,8 @@ export interface components {
              */
             readonly $schema?: string;
             encrypted: boolean;
+            /** @description SHA256 fingerprint of the stored key, e.g. SHA256:abc... */
+            fingerprint?: string;
             path: string;
         };
         AuditEntryDTO: {

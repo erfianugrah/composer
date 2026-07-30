@@ -48,6 +48,10 @@
           "encrypted": {
             "type": "boolean"
           },
+          "fingerprint": {
+            "description": "SHA256 fingerprint of the stored key, e.g. SHA256:abc...",
+            "type": "string"
+          },
           "path": {
             "type": "string"
           }
@@ -4802,7 +4806,7 @@
       "name": "MIT"
     },
     "title": "Composer",
-    "version": "0.20.1"
+    "version": "0.20.2"
   },
   "openapi": "3.1.0",
   "paths": {

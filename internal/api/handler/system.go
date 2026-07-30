@@ -298,17 +298,34 @@ func (h *SystemHandler) AddSSHKey(ctx context.Context, input *dto.AddSSHKeyInput
 	os.MkdirAll(sshDir, 0700)
 
 	keyPath := filepath.Join(sshDir, name)
-	content := strings.TrimSpace(input.Body.Content)
+
+	// Validate + canonicalize before anything hits disk. UI paste paths
+	// deliver mangled keys surprisingly often (CRLF, newlines collapsed by
+	// single-line storage fields); a mangled key here used to be written
+	// and encrypted as-is, bricking git sync with no signal as to why.
+	content, err := crypto.NormalizeSSHPrivateKey(input.Body.Content)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid SSH private key: " + err.Error())
+	}
 
 	// Write the key, then encrypt it at rest
-	if err := os.WriteFile(keyPath, []byte(content+"\n"), 0600); err != nil {
+	if err := os.WriteFile(keyPath, []byte(content), 0600); err != nil {
 		return nil, serverError(ctx, err)
 	}
 
 	// Encrypt at rest using our AES-256-GCM layer
-	crypto.EncryptFile(keyPath)
+	if err := crypto.EncryptFile(keyPath); err != nil {
+		return nil, serverError(ctx, err)
+	}
 
+	// Best-effort: drop the .pub alongside + surface the fingerprint so the
+	// operator can verify what actually landed (and has the pub to paste
+	// into GitHub without deriving it by hand).
 	out := &dto.AddSSHKeyOutput{}
+	if pub, fp, err := crypto.SSHPublicKey(content); err == nil {
+		_ = os.WriteFile(keyPath+".pub", []byte(pub+"\n"), 0644)
+		out.Body.Fingerprint = fp
+	}
 	out.Body.Path = keyPath
 	out.Body.Encrypted = true
 	return out, nil
