@@ -385,3 +385,74 @@ func TestClearCredentialField_NilCreds(t *testing.T) {
 func TestDeriveStackStatus_NoContainers(t *testing.T) {
 	assert.Equal(t, stack.StatusStopped, deriveStackStatus(nil))
 }
+
+// ---------------------------------------------------------------------------
+// composeFor / clientFor -- loud-failure for host-pinned stacks
+// ---------------------------------------------------------------------------
+
+func TestComposeFor_NilHostID_ReturnsDefault(t *testing.T) {
+	// nil HostID means local daemon. composeFor should return s.compose, nil.
+	// s.compose may be nil (e.g. when docker is not configured) -- that's fine;
+	// the contract is that it doesn't error for nil HostID.
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks(), nil, nil)
+	st, _ := stack.NewStack("test", "/tmp/test", stack.SourceLocal)
+	_, err := svc.composeFor(context.Background(), st)
+	assert.NoError(t, err, "nil HostID must never error on composeFor")
+}
+
+func TestComposeFor_HostPinned_NoFactory(t *testing.T) {
+	// Host-pinned stack but no factory configured -> hard error.
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks(), nil, nil)
+	hostID := int64(42)
+	st, _ := stack.NewStackWithHost("test", "/tmp/test", stack.SourceLocal, &hostID)
+	_, err := svc.composeFor(context.Background(), st)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no host factory is configured")
+}
+
+func TestClientFor_NilHostID_ReturnsDefault(t *testing.T) {
+	// nil HostID returns s.docker. When s.docker is nil, that's an error
+	// (no docker client available) -- not a silent nil return.
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks(), nil, nil)
+	st, _ := stack.NewStack("test", "/tmp/test", stack.SourceLocal)
+	_, err := svc.clientFor(context.Background(), st)
+	assert.Error(t, err, "nil HostID with nil docker must error")
+	assert.Contains(t, err.Error(), "docker client not available")
+}
+
+func TestClientFor_HostPinned_NoFactory(t *testing.T) {
+	svc := NewStackService(newMockStackRepo(), newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks(), nil, nil)
+	hostID := int64(42)
+	st, _ := stack.NewStackWithHost("test", "/tmp/test", stack.SourceLocal, &hostID)
+	_, err := svc.clientFor(context.Background(), st)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no host factory is configured")
+}
+
+// ---------------------------------------------------------------------------
+// Stack List -- StatusUnknown on unreachable host
+// ---------------------------------------------------------------------------
+
+func TestList_StatusUnknown_WhenHostUnreachable(t *testing.T) {
+	// A local stack with containers returns normally.
+	// A host-pinned stack with a factory that can't resolve the host
+	// must report StatusUnknown (never "stopped").
+	repo := newMockStackRepo()
+	localSt, _ := stack.NewStack("local-stack", "/tmp/local", stack.SourceLocal)
+	hostID := int64(99)
+	remoteSt, _ := stack.NewStackWithHost("remote-stack", "/tmp/remote", stack.SourceLocal, &hostID)
+	require.NoError(t, repo.Create(context.Background(), localSt))
+	require.NoError(t, repo.Create(context.Background(), remoteSt))
+
+	svc := NewStackService(repo, newMockGitConfigRepo(), nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks(), nil, nil)
+
+	stacks, err := svc.List(context.Background())
+	require.NoError(t, err)
+	require.Len(t, stacks, 2)
+
+	for _, st := range stacks {
+		if st.HostID != nil {
+			assert.Equal(t, stack.StatusUnknown, st.Status, "host-pinned stack without reachable host must be StatusUnknown")
+		}
+	}
+}

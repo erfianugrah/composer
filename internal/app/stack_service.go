@@ -38,13 +38,40 @@ type StackService struct {
 }
 
 // composeFor resolves the Compose wrapper for a stack's host.
-func (s *StackService) composeFor(ctx context.Context, st *stack.Stack) *docker.Compose {
-	if s.factory != nil && st.HostID != nil {
-		if c, err := s.factory.ComposeFor(ctx, st.HostID); err == nil {
-			return c
-		}
+// nil HostID returns the default compose; host-pinned stacks MUST resolve
+// or the function returns a hard error -- a silent local fallback would
+// deploy to the wrong daemon.
+func (s *StackService) composeFor(ctx context.Context, st *stack.Stack) (*docker.Compose, error) {
+	if st.HostID == nil {
+		return s.compose, nil
 	}
-	return s.compose
+	if s.factory == nil {
+		return nil, fmt.Errorf("stack is pinned to docker host %d but no host factory is configured", *st.HostID)
+	}
+	c, err := s.factory.ComposeFor(ctx, st.HostID)
+	if err != nil {
+		return nil, fmt.Errorf("resolving compose for docker host %d: %w", *st.HostID, err)
+	}
+	return c, nil
+}
+
+// clientFor resolves the Docker client for a stack's host.
+// nil HostID returns the default client; host-pinned stacks MUST resolve.
+func (s *StackService) clientFor(ctx context.Context, st *stack.Stack) (*docker.Client, error) {
+	if st.HostID == nil {
+		if s.docker == nil {
+			return nil, fmt.Errorf("docker client not available on default host")
+		}
+		return s.docker, nil
+	}
+	if s.factory == nil {
+		return nil, fmt.Errorf("stack is pinned to docker host %d but no host factory is configured", *st.HostID)
+	}
+	c, err := s.factory.ClientFor(ctx, st.HostID)
+	if err != nil {
+		return nil, fmt.Errorf("resolving client for docker host %d: %w", *st.HostID, err)
+	}
+	return c, nil
 }
 
 // SetRegistryRepo wires an optional registry credentials repository. When set,
@@ -147,7 +174,12 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string, 
 
 	// Validate compose syntax before persisting to DB
 	if s.compose != nil {
-		if _, err := s.composeFor(ctx, st).Validate(ctx, stackPath); err != nil {
+		cf, cErr := s.composeFor(ctx, st)
+		if cErr != nil {
+			os.RemoveAll(stackPath)
+			return nil, cErr
+		}
+		if _, err := cf.Validate(ctx, stackPath); err != nil {
 			os.RemoveAll(stackPath)
 			return nil, fmt.Errorf("invalid compose file: %w", err)
 		}
@@ -169,7 +201,10 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string, 
 	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
-	if _, err := s.composeFor(ctx, st).Up(deployCtx, st.Path, cf); err != nil {
+	composeWrapper, cErr := s.composeFor(ctx, st)
+	if cErr != nil {
+		s.log.Warn("auto-deploy failed (stack created but not running)", zap.String("stack", name), zap.Error(cErr))
+	} else if _, err := composeWrapper.Up(deployCtx, st.Path, cf); err != nil {
 		s.log.Warn("auto-deploy failed (stack created but not running)", zap.String("stack", name), zap.Error(err))
 		// Don't fail the create -- stack is saved, user can deploy manually
 	} else {
@@ -220,9 +255,16 @@ func (s *StackService) Get(ctx context.Context, name string) (*stack.Stack, erro
 		}
 	}
 
-	containers, err := s.docker.ListContainers(ctx, name)
-	if err == nil {
-		st.Status = deriveStackStatus(containers)
+	cl, err := s.clientFor(ctx, st)
+	if err != nil {
+		st.Status = stack.StatusUnknown
+	} else {
+		containers, cErr := cl.ListContainers(ctx, name)
+		if cErr != nil {
+			st.Status = stack.StatusUnknown
+		} else {
+			st.Status = deriveStackStatus(containers)
+		}
 	}
 
 	return st, nil
@@ -236,20 +278,70 @@ func (s *StackService) List(ctx context.Context) ([]*stack.Stack, error) {
 		return nil, err
 	}
 
-	// One Docker call for all containers instead of N calls per stack
-	allContainers, err := s.docker.ListContainers(ctx, "")
-	if err == nil {
-		// Group by compose project name
+	// Group stacks by host to fan out one ListContainers call per host.
+	// nil HostID tiles into the "local" bucket.
+	hostStacks := make(map[int64][]*stack.Stack)
+	var localStacks []*stack.Stack
+	var unknownHosts []*stack.Stack
+	for _, st := range stacks {
+		if st.HostID == nil {
+			localStacks = append(localStacks, st)
+		} else {
+			hostStacks[*st.HostID] = append(hostStacks[*st.HostID], st)
+		}
+	}
+
+	// Helper: query one client and assign status.
+	queryHost := func(client *docker.Client, candidate []*stack.Stack) {
+		allContainers, err := client.ListContainers(ctx, "")
+		if err != nil {
+			for _, st := range candidate {
+				st.Status = stack.StatusUnknown
+			}
+			return
+		}
 		byStack := make(map[string][]domcontainer.Container)
 		for _, c := range allContainers {
 			if c.StackName != "" {
 				byStack[c.StackName] = append(byStack[c.StackName], c)
 			}
 		}
-		for _, st := range stacks {
+		for _, st := range candidate {
 			st.Status = deriveStackStatus(byStack[st.Name])
 		}
 	}
+
+	// Local daemon.
+	if s.docker != nil && len(localStacks) > 0 {
+		queryHost(s.docker, localStacks)
+	} else {
+		for _, st := range localStacks {
+			st.Status = stack.StatusUnknown
+		}
+	}
+
+	// Each remote host.
+	if s.factory != nil {
+		for hostID, hostStacks := range hostStacks {
+			cl, err := s.factory.ClientFor(ctx, &hostID)
+			if err != nil {
+				for _, st := range hostStacks {
+					st.Status = stack.StatusUnknown
+				}
+				unknownHosts = append(unknownHosts, hostStacks...)
+				continue
+			}
+			queryHost(cl, hostStacks)
+		}
+	} else {
+		for _, hostStacks := range hostStacks {
+			for _, st := range hostStacks {
+				st.Status = stack.StatusUnknown
+			}
+			unknownHosts = append(unknownHosts, hostStacks...)
+		}
+	}
+	_ = unknownHosts // stacks already marked StatusUnknown
 
 	return stacks, nil
 }
@@ -316,7 +408,9 @@ func (s *StackService) Delete(ctx context.Context, name string, removeVolumes bo
 
 	// Stop containers first (best effort)
 	cf := s.resolveComposeFile(ctx, name)
-	s.composeFor(ctx, st).Down(ctx, st.Path, cf, removeVolumes)
+	if cw, cErr := s.composeFor(ctx, st); cErr == nil {
+		cw.Down(ctx, st.Path, cf, removeVolumes)
+	}
 
 	if err := s.stacks.Delete(ctx, name); err != nil {
 		return err
@@ -352,7 +446,13 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 
-	result, err := s.composeFor(ctx, st).Up(deployCtx, st.Path, cf)
+	cw, cErr := s.composeFor(ctx, st)
+	if cErr != nil {
+		s.log.Error("deploy failed", zap.String("stack", name), zap.Error(cErr))
+		s.publishEvent(event.StackError{Name: name, Error: cErr.Error(), Timestamp: time.Now()})
+		return nil, cErr
+	}
+	result, err := cw.Up(deployCtx, st.Path, cf)
 	if err != nil {
 		s.log.Error("deploy failed", zap.String("stack", name), zap.Error(err))
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
@@ -384,7 +484,12 @@ func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 
-	result, err := s.composeFor(ctx, st).BuildAndUp(deployCtx, st.Path, cf)
+	cw, cErr := s.composeFor(ctx, st)
+	if cErr != nil {
+		s.publishEvent(event.StackError{Name: name, Error: cErr.Error(), Timestamp: time.Now()})
+		return nil, cErr
+	}
+	result, err := cw.BuildAndUp(deployCtx, st.Path, cf)
 	if err != nil {
 		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
 		return result, err
@@ -409,7 +514,12 @@ func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeRe
 
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("stopping stack", zap.String("stack", name))
-	result, err := s.composeFor(ctx, st).Down(ctx, st.Path, cf, false)
+	cw, cErr := s.composeFor(ctx, st)
+	if cErr != nil {
+		s.log.Error("stop failed", zap.String("stack", name), zap.Error(cErr))
+		return nil, cErr
+	}
+	result, err := cw.Down(ctx, st.Path, cf, false)
 	if err != nil {
 		s.log.Error("stop failed", zap.String("stack", name), zap.Error(err))
 		return result, err
@@ -435,7 +545,12 @@ func (s *StackService) Restart(ctx context.Context, name string) (*docker.Compos
 
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("restarting stack", zap.String("stack", name))
-	result, err := s.composeFor(ctx, st).Restart(ctx, st.Path, cf)
+	cw, cErr := s.composeFor(ctx, st)
+	if cErr != nil {
+		s.log.Error("restart failed", zap.String("stack", name), zap.Error(cErr))
+		return nil, cErr
+	}
+	result, err := cw.Restart(ctx, st.Path, cf)
 	if err == nil {
 		s.log.Info("restart completed", zap.String("stack", name))
 		s.publishEvent(event.StackDeployed{Name: name, Timestamp: time.Now()})
@@ -467,7 +582,12 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
 	pullCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
-	result, err := s.composeFor(ctx, st).Pull(pullCtx, st.Path, cf)
+	cw, cErr := s.composeFor(ctx, st)
+	if cErr != nil {
+		s.log.Error("pull failed", zap.String("stack", name), zap.Error(cErr))
+		return nil, cErr
+	}
+	result, err := cw.Pull(pullCtx, st.Path, cf)
 	if err == nil {
 		s.log.Info("pull completed", zap.String("stack", name))
 		s.publishEvent(event.StackUpdated{Name: name, Timestamp: time.Now()})
@@ -489,7 +609,11 @@ func (s *StackService) Config(ctx context.Context, name string) (*docker.Compose
 	if st == nil {
 		return nil, ErrNotFound
 	}
-	return s.composeFor(ctx, st).Config(ctx, st.Path)
+	cw, cErr := s.composeFor(ctx, st)
+	if cErr != nil {
+		return nil, cErr
+	}
+	return cw.Config(ctx, st.Path)
 }
 
 // Validate runs docker compose config to validate the compose syntax.
@@ -501,7 +625,11 @@ func (s *StackService) Validate(ctx context.Context, name string) (*docker.Compo
 	if st == nil {
 		return nil, ErrNotFound
 	}
-	return s.composeFor(ctx, st).Validate(ctx, st.Path)
+	cw, cErr := s.composeFor(ctx, st)
+	if cErr != nil {
+		return nil, cErr
+	}
+	return cw.Validate(ctx, st.Path)
 }
 
 // ImportResult holds the outcome of an import operation.
@@ -1056,7 +1184,7 @@ func (s *StackService) ComposeForStack(ctx context.Context, name string) (*docke
 	if st == nil {
 		return nil, fmt.Errorf("stack %q not found", name)
 	}
-	return s.composeFor(ctx, st), nil
+	return s.composeFor(ctx, st)
 }
 
 // DecryptEnvContent returns the decrypted .env content for display in the UI.
@@ -1080,7 +1208,81 @@ func (s *StackService) DecryptEnvContent(ctx context.Context, stackName, envPath
 
 // Containers returns the containers for a stack.
 func (s *StackService) Containers(ctx context.Context, stackName string) ([]domcontainer.Container, error) {
-	return s.docker.ListContainers(ctx, stackName)
+	// Empty stack name = return all containers across all hosts.
+	// Fan out one ListContainers call per distinct host referenced by known stacks.
+	if stackName == "" {
+		return s.listAllContainers(ctx)
+	}
+
+	st, err := s.stacks.GetByName(ctx, stackName)
+	if err != nil {
+		return nil, err
+	}
+	if st == nil {
+		return nil, ErrNotFound
+	}
+	cl, cErr := s.clientFor(ctx, st)
+	if cErr != nil {
+		return nil, cErr
+	}
+	return cl.ListContainers(ctx, stackName)
+}
+
+// listAllContainers fans out to every host referenced by known stacks and
+// merges per-host ListContainers("") results. Returns partial results even
+// when a host fails -- the caller gets what it can and the failing host's
+// containers are simply absent.
+func (s *StackService) listAllContainers(ctx context.Context) ([]domcontainer.Container, error) {
+	stacks, err := s.stacks.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Gather distinct host IDs.
+	hostIDs := make(map[int64]bool)
+	hasLocal := false
+	for _, st := range stacks {
+		if st.HostID == nil {
+			hasLocal = true
+		} else {
+			hostIDs[*st.HostID] = true
+		}
+	}
+
+	var all []domcontainer.Container
+
+	// Local daemon.
+	if hasLocal {
+		if s.docker != nil {
+			localResult, localErr := s.docker.ListContainers(ctx, "")
+			if localErr != nil {
+				s.log.Warn("listAllContainers: local daemon failed", zap.Error(localErr))
+			} else {
+				all = append(all, localResult...)
+			}
+		}
+	}
+
+	// Remote hosts.
+	if s.factory != nil {
+		for hostID := range hostIDs {
+			cl, err := s.factory.ClientFor(ctx, &hostID)
+			if err != nil {
+				s.log.Warn("listAllContainers: resolving client for docker host",
+					zap.Int64("host_id", hostID), zap.Error(err))
+				continue
+			}
+			remoteResult, remoteErr := cl.ListContainers(ctx, "")
+			if remoteErr != nil {
+				s.log.Warn("listAllContainers: listing containers on host",
+					zap.Int64("host_id", hostID), zap.Error(remoteErr))
+				continue
+			}
+			all = append(all, remoteResult...)
+		}
+	}
+
+	return all, nil
 }
 
 // ExecCompose runs an arbitrary docker compose subcommand against a stack.
@@ -1094,7 +1296,11 @@ func (s *StackService) ExecCompose(ctx context.Context, name string, args []stri
 	if st == nil {
 		return nil, ErrNotFound
 	}
-	return s.composeFor(ctx, st).Exec(ctx, st.Path, args)
+	cw, cErr := s.composeFor(ctx, st)
+	if cErr != nil {
+		return nil, cErr
+	}
+	return cw.Exec(ctx, st.Path, args)
 }
 
 func deriveStackStatus(containers []domcontainer.Container) stack.Status {

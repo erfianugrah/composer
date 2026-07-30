@@ -180,3 +180,27 @@ func TestHostServiceResolve(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown docker host")
 }
+
+func TestHostService_OnHostCreated(t *testing.T) {
+	repo := newMemHostRepo()
+	svc := app.NewHostService(repo, zaptest.NewLogger(t))
+	ctx := context.Background()
+
+	var calledHostID int64
+	var calledHostName string
+	svc.OnHostCreated = func(ctx context.Context, hostID int64, hostName string) {
+		calledHostID = hostID
+		calledHostName = hostName
+	}
+
+	err := svc.Create(ctx, &host.Host{Name: "remote2", Endpoint: "tcp://x:2375"})
+	require.NoError(t, err)
+	assert.Equal(t, "remote2", calledHostName)
+	assert.Greater(t, calledHostID, int64(0))
+
+	// Nil callback is safe (no panic). Create still succeeds.
+	svcNil := app.NewHostService(repo, zaptest.NewLogger(t))
+	svcNil.OnHostCreated = nil
+	err = svcNil.Create(ctx, &host.Host{Name: "remote3", Endpoint: "tcp://y:2375"})
+	require.NoError(t, err)
+}

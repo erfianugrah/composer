@@ -11,8 +11,9 @@ import (
 
 // HostService orchestrates docker host CRUD and name-to-ID resolution.
 type HostService struct {
-	repo host.Repository
-	log  *zap.Logger
+	repo          host.Repository
+	log           *zap.Logger
+	OnHostCreated func(ctx context.Context, hostID int64, hostName string) // optional; called after Create persists. Wire docker.NewEventListener in main.
 }
 
 // NewHostService creates a HostService.
@@ -37,7 +38,13 @@ func (s *HostService) Create(ctx context.Context, h *host.Host) error {
 	}
 	now := time.Now().UTC()
 	h.CreatedAt, h.UpdatedAt = now, now
-	return s.repo.Create(ctx, h)
+	if err := s.repo.Create(ctx, h); err != nil {
+		return err
+	}
+	if s.OnHostCreated != nil {
+		s.OnHostCreated(ctx, h.ID, h.Name)
+	}
+	return nil
 }
 
 // Update validates and persists changes to a docker host.

@@ -314,10 +314,15 @@ func (e *PipelineExecutor) executeComposeStep(ctx context.Context, step pipeline
 
 	// Resolve the compose instance for this stack's host.
 	compose := e.compose // default
-	if e.factory != nil && hostID != nil {
-		if c, err := e.factory.ComposeFor(ctx, hostID); err == nil {
-			compose = c
+	if hostID != nil {
+		if e.factory == nil {
+			return "", fmt.Errorf("stack is pinned to docker host %d but no host factory is configured", *hostID)
 		}
+		c, err := e.factory.ComposeFor(ctx, hostID)
+		if err != nil {
+			return "", fmt.Errorf("resolving compose for docker host %d: %w", *hostID, err)
+		}
+		compose = c
 	}
 
 	var result *docker.ComposeResult
@@ -358,10 +363,15 @@ func (e *PipelineExecutor) executeDockerExec(ctx context.Context, step pipeline.
 	// Resolve docker client: if a 'host' config key is present, use the factory.
 	dockerClient := e.docker
 	hostName, _ := step.Config["host"].(string)
-	if hostName != "" && e.factory != nil {
-		if c, err := e.factory.ClientForName(ctx, hostName); err == nil {
-			dockerClient = c
+	if hostName != "" {
+		if e.factory == nil {
+			return "", fmt.Errorf("docker_exec: host %q requested but no host factory is configured", hostName)
 		}
+		c, err := e.factory.ClientForName(ctx, hostName)
+		if err != nil {
+			return "", fmt.Errorf("docker_exec: resolving host %q: %w", hostName, err)
+		}
+		dockerClient = c
 	}
 	if dockerClient == nil {
 		return "", fmt.Errorf("docker_exec: docker client not available")

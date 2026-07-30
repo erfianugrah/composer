@@ -369,6 +369,21 @@ func main() {
 	// Cancellable context for background goroutines
 	appCtx, appCancel := context.WithCancel(ctx)
 
+	// Wire runtime host listener: hosts created via the API get a docker
+	// event listener immediately without requiring a restart.
+	if hostSvc != nil && factory != nil {
+		hostSvc.OnHostCreated = func(ctx context.Context, hostID int64, hostName string) {
+			cl, err := factory.ClientFor(ctx, &hostID)
+			if err != nil {
+				logger.Warn("skipping event listener for new host", zap.String("host", hostName), zap.Error(err))
+				return
+			}
+			hl := docker.NewEventListener(cl, bus, hostName)
+			hl.Start(appCtx)
+			logger.Info("docker event listener started for new host", zap.String("host", hostName))
+		}
+	}
+
 	// --- Background: job cleanup (remove finished jobs older than 1h) ---
 	jobManager.StartCleanup(appCtx, 5*time.Minute, 1*time.Hour)
 	logger.Info("job cleanup goroutine started")

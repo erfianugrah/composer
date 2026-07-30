@@ -13,6 +13,7 @@ import (
 	"github.com/erfianugrah/composer/internal/app"
 	domevent "github.com/erfianugrah/composer/internal/domain/event"
 	"github.com/erfianugrah/composer/internal/domain/pipeline"
+	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/eventbus"
 )
 
@@ -268,4 +269,70 @@ func TestPipelineExecutor_Events(t *testing.T) {
 	assert.Contains(t, events, "pipeline.step.started")
 	assert.Contains(t, events, "pipeline.step.finished")
 	assert.Contains(t, events, "pipeline.run.finished")
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline executor -- host resolution failures
+// ---------------------------------------------------------------------------
+
+// mockHostPinnedStackRepo returns a stack pinned to a remote host.
+type fakeHostStackRepo struct {
+	st *stack.Stack
+}
+
+func (r *fakeHostStackRepo) GetByName(_ context.Context, name string) (*stack.Stack, error) {
+	return r.st, nil
+}
+func (r *fakeHostStackRepo) Create(_ context.Context, _ *stack.Stack) error { return nil }
+func (r *fakeHostStackRepo) List(_ context.Context) ([]*stack.Stack, error) { return nil, nil }
+func (r *fakeHostStackRepo) Update(_ context.Context, _ *stack.Stack) error { return nil }
+func (r *fakeHostStackRepo) Delete(_ context.Context, _ string) error       { return nil }
+
+func TestPipelineExecutor_ComposeStep_HostPinnedNoFactory(t *testing.T) {
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	hostID := int64(42)
+	st, err := stack.NewStackWithHost("remote-stack", t.TempDir(), stack.SourceLocal, &hostID)
+	require.NoError(t, err)
+	sr := &fakeHostStackRepo{st: st}
+
+	// factory=nil, so any host-pinned compose step must fail loudly.
+	executor := app.NewPipelineExecutor(nil, nil, bus, sr, nil, t.TempDir(), app.NewStackLocks(), nil)
+
+	p, _ := pipeline.NewPipeline("test", "compose host test", "user1")
+	require.NoError(t, p.AddStep(pipeline.Step{
+		ID: "up", Name: "Compose Up", Type: pipeline.StepComposeUp,
+		Config: map[string]any{"stack": "remote-stack"},
+	}))
+
+	run := pipeline.NewRun(p.ID, "test")
+	result := executor.Execute(context.Background(), p, run)
+
+	require.Equal(t, pipeline.RunFailed, result.Status)
+	require.Len(t, result.StepResults, 1)
+	assert.Equal(t, pipeline.RunFailed, result.StepResults[0].Status)
+	assert.Contains(t, result.StepResults[0].Error, "no host factory is configured")
+}
+
+func TestPipelineExecutor_DockerExec_HostNameNoFactory(t *testing.T) {
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	// factory=nil, docker client available, host name requested -> must fail.
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
+
+	p, _ := pipeline.NewPipeline("test", "docker_exec host test", "user1")
+	require.NoError(t, p.AddStep(pipeline.Step{
+		ID: "exec", Name: "Docker Exec", Type: pipeline.StepDockerExec,
+		Config: map[string]any{"container": "sidecar", "host": "remote1", "command": "true"},
+	}))
+
+	run := pipeline.NewRun(p.ID, "test")
+	result := executor.Execute(context.Background(), p, run)
+
+	require.Equal(t, pipeline.RunFailed, result.Status)
+	require.Len(t, result.StepResults, 1)
+	assert.Equal(t, pipeline.RunFailed, result.StepResults[0].Status)
+	assert.Contains(t, result.StepResults[0].Error, "no host factory is configured")
 }
