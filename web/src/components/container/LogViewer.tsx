@@ -18,13 +18,15 @@ interface Props {
   containerId?: string;
   /** Stack-level aggregated logs (all containers) */
   stackName?: string;
+  /** Docker host name (empty = default/local). Appended to SSE URL. */
+  host?: string;
   /** Number of tail lines */
   tail?: string;
   /** Max lines to keep in buffer */
   maxLines?: number;
 }
 
-export function LogViewer({ containerId, stackName, tail = "100", maxLines = 1000 }: Props) {
+export function LogViewer({ containerId, stackName, host, tail = "100", maxLines = 1000 }: Props) {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [connected, setConnected] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -44,6 +46,9 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
       url = `/api/v1/sse/stacks/${stackName}/logs?tail=${tail}`;
     } else {
       return;
+    }
+    if (host) {
+      url += `&host=${encodeURIComponent(host)}`;
     }
 
     const es = new EventSource(url, { withCredentials: true });
@@ -84,7 +89,7 @@ export function LogViewer({ containerId, stackName, tail = "100", maxLines = 100
       es.close();
       setConnected(false);
     };
-  }, [containerId, stackName, tail]);
+  }, [containerId, stackName, host, tail]);
 
   // Detect if user scrolled up (pause auto-scroll)
   const handleScroll = useCallback(() => {

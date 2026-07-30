@@ -121,6 +121,7 @@ type ContainerOutput struct {
 	ServiceName     string `json:"service_name"`
 	Image           string `json:"image"`
 	ImageID         string `json:"image_id,omitempty" doc:"Resolved local image digest (sha256:...). Changes when a mutable tag like :latest is repulled, so a stable mismatch between two containers on the same tag means at least one of them was recreated from a newer image."`
+	Host            string `json:"host,omitempty" doc:"Docker host name (empty = default/local)"`
 	Status          string `json:"status" enum:"created,running,paused,restarting,removing,exited,dead"`
 	Health          string `json:"health" enum:"healthy,unhealthy,starting,none"`
 	ExitCode        int    `json:"exit_code,omitempty"`

@@ -2123,6 +2123,8 @@ export interface components {
             exit_code?: number;
             /** @enum {string} */
             health: "healthy" | "unhealthy" | "starting" | "none";
+            /** @description Docker host name (empty = default/local) */
+            host?: string;
             id: string;
             image: string;
             /** @description Resolved local image digest (sha256:...). Changes when a mutable tag like :latest is repulled, so a stable mismatch between two containers on the same tag means at least one of them was recreated from a newer image. */

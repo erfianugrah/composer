@@ -15,6 +15,7 @@ interface StatsData {
 
 interface Props {
   containerId: string;
+  host?: string;
   stats?: StatsData | null; // from parent batch fetch
 }
 
@@ -22,7 +23,7 @@ function formatMB(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(0);
 }
 
-export function InlineStats({ containerId, stats: propStats }: Props) {
+export function InlineStats({ containerId, host, stats: propStats }: Props) {
   const [stats, setStats] = useState<StatsData | null>(propStats || null);
 
   // Update from props when parent provides batch stats
@@ -37,7 +38,7 @@ export function InlineStats({ containerId, stats: propStats }: Props) {
     let activeES: EventSource | null = null;
     let activeTimeout: ReturnType<typeof setTimeout> | null = null;
     const fetchStats = async () => {
-      const es = new EventSource(`/api/v1/sse/containers/${containerId}/stats`, { withCredentials: true });
+      const es = new EventSource(`/api/v1/sse/containers/${containerId}/stats${host ? `?host=${encodeURIComponent(host)}` : ""}`, { withCredentials: true });
       activeES = es;
       const handler = (e: MessageEvent) => {
         try {
@@ -64,7 +65,7 @@ export function InlineStats({ containerId, stats: propStats }: Props) {
       if (activeTimeout) clearTimeout(activeTimeout);
       if (activeES) activeES.close();
     };
-  }, [containerId, propStats]);
+  }, [containerId, host, propStats]);
 
   if (!stats) return <span className="text-[10px] text-muted-foreground font-data">--</span>;
 

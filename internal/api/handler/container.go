@@ -123,7 +123,7 @@ func (h *ContainerHandler) List(ctx context.Context, input *struct {
 		out.Body.Containers = append(out.Body.Containers, dto.ContainerOutput{
 			ID: c.ID, Name: c.Name, ServiceName: c.ServiceName,
 			Image: c.Image, ImageID: c.ImageID,
-			Status: string(c.Status), Health: string(c.Health),
+			Host: input.Host, Status: string(c.Status), Health: string(c.Health),
 		})
 	}
 	return out, nil

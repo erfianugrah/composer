@@ -17,7 +17,7 @@ function formatBytes(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
 }
 
-export function ContainerStats({ containerId }: { containerId: string }) {
+export function ContainerStats({ containerId, host }: { containerId: string; host?: string }) {
   const [stats, setStats] = useState<StatsPoint[]>([]);
   const [current, setCurrent] = useState<StatsPoint | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -30,7 +30,7 @@ export function ContainerStats({ containerId }: { containerId: string }) {
 
     function connect() {
       if (unmounted) return;
-      const url = `/api/v1/sse/containers/${containerId}/stats`;
+      const url = `/api/v1/sse/containers/${containerId}/stats${host ? `?host=${encodeURIComponent(host)}` : ""}`;
       es = new EventSource(url, { withCredentials: true });
       eventSourceRef.current = es;
 

@@ -33,6 +33,7 @@ interface StackData {
   path: string;
   source: string;
   status: string;
+  host?: string;
   compose_content: string;
   env_content?: string;
   env_sops_encrypted?: boolean;
@@ -501,17 +502,17 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 <div className="p-3">
                   {inspectPane === "logs" && (
                     <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
-                      <LogViewer containerId={c.id} tail="100" maxLines={300} />
+                      <LogViewer containerId={c.id} host={stack.host} tail="100" maxLines={300} />
                     </Suspense>
                   )}
                   {inspectPane === "stats" && isRunning && (
                     <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
-                      <ContainerStats containerId={c.id} />
+                      <ContainerStats containerId={c.id} host={stack.host} />
                     </Suspense>
                   )}
                   {inspectPane === "terminal" && isRunning && (
                     <Suspense fallback={<div className="h-96 animate-pulse bg-muted rounded" />}>
-                      <Terminal containerId={c.id} />
+                      <Terminal containerId={c.id} host={stack.host} />
                     </Suspense>
                   )}
                   {inspectPane === "terminal" && !isRunning && (
@@ -596,7 +597,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
       {activeTab === "logs" && (
         <section aria-label="Logs">
           <Suspense fallback={<div className="h-64 animate-pulse bg-muted rounded" />}>
-            <LogViewer stackName={stackName} tail="200" />
+            <LogViewer stackName={stackName} host={stack.host} tail="200" />
           </Suspense>
         </section>
       )}
@@ -634,7 +635,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
             <div>
               {target && isRunning ? (
                 <Suspense fallback={<div className="h-96 animate-pulse bg-muted rounded" />}>
-                  <Terminal containerId={target} />
+                  <Terminal containerId={target} host={stack.host} />
                 </Suspense>
               ) : target && !isRunning ? (
                 <div className="space-y-3 py-4">
@@ -678,7 +679,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
             )}
             {target ? (
               <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
-                <ContainerStats containerId={target} />
+                <ContainerStats containerId={target} host={stack.host} />
               </Suspense>
             ) : (
               <p className="text-sm text-muted-foreground">No running containers.</p>

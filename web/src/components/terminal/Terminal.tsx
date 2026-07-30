@@ -8,6 +8,7 @@ import { TERMINAL_THEME, ALLOWED_SHELLS, type ShellOption } from "@/lib/terminal
 
 interface TerminalProps {
   containerId: string;
+  host?: string;
   shell?: ShellOption;
   onShellChange?: (shell: ShellOption) => void;
   /** Initial height in pixels. User can resize with the drag handle. */
@@ -18,6 +19,7 @@ interface TerminalProps {
 
 export function Terminal({
   containerId,
+  host,
   shell: initialShell = "/bin/sh",
   onShellChange,
   initialHeight = 400,
@@ -182,7 +184,7 @@ export function Terminal({
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const cols = term.cols;
     const rows = term.rows;
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/terminal/${encodeURIComponent(containerId)}?shell=${encodeURIComponent(shell)}&cols=${cols}&rows=${rows}`;
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/terminal/${encodeURIComponent(containerId)}?shell=${encodeURIComponent(shell)}&cols=${cols}&rows=${rows}${host ? `&host=${encodeURIComponent(host)}` : ""}`;
 
     const ws = new WebSocket(wsUrl);
     ws.binaryType = "arraybuffer";
@@ -236,7 +238,7 @@ export function Terminal({
         ws.send(JSON.stringify({ type: "resize", cols, rows }));
       }
     });
-  }, [containerId, shell, copySelection]);
+  }, [containerId, host, shell, copySelection]);
 
   // ── Auto-connect on mount ────────────────────────────────────────
   useEffect(() => {

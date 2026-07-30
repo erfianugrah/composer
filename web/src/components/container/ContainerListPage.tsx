@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, lazy, Suspense } from "react";
+import { Fragment, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,22 @@ const accessors = {
 } satisfies Record<SortKey, (c: ContainerInfo) => string>;
 
 export function ContainerListPage() {
-  const { data, error: swrError, loading, refetch } = useSWRFetch<{ containers: ContainerInfo[] }>("/api/v1/containers");
+  const [selectedHost, setSelectedHost] = useState("");
+  const [hosts, setHosts] = useState<{ id: number; name: string }[]>([]);
+
+  // Load docker hosts for the selector
+  useEffect(() => {
+    apiFetch<{ hosts: { id: number; name: string }[] }>("/api/v1/hosts").then(({ data: hd }) => {
+      if (hd) setHosts(hd.hosts);
+    });
+  }, []);
+
+  const containerUrl = useMemo(() => {
+    if (!selectedHost) return "/api/v1/containers";
+    return `/api/v1/containers?host=${encodeURIComponent(selectedHost)}`;
+  }, [selectedHost]);
+
+  const { data, error: swrError, loading, refetch } = useSWRFetch<{ containers: ContainerInfo[] }>(containerUrl);
   const containers = data?.containers ?? [];
   const [error, setError] = useState("");
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
@@ -79,6 +94,10 @@ export function ContainerListPage() {
   }, [swrError, data]);
 
   function fetchContainers() { refetch(); }
+
+  function hostSuffix() {
+    return selectedHost ? `?host=${encodeURIComponent(selectedHost)}` : "";
+  }
 
   function toggleLogs(id: string) {
     setExpandedLogs((prev) => {
@@ -112,7 +131,7 @@ export function ContainerListPage() {
     const ids = targets.map((c) => c.id);
     const verb = action === "start" ? "Start" : action === "stop" ? "Stopp" : "Restart";
     await run(async () => {
-      await runBulk(ids, (id) => apiFetch(`/api/v1/containers/${id}/${action}`, { method: "POST" }), {
+      await runBulk(ids, (id) => apiFetch(`/api/v1/containers/${id}/${action}${hostSuffix()}`, { method: "POST" }), {
         verb, noun: "container",
       });
       sel.clear();
@@ -154,6 +173,18 @@ export function ContainerListPage() {
                   <option value="all">All status</option>
                   <option value="running">Running</option>
                   <option value="stopped">Stopped</option>
+                </select>
+                <select
+                  value={selectedHost}
+                  onChange={(e) => setSelectedHost(e.target.value)}
+                  className="h-7 rounded border border-input bg-transparent px-2 text-xs font-data"
+                  aria-label="Docker host"
+                  data-testid="container-host-filter"
+                >
+                  <option value="">local (default)</option>
+                  {hosts.map((h) => (
+                    <option key={h.id} value={h.name}>{h.name}</option>
+                  ))}
                 </select>
               </>
             )}
@@ -217,7 +248,7 @@ export function ContainerListPage() {
                         </TD>
                         <TD className="font-data text-muted-foreground truncate max-w-[280px]" title={c.image}>{c.image}</TD>
                         <TD className={cn("text-right", hideOnNarrow)}>
-                          {c.status === "running" ? <InlineStats containerId={c.id} /> : <span className="text-muted-foreground">—</span>}
+                          {c.status === "running" ? <InlineStats containerId={c.id} host={selectedHost || undefined} /> : <span className="text-muted-foreground">-</span>}
                         </TD>
                         <TD className={hideOnNarrow}>
                           <code className="text-[10px] text-muted-foreground font-data">{c.id.slice(0, 12)}</code>
@@ -226,7 +257,7 @@ export function ContainerListPage() {
                           <div className="flex items-center gap-1 justify-end">
                             {c.status !== "running" && (
                               <Button size="xs" variant="outline" onClick={async () => {
-                                const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" });
+                                const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/start${hostSuffix()}`, { method: "POST" });
                                 if (e) setError(`Start failed: ${e}`);
                                 else setTimeout(fetchContainers, 1000);
                               }}>Start</Button>
@@ -237,12 +268,12 @@ export function ContainerListPage() {
                                   {expanded ? "Hide" : "Logs"}
                                 </Button>
                                 <Button size="xs" variant="outline" onClick={async () => {
-                                  const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" });
+                                  const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/restart${hostSuffix()}`, { method: "POST" });
                                   if (e) setError(`Restart failed: ${e}`);
                                   else setTimeout(fetchContainers, 1000);
                                 }}>Restart</Button>
                                 <Button size="xs" variant="destructive" onClick={async () => {
-                                  const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" });
+                                  const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/stop${hostSuffix()}`, { method: "POST" });
                                   if (e) setError(`Stop failed: ${e}`);
                                   else setTimeout(fetchContainers, 1000);
                                 }}>Stop</Button>
@@ -255,7 +286,7 @@ export function ContainerListPage() {
                         <tr className="bg-cp-950/50">
                           <td colSpan={7} className="px-3 py-3 border-b border-border/40">{/* colSpan stays 7: hidden cells still occupy the column count */}
                             <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
-                              <LogViewer containerId={c.id} tail="50" maxLines={200} />
+                              <LogViewer containerId={c.id} host={selectedHost || undefined} tail="50" maxLines={200} />
                             </Suspense>
                           </td>
                         </tr>
