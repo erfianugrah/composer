@@ -14,6 +14,7 @@ import { BulkBar } from "@/components/ui/bulk-bar";
 import { StatCard } from "@/components/ui/stat-card";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { DockerHostSelect } from "@/components/docker/DockerHostSelect";
 
 const LogViewer = lazy(() => import("./LogViewer").then(m => ({ default: m.LogViewer })));
 const DockerConsole = lazy(() => import("./DockerConsole").then(m => ({ default: m.DockerConsole })));
@@ -50,14 +51,6 @@ const accessors = {
 
 export function ContainerListPage() {
   const [selectedHost, setSelectedHost] = useState("");
-  const [hosts, setHosts] = useState<{ id: number; name: string }[]>([]);
-
-  // Load docker hosts for the selector
-  useEffect(() => {
-    apiFetch<{ hosts: { id: number; name: string }[] }>("/api/v1/hosts").then(({ data: hd }) => {
-      if (hd) setHosts(hd.hosts);
-    });
-  }, []);
 
   const containerUrl = useMemo(() => {
     if (!selectedHost) return "/api/v1/containers";
@@ -174,18 +167,7 @@ export function ContainerListPage() {
                   <option value="running">Running</option>
                   <option value="stopped">Stopped</option>
                 </select>
-                <select
-                  value={selectedHost}
-                  onChange={(e) => setSelectedHost(e.target.value)}
-                  className="h-7 rounded border border-input bg-transparent px-2 text-xs font-data"
-                  aria-label="Docker host"
-                  data-testid="container-host-filter"
-                >
-                  <option value="">local (default)</option>
-                  {hosts.map((h) => (
-                    <option key={h.id} value={h.name}>{h.name}</option>
-                  ))}
-                </select>
+                <DockerHostSelect value={selectedHost} onChange={setSelectedHost} testId="container-host-filter" />
               </>
             )}
             <Button size="xs" variant="outline" onClick={fetchContainers}>Refresh</Button>

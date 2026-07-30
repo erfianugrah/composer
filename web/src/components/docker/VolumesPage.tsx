@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
 import { FilterInput } from "@/components/ui/filter-input";
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { highlightJSON } from "@/lib/json-highlight";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { DockerHostSelect } from "@/components/docker/DockerHostSelect";
 
 interface VolumeInfo { name: string; driver: string; mountpoint: string; created_at: string; }
 
@@ -25,7 +26,13 @@ const accessors = {
 } satisfies Record<SortKey, (v: VolumeInfo) => string>;
 
 export function VolumesPage() {
-  const { data, loading, refetch } = useSWRFetch<{ volumes: VolumeInfo[] }>("/api/v1/volumes");
+  const [selectedHost, setSelectedHost] = useState("");
+
+  const volumesUrl = useMemo(() => {
+    if (!selectedHost) return "/api/v1/volumes";
+    return `/api/v1/volumes?host=${encodeURIComponent(selectedHost)}`;
+  }, [selectedHost]);
+  const { data, loading, refetch } = useSWRFetch<{ volumes: VolumeInfo[] }>(volumesUrl);
   const volumes = data?.volumes ?? [];
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -44,6 +51,10 @@ export function VolumesPage() {
     window.history.replaceState({}, "", url);
   }, [filter]);
 
+  function hostSuffix() {
+    return selectedHost ? `?host=${encodeURIComponent(selectedHost)}` : "";
+  }
+
   function fetch_() { refetch(); }
 
   const filtered = volumes.filter((v) => {
@@ -59,7 +70,7 @@ export function VolumesPage() {
   async function bulkRemove() {
     const names = sorted.filter((v) => sel.isSelected(v.name)).map((v) => v.name);
     await run(async () => {
-      await runBulk(names, (n) => apiFetch(`/api/v1/volumes/${encodeURIComponent(n)}`, { method: "DELETE" }), {
+      await runBulk(names, (n) => apiFetch(`/api/v1/volumes/${encodeURIComponent(n)}${hostSuffix()}`, { method: "DELETE" }), {
         verb: "Remov", noun: "volume",
       });
       sel.clear();
@@ -71,7 +82,7 @@ export function VolumesPage() {
     if (inspecting === volName) { setInspecting(null); return; }
     setInspecting(volName);
     if (inspectData[volName]) return;
-    const { data, error: err } = await apiFetch<Record<string, unknown>>(`/api/v1/volumes/${volName}`);
+    const { data, error: err } = await apiFetch<Record<string, unknown>>(`/api/v1/volumes/${volName}${hostSuffix()}`);
     if (err) { setInspectData(prev => ({ ...prev, [volName]: `Error: ${err}` })); }
     else { setInspectData(prev => ({ ...prev, [volName]: JSON.stringify(data, null, 2) })); }
   }
@@ -83,7 +94,7 @@ export function VolumesPage() {
         <CardHeader><CardTitle className="text-sm">Create Volume</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={async (e) => { e.preventDefault(); setError("");
-            const { error: err } = await apiFetch("/api/v1/volumes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
+            const { error: err } = await apiFetch(`/api/v1/volumes${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
             if (err) setError(err); else { setName(""); fetch_(); }
           }} className="flex gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Volume name" required className="flex-1" />
@@ -99,7 +110,7 @@ export function VolumesPage() {
           onConfirm={async () => {
             // Async so it shows up in the Jobs drawer instead of blocking the page.
             const { data, error } = await apiFetch<{ job_id?: string; space_reclaimed?: string }>(
-              "/api/v1/volumes/prune?async=true", { method: "POST" },
+              `/api/v1/volumes/prune?async=true${selectedHost ? `&host=${encodeURIComponent(selectedHost)}` : ""}`, { method: "POST" },
             );
             if (error) setNotice(`Prune failed: ${error}`);
             else if (data?.job_id) setNotice(`Prune started — see Jobs drawer (${data.job_id})`);
@@ -125,6 +136,7 @@ export function VolumesPage() {
             {volumes.length > 0 && (
               <FilterInput value={filter} onChange={setFilter} testId="volume-filter" />
             )}
+            <DockerHostSelect value={selectedHost} onChange={setSelectedHost} testId="volume-host-select" />
             <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
           </div>
         </CardHeader>
@@ -175,7 +187,7 @@ export function VolumesPage() {
                         <ConfirmButton
                           size="xs"
                           message={`Remove ${v.name}?`}
-                          onConfirm={async () => { await apiFetch(`/api/v1/volumes/${v.name}`, { method: "DELETE" }); fetch_(); }}
+                          onConfirm={async () => { await apiFetch(`/api/v1/volumes/${v.name}${hostSuffix()}`, { method: "DELETE" }); fetch_(); }}
                         >
                           Remove
                         </ConfirmButton>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -14,6 +14,7 @@ import { BulkBar } from "@/components/ui/bulk-bar";
 import { StatCard } from "@/components/ui/stat-card";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { DockerHostSelect } from "@/components/docker/DockerHostSelect";
 
 interface ImageInfo { id: string; tags: string[]; size: number; created: number; }
 
@@ -23,7 +24,7 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
 }
 
-function PruneDropdown({ onPrune, onResult }: { onPrune: () => void; onResult: (msg: string) => void }) {
+function PruneDropdown({ onPrune, onResult, selectedHost }: { onPrune: () => void; onResult: (msg: string) => void; selectedHost: string; }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -43,6 +44,7 @@ function PruneDropdown({ onPrune, onResult }: { onPrune: () => void; onResult: (
     // ?async=true the prune lands in the Jobs drawer where it can be watched
     // to completion, and the UI is responsive immediately.
     const params = new URLSearchParams({ async: "true" });
+    if (selectedHost) params.set("host", selectedHost);
     if (all) params.set("all", "true");
     const { data, error } = await apiFetch<{ job_id?: string; space_reclaimed?: string }>(
       `/api/v1/images/prune?${params.toString()}`, { method: "POST" },
@@ -83,7 +85,13 @@ const accessors = {
 } satisfies Record<SortKey, (i: ImageInfo) => string | number>;
 
 export function ImagesPage() {
-  const { data, loading, refetch } = useSWRFetch<{ images: ImageInfo[] }>("/api/v1/images");
+  const [selectedHost, setSelectedHost] = useState("");
+
+  const imagesUrl = useMemo(() => {
+    if (!selectedHost) return "/api/v1/images";
+    return `/api/v1/images?host=${encodeURIComponent(selectedHost)}`;
+  }, [selectedHost]);
+  const { data, loading, refetch } = useSWRFetch<{ images: ImageInfo[] }>(imagesUrl);
   const images = data?.images ?? [];
   const [ref, setRef] = useState("");
   const [pulling, setPulling] = useState(false);
@@ -101,6 +109,10 @@ export function ImagesPage() {
     window.history.replaceState({}, "", url);
   }, [filter]);
 
+  function hostSuffix() {
+    return selectedHost ? `?host=${encodeURIComponent(selectedHost)}` : "";
+  }
+
   function fetch_() { refetch(); }
 
   const totalSize = images.reduce((sum, img) => sum + img.size, 0);
@@ -117,7 +129,7 @@ export function ImagesPage() {
   async function bulkRemove() {
     const ids = sorted.filter((i) => sel.isSelected(i.id)).map((i) => i.id);
     await run(async () => {
-      await runBulk(ids, (id) => apiFetch(`/api/v1/images/${id}`, { method: "DELETE" }), {
+      await runBulk(ids, (id) => apiFetch(`/api/v1/images/${id}${hostSuffix()}`, { method: "DELETE" }), {
         verb: "Remov", noun: "image",
       });
       sel.clear();
@@ -136,7 +148,7 @@ export function ImagesPage() {
         <CardHeader><CardTitle className="text-sm">Pull Image</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={async (e) => { e.preventDefault(); setError(""); setPulling(true);
-            const { error: err } = await apiFetch("/api/v1/images/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref: ref.trim() }) });
+            const { error: err } = await apiFetch(`/api/v1/images/pull${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref: ref.trim() }) });
             if (err) setError(err); else { setRef(""); fetch_(); }
             setPulling(false);
           }} className="flex gap-2">
@@ -147,7 +159,7 @@ export function ImagesPage() {
         </CardContent>
       </Card>
       <div className="space-y-2">
-        <PruneDropdown onPrune={fetch_} onResult={setNotice} />
+        <PruneDropdown onPrune={fetch_} onResult={setNotice} selectedHost={selectedHost} />
         {notice && (
           <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground" data-testid="prune-result">
             <span>{notice}</span>
@@ -162,8 +174,9 @@ export function ImagesPage() {
               Images <span className="text-muted-foreground font-normal">({sorted.length}{sorted.length !== images.length ? ` of ${images.length}` : ""})</span>
             </CardTitle>
             {images.length > 0 && (
-              <FilterInput value={filter} onChange={setFilter} placeholder="Filter by tag or ID…" testId="image-filter" width="w-56" />
+              <FilterInput value={filter} onChange={setFilter} placeholder="Filter by tag or ID..." testId="image-filter" width="w-56" />
             )}
+            <DockerHostSelect value={selectedHost} onChange={setSelectedHost} testId="image-host-select" />
             <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
           </div>
         </CardHeader>
@@ -219,7 +232,7 @@ export function ImagesPage() {
                         size="xs"
                         message={`Remove ${img.tags?.[0] || img.id.slice(0, 12)}?`}
                         onConfirm={async () => {
-                          await apiFetch(`/api/v1/images/${img.id}`, { method: "DELETE" });
+                          await apiFetch(`/api/v1/images/${img.id}${hostSuffix()}`, { method: "DELETE" });
                           fetch_();
                         }}
                       >

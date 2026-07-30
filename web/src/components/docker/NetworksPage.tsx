@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
 import { highlightJSON } from "@/lib/json-highlight";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { DockerHostSelect } from "@/components/docker/DockerHostSelect";
 
 interface NetworkInfo { id: string; name: string; driver: string; scope: string; internal: boolean; containers: number; }
 
@@ -28,7 +29,14 @@ const accessors = {
 } satisfies Record<SortKey, (n: NetworkInfo) => string | number>;
 
 export function NetworksPage() {
-  const { data, loading, refetch } = useSWRFetch<{ networks: NetworkInfo[] }>("/api/v1/networks");
+  const [selectedHost, setSelectedHost] = useState("");
+
+  const networksUrl = useMemo(() => {
+    if (!selectedHost) return "/api/v1/networks";
+    return `/api/v1/networks?host=${encodeURIComponent(selectedHost)}`;
+  }, [selectedHost]);
+
+  const { data, loading, refetch } = useSWRFetch<{ networks: NetworkInfo[] }>(networksUrl);
   const networks = data?.networks ?? [];
   const [name, setName] = useState("");
   const [driver, setDriver] = useState("bridge");
@@ -47,6 +55,10 @@ export function NetworksPage() {
     window.history.replaceState({}, "", url);
   }, [filter]);
 
+  function hostSuffix() {
+    return selectedHost ? `?host=${encodeURIComponent(selectedHost)}` : "";
+  }
+
   function fetch_() { refetch(); }
 
   const filtered = networks.filter((n) => {
@@ -62,7 +74,7 @@ export function NetworksPage() {
   async function bulkRemove() {
     const ids = sorted.filter((n) => sel.isSelected(n.id)).map((n) => n.id);
     await run(async () => {
-      await runBulk(ids, (id) => apiFetch(`/api/v1/networks/${id}`, { method: "DELETE" }), {
+      await runBulk(ids, (id) => apiFetch(`/api/v1/networks/${id}${hostSuffix()}`, { method: "DELETE" }), {
         verb: "Remov", noun: "network",
       });
       sel.clear();
@@ -74,7 +86,7 @@ export function NetworksPage() {
     if (inspecting === id) { setInspecting(null); return; }
     setInspecting(id);
     if (inspectData[id]) return; // already fetched
-    const { data, error: err } = await apiFetch<Record<string, unknown>>(`/api/v1/networks/${id}`);
+    const { data, error: err } = await apiFetch<Record<string, unknown>>(`/api/v1/networks/${id}${hostSuffix()}`);
     if (err) { setInspectData(prev => ({ ...prev, [id]: `Error: ${err}` })); }
     else { setInspectData(prev => ({ ...prev, [id]: JSON.stringify(data, null, 2) })); }
   }
@@ -86,7 +98,7 @@ export function NetworksPage() {
         <CardHeader><CardTitle className="text-sm">Create Network</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={async (e) => { e.preventDefault(); setError("");
-            const { error: err } = await apiFetch("/api/v1/networks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), driver }) });
+            const { error: err } = await apiFetch(`/api/v1/networks${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), driver }) });
             if (err) setError(err); else { setName(""); fetch_(); }
           }} className="flex gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Network name" required className="flex-1" />
@@ -107,6 +119,7 @@ export function NetworksPage() {
             {networks.length > 0 && (
               <FilterInput value={filter} onChange={setFilter} testId="network-filter" />
             )}
+            <DockerHostSelect value={selectedHost} onChange={setSelectedHost} testId="network-host-select" />
             <Button size="xs" variant="outline" onClick={fetch_}>Refresh</Button>
           </div>
         </CardHeader>
@@ -166,7 +179,7 @@ export function NetworksPage() {
                         <ConfirmButton
                           size="xs"
                           message={`Remove ${n.name}?`}
-                          onConfirm={async () => { await apiFetch(`/api/v1/networks/${n.id}`, { method: "DELETE" }); fetch_(); }}
+                          onConfirm={async () => { await apiFetch(`/api/v1/networks/${n.id}${hostSuffix()}`, { method: "DELETE" }); fetch_(); }}
                         >
                           Remove
                         </ConfirmButton>
