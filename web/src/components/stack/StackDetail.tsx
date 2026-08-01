@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/data-table";
 import { clickableRow } from "@/lib/row-interactions";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
 const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
@@ -90,11 +91,39 @@ function hostQuery(host?: string): string {
   return host ? `?host=${encodeURIComponent(host)}` : "";
 }
 
+/** Pending key for one container's lifecycle verb, so one row's in-flight
+ *  action does not disable every other row's buttons. */
+function actionKey(id: string, action: string): string {
+  return `${id}:${action}`;
+}
+
+/** Status text shown on the row while the verb is in flight. These are real
+ *  intermediate states, not an optimistic guess at the final one. */
+const transitionalStatus: Record<string, string> = {
+  start: "starting",
+  stop: "stopping",
+  restart: "restarting",
+  pause: "pausing",
+  unpause: "resuming",
+};
+
+/** Lifecycle verbs a container row can run, in the order rendered. */
+const lifecycleVerbs = ["start", "stop", "restart", "pause", "unpause"] as const;
+
+const verbPast: Record<string, string> = {
+  start: "Started",
+  stop: "Stopped",
+  restart: "Restarted",
+  pause: "Paused",
+  unpause: "Resumed",
+};
+
 export function StackDetail({ stackName }: { stackName: string }) {
   const [stack, setStack] = useState<StackData | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
   const [actionError, setActionError] = useState("");
+  const act = useAction();
   const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
   const [attachGitUrl, setAttachGitUrl] = useState<string | null>(null);
@@ -149,20 +178,22 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [inspectPane, setInspectPane] = useState<InspectPane>("logs");
 
   // containerAction posts a lifecycle verb to a single container in this
-  // stack, pinned to the stack's docker host, and surfaces failures instead
-  // of swallowing them (a silent no-op is indistinguishable from a hung UI).
-  const containerAction = async (id: string, action: string) => {
-    setActionError("");
-    const { error } = await apiFetch(
-      `/api/v1/containers/${id}/${action}${hostQuery(stack?.host)}`,
-      { method: "POST" },
+  // stack, pinned to the stack's docker host. Everything else is delegated to
+  // useAction so the three things an operator needs are guaranteed: the button
+  // spins immediately, the row shows a transitional status, and exactly one
+  // toast reports the outcome. Previously this fired and returned silently, so
+  // a click was indistinguishable from a dead button.
+  const containerAction = (id: string, action: string, name: string) =>
+    act.run(
+      actionKey(id, action),
+      () => apiFetch(`/api/v1/containers/${id}/${action}${hostQuery(stack?.host)}`, { method: "POST" }),
+      {
+        running: transitionalStatus[action] ?? `${action}ing`,
+        success: `${verbPast[action] ?? `${action}ed`} ${name}`,
+        failure: `Failed to ${action} ${name}`,
+      },
+      { after: fetchStack },
     );
-    if (error) {
-      setActionError(`${action} failed: ${error}`);
-      return;
-    }
-    setTimeout(fetchStack, 1000);
-  };
 
   const fetchStack = async () => {
     const { data, error } = await apiFetch<StackData>(`/api/v1/stacks/${stackName}`);
@@ -398,11 +429,26 @@ export function StackDetail({ stackName }: { stackName: string }) {
                     </TD>
                     <TD>
                       <div className="flex items-center gap-1">
-                        {c.completed_one_off ? (
-                          <Badge className="bg-cp-blue/20 text-cp-blue border-cp-blue/30">completed</Badge>
-                        ) : (
-                          <Badge className={statusColor[c.status] || statusColor.unknown}>{c.status}</Badge>
-                        )}
+                        {(() => {
+                          // A verb in flight outranks the last-known status:
+                          // the row must react on click, not a second later
+                          // when the refetch lands.
+                          const transitioning = lifecycleVerbs
+                            .map((v) => act.pendingLabel(actionKey(c.id, v)))
+                            .find(Boolean);
+                          if (transitioning) {
+                            return (
+                              <Badge className="bg-cp-yellow/20 text-cp-yellow border-cp-yellow/30" data-testid={`container-status-${c.id}`}>
+                                {transitioning}
+                              </Badge>
+                            );
+                          }
+                          return c.completed_one_off ? (
+                            <Badge className="bg-cp-blue/20 text-cp-blue border-cp-blue/30" data-testid={`container-status-${c.id}`}>completed</Badge>
+                          ) : (
+                            <Badge className={statusColor[c.status] || statusColor.unknown} data-testid={`container-status-${c.id}`}>{c.status}</Badge>
+                          );
+                        })()}
                         {c.health !== "none" && (
                           <Badge className={statusColor[c.health] || statusColor.unknown}>{c.health}</Badge>
                         )}
@@ -425,24 +471,24 @@ export function StackDetail({ stackName }: { stackName: string }) {
                     <TD onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1 justify-end">
                         {c.status === "paused" && (
-                          <Button size="xs" variant="outline" onClick={() => containerAction(c.id, "unpause")}>
+                          <Button size="xs" variant="outline" loading={act.pending(actionKey(c.id, "unpause"))} onClick={() => containerAction(c.id, "unpause", c.name)}>
                             Unpause
                           </Button>
                         )}
                         {c.status !== "running" && c.status !== "paused" && (
-                          <Button size="xs" variant="outline" onClick={() => containerAction(c.id, "start")}>
+                          <Button size="xs" variant="outline" loading={act.pending(actionKey(c.id, "start"))} onClick={() => containerAction(c.id, "start", c.name)}>
                             Start
                           </Button>
                         )}
                         {c.status === "running" && (
                           <>
-                            <Button size="xs" variant="outline" onClick={() => containerAction(c.id, "restart")}>
+                            <Button size="xs" variant="outline" loading={act.pending(actionKey(c.id, "restart"))} onClick={() => containerAction(c.id, "restart", c.name)}>
                               Restart
                             </Button>
-                            <Button size="xs" variant="outline" onClick={() => containerAction(c.id, "pause")}>
+                            <Button size="xs" variant="outline" loading={act.pending(actionKey(c.id, "pause"))} onClick={() => containerAction(c.id, "pause", c.name)}>
                               Pause
                             </Button>
-                            <Button size="xs" variant="destructive" onClick={() => containerAction(c.id, "stop")}>
+                            <Button size="xs" variant="destructive" loading={act.pending(actionKey(c.id, "stop"))} onClick={() => containerAction(c.id, "stop", c.name)}>
                               Stop
                             </Button>
                           </>
@@ -546,7 +592,8 @@ export function StackDetail({ stackName }: { stackName: string }) {
                       </p>
                       <Button
                         size="sm"
-                        onClick={() => containerAction(c.id, "start")}
+                        loading={act.pending(actionKey(c.id, "start"))}
+                        onClick={() => containerAction(c.id, "start", c.name)}
                         data-testid={`terminal-start-${c.id}`}
                       >
                         Start &amp; Open Terminal
@@ -666,7 +713,8 @@ export function StackDetail({ stackName }: { stackName: string }) {
                   </p>
                   <Button
                     size="sm"
-                    onClick={() => containerAction(target, "start")}
+                    loading={act.pending(actionKey(target, "start"))}
+                    onClick={() => containerAction(target, "start", selectedContainer?.name ?? "container")}
                   >
                     Start &amp; Open Terminal
                   </Button>

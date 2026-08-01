@@ -297,9 +297,16 @@ func toDomainContainer(c container.Summary) domcontainer.Container {
 		dc.ExitCode, _ = strconv.Atoi(matches[1])
 	}
 
-	// Restart policy from compose label (set by docker compose)
-	// Values: "no", "always", "on-failure", "unless-stopped"
-	dc.RestartPolicy = c.Labels["com.docker.compose.restart"]
+	// One-off classification from compose's own label: "True" for a
+	// `docker compose run` container, "False" for a service container.
+	//
+	// RestartPolicy is deliberately NOT set here: the Docker container LIST
+	// API returns only HostConfig.NetworkMode, so there is nothing to read it
+	// from. This previously read a `com.docker.compose.restart` label that
+	// docker compose does not emit, leaving the field "" on every container
+	// and making the one-off heuristic misclassify stopped services. Only the
+	// inspect path (toDomainInspect) can populate the real policy.
+	dc.ComposeOneOff = c.Labels["com.docker.compose.oneoff"]
 
 	for _, p := range c.Ports {
 		dc.Ports = append(dc.Ports, domcontainer.PortBinding{

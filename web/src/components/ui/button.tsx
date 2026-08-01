@@ -35,17 +35,49 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /**
+   * Action is in flight. Disables the button and prepends a spinner, so a
+   * click has a visible consequence before the server answers. Without this
+   * an operator cannot tell a submitted action from an ignored one.
+   */
+  loading?: boolean;
+}
+
+/**
+ * Inline spinner sized to the current text. Border-based rather than an SVG
+ * so it inherits `currentColor` on every button variant without a fill prop.
+ */
+function Spinner() {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+    />
+  );
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, loading = false, disabled, children, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
+    // asChild renders an arbitrary child element; injecting a sibling spinner
+    // would break Slot's single-child contract, so only decorate real buttons.
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        disabled={disabled || (!asChild && loading)}
+        aria-busy={loading || undefined}
         {...props}
-      />
+      >
+        {!asChild && loading ? (
+          <>
+            <Spinner />
+            {children}
+          </>
+        ) : (
+          children
+        )}
+      </Comp>
     );
   }
 );

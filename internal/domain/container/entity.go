@@ -1,6 +1,9 @@
 package container
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // ContainerStatus represents the runtime state of a container.
 type ContainerStatus string
@@ -37,6 +40,12 @@ type Container struct {
 	Health        HealthStatus
 	ExitCode      int    // exit code (only meaningful when Status == exited)
 	RestartPolicy string // "no", "always", "on-failure", "unless-stopped"
+	// ComposeOneOff is docker compose's own `com.docker.compose.oneoff` label:
+	// "True" for a `docker compose run` container, "False" for a service
+	// container, "" when unlabelled (not compose-managed). Unlike RestartPolicy
+	// this IS available from the container LIST API, which is what the stack
+	// page reads.
+	ComposeOneOff string
 	Ports         []PortBinding
 	CreatedAt     time.Time
 	StartedAt     time.Time
@@ -55,12 +64,24 @@ func (c *Container) IsRunning() bool {
 	return c.Status == StatusRunning
 }
 
-// IsOneOff returns true if this container is configured as a non-persistent
-// task — i.e., it has no long-running restart policy ("always" / "unless-stopped").
-// This covers init containers, migration runners, restore jobs, etc., regardless
-// of whether they exited successfully.
+// IsOneOff returns true if this container is a non-persistent task rather than
+// a service - an init container, migration runner, restore job, or a
+// `docker compose run` invocation.
+//
+// Compose's own label is authoritative when present. Otherwise fall back to the
+// restart policy, which only the INSPECT path populates.
+//
+// An unknown classification must resolve to false. It previously resolved to
+// true (via `RestartPolicy == ""`), and since the list path never populated
+// RestartPolicy at all, EVERY exit-0 container in the stack view was reported
+// as a completed one-off - so stopping a long-running service rendered it as
+// "completed" instead of "exited". Guessing "task" from absent data turns a
+// missing signal into an affirmative false claim about the container.
 func (c *Container) IsOneOff() bool {
-	return c.RestartPolicy == "no" || c.RestartPolicy == "" || c.RestartPolicy == "on-failure"
+	if c.ComposeOneOff != "" {
+		return strings.EqualFold(c.ComposeOneOff, "true")
+	}
+	return c.RestartPolicy == "no" || c.RestartPolicy == "on-failure"
 }
 
 // IsCompletedOneOff returns true if this container exited successfully (code 0)
