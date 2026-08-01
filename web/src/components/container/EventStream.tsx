@@ -20,20 +20,42 @@ export function EventStream() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Fetch recent Docker events on mount to pre-populate
+  // Fetch recent Docker events on mount to pre-populate. The live SSE feed
+  // below carries events from every registered docker host, so the backfill
+  // has to fan out the same way - querying only the local daemon would make
+  // the first 5 minutes of history silently omit remote-host activity.
   useEffect(() => {
-    apiFetch<{ events: { type: string; action: string; actor: string; id: string; time: string }[] }>(
-      "/api/v1/docker/events?since=5m"
-    ).then(({ data }) => {
-      if (data?.events?.length) {
-        setEvents(data.events.map((e) => ({
+    let cancelled = false;
+
+    (async () => {
+      const { data: hostData } = await apiFetch<{ hosts: { id: number; name: string }[] }>("/api/v1/hosts");
+      // "" = the local/default daemon, which has no docker_hosts row.
+      const targets = ["", ...(hostData?.hosts ?? []).map((h) => h.name)];
+
+      const results = await Promise.all(
+        targets.map((host) =>
+          apiFetch<{ events: { type: string; action: string; actor: string; id: string; time: string }[] }>(
+            `/api/v1/docker/events?since=5m${host ? `&host=${encodeURIComponent(host)}` : ""}`,
+          ).then(({ data }) => (data?.events ?? []).map((e) => ({ ...e, host }))),
+        ),
+      );
+
+      if (cancelled) return;
+
+      const merged = results
+        .flat()
+        .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+        .map((e) => ({
           id: nextEventId++,
           type: `${e.type}.${e.action}`,
-          data: { actor: e.actor, id: e.id },
+          data: e.host ? { actor: e.actor, id: e.id, host: e.host } : { actor: e.actor, id: e.id },
           ts: e.time,
-        })));
-      }
-    });
+        }));
+
+      if (merged.length) setEvents(merged);
+    })();
+
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

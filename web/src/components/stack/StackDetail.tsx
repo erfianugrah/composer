@@ -82,6 +82,14 @@ function shortDigest(id: string): string {
   return hex.length > 12 ? hex.slice(0, 12) : hex;
 }
 
+// hostQuery builds the ?host= suffix every container endpoint needs so the
+// request lands on the daemon the stack actually runs on. Without it a stack
+// on a remote docker host resolves against the local daemon and the action
+// fails with "No such container".
+function hostQuery(host?: string): string {
+  return host ? `?host=${encodeURIComponent(host)}` : "";
+}
+
 export function StackDetail({ stackName }: { stackName: string }) {
   const [stack, setStack] = useState<StackData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,6 +147,22 @@ export function StackDetail({ stackName }: { stackName: string }) {
   type InspectPane = "logs" | "stats" | "terminal";
   const [inspectContainerId, setInspectContainerId] = useState<string | null>(null);
   const [inspectPane, setInspectPane] = useState<InspectPane>("logs");
+
+  // containerAction posts a lifecycle verb to a single container in this
+  // stack, pinned to the stack's docker host, and surfaces failures instead
+  // of swallowing them (a silent no-op is indistinguishable from a hung UI).
+  const containerAction = async (id: string, action: string) => {
+    setActionError("");
+    const { error } = await apiFetch(
+      `/api/v1/containers/${id}/${action}${hostQuery(stack?.host)}`,
+      { method: "POST" },
+    );
+    if (error) {
+      setActionError(`${action} failed: ${error}`);
+      return;
+    }
+    setTimeout(fetchStack, 1000);
+  };
 
   const fetchStack = async () => {
     const { data, error } = await apiFetch<StackData>(`/api/v1/stacks/${stackName}`);
@@ -401,24 +425,24 @@ export function StackDetail({ stackName }: { stackName: string }) {
                     <TD onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1 justify-end">
                         {c.status === "paused" && (
-                          <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/unpause`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                          <Button size="xs" variant="outline" onClick={() => containerAction(c.id, "unpause")}>
                             Unpause
                           </Button>
                         )}
                         {c.status !== "running" && c.status !== "paused" && (
-                          <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                          <Button size="xs" variant="outline" onClick={() => containerAction(c.id, "start")}>
                             Start
                           </Button>
                         )}
                         {c.status === "running" && (
                           <>
-                            <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/restart`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                            <Button size="xs" variant="outline" onClick={() => containerAction(c.id, "restart")}>
                               Restart
                             </Button>
-                            <Button size="xs" variant="outline" onClick={() => apiFetch(`/api/v1/containers/${c.id}/pause`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                            <Button size="xs" variant="outline" onClick={() => containerAction(c.id, "pause")}>
                               Pause
                             </Button>
-                            <Button size="xs" variant="destructive" onClick={() => apiFetch(`/api/v1/containers/${c.id}/stop`, { method: "POST" }).then(() => setTimeout(fetchStack, 1000))}>
+                            <Button size="xs" variant="destructive" onClick={() => containerAction(c.id, "stop")}>
                               Stop
                             </Button>
                           </>
@@ -522,10 +546,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
                       </p>
                       <Button
                         size="sm"
-                        onClick={() =>
-                          apiFetch(`/api/v1/containers/${c.id}/start`, { method: "POST" })
-                            .then(() => setTimeout(fetchStack, 1000))
-                        }
+                        onClick={() => containerAction(c.id, "start")}
                         data-testid={`terminal-start-${c.id}`}
                       >
                         Start &amp; Open Terminal
@@ -645,10 +666,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
                   </p>
                   <Button
                     size="sm"
-                    onClick={() =>
-                      apiFetch(`/api/v1/containers/${target}/start`, { method: "POST" })
-                        .then(() => setTimeout(fetchStack, 1000))
-                    }
+                    onClick={() => containerAction(target, "start")}
                   >
                     Start &amp; Open Terminal
                   </Button>
