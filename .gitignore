@@ -35,3 +35,9 @@ Thumbs.db
 # Temp
 *.tmp
 *.bak
+
+# self-correcting-loop: track the sensor manifest, not the run artifacts.
+# The gates themselves live in internal/api/web_*_test.go; this is the file
+# that wires them together, and it is worth more than it looks.
+.pi/*
+!.pi/harness.json

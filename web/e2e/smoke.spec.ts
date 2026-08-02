@@ -717,6 +717,12 @@ test.describe("Toaster", () => {
 });
 
 test.describe("Async job actions", () => {
+  // These are the only tests that wait on a real client-side poll cycle
+  // (1.5s per tick) on top of page load, so the default 30s budget is tight -
+  // it expired against a preview server still warming up after a rebuild.
+  // The app behaviour under test is unchanged; the clock was just too short.
+  test.setTimeout(60_000);
+
   // An endpoint that hands back a job id has ACCEPTED the work, not finished
   // it. Reporting "Pruned unused volumes" at that moment is a claim nobody has
   // verified - the same defect as inferring a status badge from absent data.
@@ -755,7 +761,7 @@ test.describe("Async job actions", () => {
 
     // The job finishes; the operator finds out without going anywhere.
     jobStatus = "completed";
-    await expect(page.getByText("Pruned unused volumes")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Pruned unused volumes")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("reclaimed 1.2GB")).toBeVisible();
   });
 
@@ -781,7 +787,7 @@ test.describe("Async job actions", () => {
     await page.getByRole("button", { name: "Prune Unused" }).click();
     await page.getByRole("button", { name: "Confirm" }).click();
 
-    await expect(page.getByText("Volume prune failed")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Volume prune failed")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("daemon refused")).toBeVisible();
     await expect(page.getByText("Pruned unused volumes")).toBeHidden();
   });

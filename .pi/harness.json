@@ -1,0 +1,74 @@
+{
+  "task": "Bring the Composer web UI back into compliance with the feedback and status conventions its sensors enforce. Each failing sensor names the exact files and lines; those are the work list, and green sensors are the definition of done.\n\nThe conventions, and why each exists:\n\n1. EVERY MUTATING CALL REPORTS ITS OUTCOME (`feedback-guard`).\n   Wrap the apiFetch in useAction's run() so the control shows pending state and the user gets one toast:\n\n     const act = useAction();\n     act.run(\n       key,                                              // per control, e.g. `${id}:restart`\n       () => apiFetch(`/api/v1/...`, { method: \"POST\" }),\n       { running: \"Restarting\", success: `Restarted ${name}`, failure: `Failed to restart ${name}` },\n       { after: refetch },\n     );\n     <Button loading={act.pending(key)} .../>\n\n   run() resolves to { data, error, ok } and is generic (`act.run<T>(...)`), so routing a call through it never costs you the response body. Enclosure is lexical - a toast near an unwrapped call does not count. Reference: `containerAction` in components/stack/StackDetail.tsx.\n\n2. ONE FAILURE, ONE MESSAGE (`error-channel`).\n   Either the toast reports it, or an inline banner does with `inlineError: true` in the run options to suppress the toast. Never both, never neither. Form submits want the banner (it persists while the user fixes the field); row, table and dropdown actions want the toast.\n\n3. NEVER CLAIM AN OUTCOME YOU HAVE NOT OBSERVED.\n   An endpoint that answers with a job id has accepted the work, not finished it. run() handles this: give it a `dispatched` label and it reports the dispatch, polls the job, then reports the real result. Do not paper over it with a success message.\n\n4. ONE STATUS VOCABULARY (`status-vocab`).\n   Import from @/lib/status-colors and use statusClass(x) for the fallback. No private statusColor maps, no per-component fallback. Every container state the Go domain emits needs an entry; red is reserved for states a human must act on (unhealthy, dead), not for a container someone stopped on purpose.\n\n5. MULTI-HOST CALLS CARRY ?host= (`hostparam-guard`).\n   Any container/image/network/volume endpoint resolves against the local daemon without it, so an action on a remote stack fails with \"container not found\". Keep the hostSuffix()/hostQuery() interpolation inside the URL literal.\n\nRULES:\n- Do not weaken, skip or delete a sensor or any test. The sensors live under internal/ and are outside your write scope for a reason.\n- Do not drop existing behaviour while moving code: refetches, dialog closes, form resets and pre-request field validation all stay.\n- An action that is genuinely correct to stay silent takes a `feedback-exempt: <reason>` comment with a real reason. Navigation-away flows (login) and console commands whose output lands inline are the established cases; there should be about five in the whole codebase.\n- Keep changes scoped to what the sensors are asking for. This harness is a regression net, not licence for a refactor.",
+  "maxIterations": 12,
+  "models": [
+    "openrouter/deepseek/deepseek-v4-pro",
+    "openrouter/z-ai/glm-5.2",
+    "anthropic/claude-sonnet-5"
+  ],
+  "stallPatience": 3,
+  "tools": [
+    "read",
+    "edit",
+    "write",
+    "bash",
+    "grep",
+    "glob"
+  ],
+  "writeScope": [
+    "web/src/components/**",
+    "web/src/lib/**"
+  ],
+  "sensors": [
+    {
+      "name": "error-channel",
+      "cmd": "go test -count=1 ./internal/api/ -run TestWebActionsReportErrorExactlyOnce",
+      "hint": "Each failure line is an action whose error reaches the user twice (toast + inline banner) or, if it says 'reported nowhere', zero times. Pick one channel: delete the set*(err) line for row/menu actions, or keep it and add `inlineError: true` to the run() options for form submits."
+    },
+    {
+      "name": "status-vocab",
+      "cmd": "go test -count=1 ./internal/api/ -run TestWebStatusVocabulary",
+      "hint": "A component defined its own statusColor map, chose its own fallback for an unknown status, or the shared map is missing a container state the Go domain emits. Import from @/lib/status-colors and use statusClass(x)."
+    },
+    {
+      "name": "feedback-guard",
+      "cmd": "go test -count=1 ./internal/api/ -run TestWebMutatingCallsReportOutcome",
+      "hint": "This is the task. Each failure line is a mutating apiFetch that reports nothing to the user. Wrap it in useAction's run(...) as described in the task, and bind loading={act.pending(key)} on the control. Enclosure is lexical - the apiFetch must sit inside the run() callback."
+    },
+    {
+      "name": "hostparam-guard",
+      "cmd": "go test -count=1 ./internal/api/ -run TestWebCallsHostAwareEndpointsWithHost",
+      "hint": "A URL lost its ?host= parameter. Multi-host stacks resolve on the wrong docker daemon without it. Keep the hostSuffix()/hostQuery() interpolation inside the URL literal when you move a call into run()."
+    },
+    {
+      "name": "typecheck",
+      "cmd": "cd web && ./node_modules/.bin/tsc --noEmit -p tsconfig.json",
+      "hint": "TypeScript errors. Common cause: run() expects a function returning apiFetch's { error } shape - pass `() => apiFetch(...)`, not the awaited result."
+    },
+    {
+      "name": "vet",
+      "cmd": "go vet ./...",
+      "hint": "Go vet failure. You should not be editing Go at all for this task."
+    },
+    {
+      "name": "unit",
+      "cmd": "go test -count=1 ./internal/... -skip 'TestWebMutatingCallsReportOutcome|TestWebCallsHostAwareEndpointsWithHost|TestWebActionsReportErrorExactlyOnce|TestWebStatusVocabulary'",
+      "hint": "A Go test broke. The two web guard tests are excluded here (they have their own sensors), so this is a real regression - you should not be editing Go at all for this task."
+    },
+    {
+      "name": "build",
+      "cmd": "cd web && bunx --bun astro build",
+      "hint": "The frontend build failed - a syntax or import error in a component you edited."
+    },
+    {
+      "name": "e2e",
+      "cmd": "cd web && bunx playwright test --reporter=line",
+      "hint": "A browser test broke - a real behavioural regression in a flow you touched. Note that adding a toast can break an unscoped getByText() assertion via Playwright strict mode (two matches: toast + table). That is a genuine signal: fix the component if behaviour changed, but the e2e specs are outside your write scope, so report it rather than editing them."
+    },
+    {
+      "name": "judge",
+      "cmd": "bun ~/.pi/agent/skills/self-correcting-loop/judge.ts --model anthropic/claude-opus-4.8 --spec 'Each mutating action in the web UI reports its failure through exactly one channel: an error toast, or an inline banner with inlineError:true suppressing the toast.' --rubric 'FAIL if: any error path was deleted without a replacement channel; any inlineError:true was added to a callsite that has no visible inline banner; a form submit lost its persistent inline error in favour of a transient toast; a row/table/dropdown action kept a banner that is now the only reason its error state exists (dead state left behind); the success path, labels, pending keys or loading bindings were altered; pre-request field validation banners were removed. PASS if every callsite reports failure exactly once, the channel fits the surface (banner for form submits, toast for row actions), and nothing else changed.'",
+      "hint": "The reviewer rejected the change. Read its reasoning and fix the specific conversions it named - do not revert everything."
+    }
+  ]
+}
