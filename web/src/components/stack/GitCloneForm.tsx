@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 
 interface DockerHost {
   id: number;
@@ -30,6 +31,7 @@ export function GitCloneForm({ onCreated }: Props) {
   const [hosts, setHosts] = useState<DockerHost[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const act = useAction();
 
   useEffect(() => {
     apiFetch<{ hosts: DockerHost[] }>("/api/v1/hosts").then(({ data }) => {
@@ -42,24 +44,32 @@ export function GitCloneForm({ onCreated }: Props) {
     setError("");
     setLoading(true);
 
-    const { error: err } = await apiFetch("/api/v1/stacks/git", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name.trim(),
-        repo_url: repoUrl.trim(),
-        branch: (branch || "main").trim(),
-        compose_path: (composePath || "compose.yaml").trim(),
-        ...(envPath.trim() && { env_path: envPath.trim() }),
-        auth_method: authMethod,
-        ...(authMethod === "token" && { token: token.trim() }),
-        ...(authMethod === "ssh_key" && { ssh_key: sshKey.trim() }),
-        ...(authMethod === "ssh_file" && { ssh_key_file: sshKeyFile.trim() }),
-        ...(authMethod === "basic" && { username: username.trim(), password: password.trim() }),
-        ...(ageKey.trim() && { age_key: ageKey.trim() }),
-        ...(host && { host }),
+    const { error: err } = await act.run(
+      "git-clone",
+      () => apiFetch("/api/v1/stacks/git", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          repo_url: repoUrl.trim(),
+          branch: (branch || "main").trim(),
+          compose_path: (composePath || "compose.yaml").trim(),
+          ...(envPath.trim() && { env_path: envPath.trim() }),
+          auth_method: authMethod,
+          ...(authMethod === "token" && { token: token.trim() }),
+          ...(authMethod === "ssh_key" && { ssh_key: sshKey.trim() }),
+          ...(authMethod === "ssh_file" && { ssh_key_file: sshKeyFile.trim() }),
+          ...(authMethod === "basic" && { username: username.trim(), password: password.trim() }),
+          ...(ageKey.trim() && { age_key: ageKey.trim() }),
+          ...(host && { host }),
+        }),
       }),
-    });
+      {
+        running: "Cloning repository",
+        success: `Created ${name.trim()}`,
+        failure: `Failed to clone ${name.trim()}`,
+      },
+    );
 
     if (err) {
       setError(err);
@@ -189,7 +199,7 @@ export function GitCloneForm({ onCreated }: Props) {
 
           {error && <p className="text-sm text-cp-red">{error}</p>}
 
-          <Button type="submit" disabled={loading || !name || !repoUrl} className="w-full" data-testid="git-clone-btn">
+          <Button type="submit" disabled={loading || !name || !repoUrl} loading={act.pending("git-clone")} className="w-full" data-testid="git-clone-btn">
             {loading ? "Cloning repository..." : "Clone & Create Stack"}
           </Button>
         </form>

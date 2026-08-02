@@ -5,6 +5,7 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { Table, TBody, TR, TH, TD } from "@/components/ui/data-table";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 /**
@@ -56,6 +57,7 @@ export function SelfUpgrade() {
   const [restarting, setRestarting] = useState(false);
   const [loading, setLoading] = useState(true);
   const pollRef = useRef<number | null>(null);
+  const act = useAction();
 
   const inFlight = row?.status === "pending" || row?.status === "helper_running";
 
@@ -102,16 +104,24 @@ export function SelfUpgrade() {
 
   async function trigger() {
     setError("");
-    const { data, error: err } = await apiFetch<{ helper_id: string }>("/api/v1/system/upgrade", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: image.trim() }),
-    });
-    if (err) {
-      setError(err);
+    const result = await act.run<{ helper_id: string }>(
+      "system-upgrade",
+      () => apiFetch<{ helper_id: string }>("/api/v1/system/upgrade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: image.trim() }),
+      }),
+      {
+        running: "Starting upgrade",
+        success: "Upgrade helper started",
+        failure: "Upgrade failed to start",
+      },
+    );
+    if (result.error) {
+      setError(result.error);
       return;
     }
-    if (data) {
+    if (result.data) {
       setRow((r) => r ? { ...r, status: "helper_running", target_image: image.trim() } : r);
       setRestarting(false);
       fetchStatus();
@@ -194,6 +204,7 @@ export function SelfUpgrade() {
               message="Recreate composer with this image?"
               confirmLabel="Upgrade"
               disabled={inFlight || restarting || !image.trim()}
+              loading={act.pending("system-upgrade")}
               onConfirm={trigger}
             >
               Upgrade

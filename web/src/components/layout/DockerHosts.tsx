@@ -6,6 +6,7 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/data-table";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 
 interface DockerHost {
   id: number;
@@ -26,6 +27,7 @@ export function DockerHosts() {
   const [editing, setEditing] = useState<DockerHost | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const act = useAction();
 
   function fetchHosts() {
     apiFetch<{ hosts: DockerHost[] }>("/api/v1/hosts").then(({ data, error: err }) => {
@@ -63,19 +65,35 @@ export function DockerHosts() {
     };
     if (form.cert_dir.trim()) body.cert_dir = form.cert_dir.trim();
     if (editing) {
-      const { error: err } = await apiFetch(`/api/v1/hosts/${editing.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const { error: err } = await act.run(
+        `edit-host-${editing.id}`,
+        () => apiFetch(`/api/v1/hosts/${editing.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        {
+          running: "Saving",
+          success: `Saved ${form.name.trim()}`,
+          failure: `Failed to save ${form.name.trim()}`,
+        },
+      );
       if (err) setError(err);
       else { cancelEdit(); fetchHosts(); }
     } else {
-      const { error: err } = await apiFetch("/api/v1/hosts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const { error: err } = await act.run(
+        "create-host",
+        () => apiFetch("/api/v1/hosts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        {
+          running: "Adding",
+          success: `Added ${form.name.trim()}`,
+          failure: `Failed to add ${form.name.trim()}`,
+        },
+      );
       if (err) setError(err);
       else { cancelEdit(); fetchHosts(); }
     }
@@ -84,9 +102,17 @@ export function DockerHosts() {
 
   async function deleteHost(h: DockerHost) {
     setError("");
-    const { error: err } = await apiFetch(`/api/v1/hosts/${h.id}`, { method: "DELETE" });
+    const { error: err } = await act.run(
+      `delete-host-${h.id}`,
+      () => apiFetch(`/api/v1/hosts/${h.id}`, { method: "DELETE" }),
+      {
+        running: "Removing",
+        success: `Removed ${h.name}`,
+        failure: `Failed to remove ${h.name}`,
+      },
+      { after: fetchHosts },
+    );
     if (err) setError(err);
-    else fetchHosts();
   }
 
   return (
@@ -123,7 +149,7 @@ export function DockerHosts() {
             />
           </div>
           <div className="flex gap-2">
-            <Button type="submit" disabled={submitting} data-testid="hosts-submit">
+            <Button type="submit" disabled={submitting} loading={act.pending(editing ? `edit-host-${editing.id}` : "create-host")} data-testid="hosts-submit">
               {editing ? "Update" : "Add Host"}
             </Button>
             {editing && (
@@ -176,6 +202,7 @@ export function DockerHosts() {
                     <ConfirmButton
                       size="sm"
                       variant="ghost"
+                      loading={act.pending(`delete-host-${h.id}`)}
                       onConfirm={() => deleteHost(h)}
                       data-testid={`hosts-delete-${h.id}`}
                     >

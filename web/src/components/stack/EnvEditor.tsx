@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 
 interface Props {
   stackName: string;
@@ -17,6 +18,7 @@ export function EnvEditor({ stackName, initialContent, sopsEncrypted }: Props) {
   const [saved, setSaved] = useState(false);
   const [decrypted, setDecrypted] = useState(false);
   const [decrypting, setDecrypting] = useState(false);
+  const act = useAction();
 
   useEffect(() => {
     if (!dirty) return;
@@ -29,13 +31,21 @@ export function EnvEditor({ stackName, initialContent, sopsEncrypted }: Props) {
     setSaving(true);
     setError("");
     setSaved(false);
-    const { error: err } = await apiFetch(`/api/v1/stacks/${stackName}/env`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ env: content }),
-    });
-    if (err) setError(err);
-    else { setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    const { error: err } = await act.run(
+      "save-env",
+      () => apiFetch(`/api/v1/stacks/${stackName}/env`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ env: content }),
+      }),
+      {
+        running: "Saving",
+        success: `Saved .env for ${stackName}`,
+        failure: `Failed to save .env for ${stackName}`,
+      },
+    );
+    if (!err) { setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    else setError(err);
     setSaving(false);
   }
 
@@ -71,7 +81,7 @@ export function EnvEditor({ stackName, initialContent, sopsEncrypted }: Props) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
+        <Button size="sm" onClick={handleSave} disabled={!dirty || saving} loading={act.pending("save-env")}>
           {saving ? "Saving..." : "Save"}
         </Button>
         {sopsEncrypted && (

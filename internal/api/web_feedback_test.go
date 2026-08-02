@@ -130,15 +130,22 @@ func matchParen(text string, open int) int {
 	return -1
 }
 
-// enclosedByReporter walks outward from pos through unclosed '(' characters
-// and reports whether any enclosing call is one of the reporter wrappers.
-// This is true lexical enclosure: a nearby but non-enclosing call never
-// satisfies it.
+// enclosedByReporter walks outward from pos through unclosed brackets and
+// reports whether any enclosing call is one of the reporter wrappers. This is
+// true lexical enclosure: a nearby but non-enclosing call never satisfies it.
+//
+// Braces are balanced exactly like parens on the way out. Only an UNPAIRED '{'
+// is a block boundary. An earlier version incremented depth on ')' but treated
+// every '{' as a boundary, so any brace in an earlier argument - a template
+// literal key (`${id}:stop`) or an options object - aborted the walk and the
+// call was reported as unwrapped even though it was correctly wrapped. That is
+// the worst failure mode for a gate that drives an agent loop: it rejects
+// correct work, so the loop cannot converge. See TestEnclosedByReporter.
 func enclosedByReporter(text string, pos int, reporters map[string]bool) bool {
 	depth := 0
 	for i := pos - 1; i >= 0; i-- {
 		switch text[i] {
-		case ')':
+		case ')', '}':
 			depth++
 		case '(':
 			if depth > 0 {
@@ -150,29 +157,87 @@ func enclosedByReporter(text string, pos int, reporters map[string]bool) bool {
 				return true
 			}
 		case '{':
-			// Left the enclosing expression without finding a reporter. Do not
-			// cross a block boundary - an outer function's run() must not
-			// launder an unwrapped call in a nested statement body.
-			if depth == 0 {
-				return false
+			if depth > 0 {
+				depth--
+				continue
 			}
+			// Unpaired brace: we left the enclosing expression into a
+			// statement block. An outer function's run() must not launder an
+			// unwrapped call sitting in a sibling statement.
+			return false
 		}
 	}
 	return false
 }
 
+// TestEnclosedByReporter pins the enclosure walk itself. The feedback gate is
+// only as trustworthy as this function: a false positive rejects correct code,
+// a false negative lets a silent action through.
+func TestEnclosedByReporter(t *testing.T) {
+	reporters := map[string]bool{"run": true, "runBulk": true}
+	tests := []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{"plain string key", `act.run("save", () => apiFetch(u, { method: "POST" }))`, true},
+		{"template-literal key", "act.run(`${id}:save`, () => apiFetch(u, { method: \"POST\" }))", true},
+		{"helper-call key", `act.run(actionKey(id, a), () => apiFetch(u, { method: "POST" }))`, true},
+		{"object arg before callback", `act.run(k, { x: 1 }, () => apiFetch(u, { method: "POST" }))`, true},
+		{"runBulk", "runBulk(ids, (id) => apiFetch(`/x/${id}`, { method: \"DELETE\" }), l)", true},
+		{"explicit type argument on run", `act.run<{ id: string }>(k, () => apiFetch(u, { method: "POST" }))`, true},
+		{"multiline", "act.run(\n  actionKey(id, action),\n  () => apiFetch(`/api/v1/c/${id}`, { method: \"POST\" }),\n  { running: \"x\" },\n)", true},
+		{"bare call", `const go = async () => { await apiFetch(u, { method: "POST" }); }`, false},
+		{"sibling statement after a wrapped call", "const go = async () => {\n  act.run(k, () => apiFetch(a, { method: \"POST\" }));\n  await apiFetch(b, { method: \"POST\" });\n}", false},
+		{"nested then-block", `act.run(k, () => x).then(() => { apiFetch(b, { method: "POST" }); })`, false},
+		{"nearby toast decoy", `const go = async () => { toast.success("hi"); await apiFetch(u, { method: "POST" }); }`, false},
+	}
+	for _, tt := range tests {
+		// Target the LAST apiFetch: in the negative cases the earlier one is
+		// legitimately wrapped and the trailing one is the offender.
+		pos := strings.LastIndex(tt.src, "apiFetch")
+		if pos < 0 {
+			t.Fatalf("%s: fixture has no apiFetch", tt.name)
+		}
+		if got := enclosedByReporter(tt.src, pos, reporters); got != tt.want {
+			t.Errorf("%s: enclosedByReporter() = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
 // identBefore reads the identifier immediately preceding index i, skipping a
-// property access so `act.run(` yields "run".
+// property access so `act.run(` yields "run", and skipping an explicit type
+// argument list so `act.run<{ id: string }>(` also yields "run".
 func identBefore(text string, i int) string {
 	end := i
-	for end > 0 && (text[end-1] == ' ' || text[end-1] == '\n' || text[end-1] == '\t') {
-		end--
+	end = skipSpaceBack(text, end)
+	if end > 0 && text[end-1] == '>' {
+		depth := 0
+		for end > 0 {
+			end--
+			if text[end] == '>' {
+				depth++
+			} else if text[end] == '<' {
+				depth--
+				if depth == 0 {
+					break
+				}
+			}
+		}
+		end = skipSpaceBack(text, end)
 	}
 	start := end
 	for start > 0 && isIdentChar(text[start-1]) {
 		start--
 	}
 	return text[start:end]
+}
+
+func skipSpaceBack(text string, i int) int {
+	for i > 0 && (text[i-1] == ' ' || text[i-1] == '\n' || text[i-1] == '\t') {
+		i--
+	}
+	return i
 }
 
 func isIdentChar(b byte) bool {

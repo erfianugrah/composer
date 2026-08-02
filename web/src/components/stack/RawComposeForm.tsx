@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 
 interface DockerHost {
   id: number;
@@ -20,6 +21,7 @@ export function RawComposeForm({ onCreated }: Props) {
   const [error, setError] = useState("");
   const [host, setHost] = useState("");
   const [hosts, setHosts] = useState<DockerHost[]>([]);
+  const act = useAction();
 
   useEffect(() => {
     apiFetch<{ hosts: DockerHost[] }>("/api/v1/hosts").then(({ data }) => {
@@ -32,11 +34,19 @@ export function RawComposeForm({ onCreated }: Props) {
     setError("");
     setLoading(true);
 
-    const { error: err } = await apiFetch("/api/v1/stacks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), compose, ...(host && { host }) }),
-    });
+    const { error: err } = await act.run(
+      "raw-create",
+      () => apiFetch("/api/v1/stacks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), compose, ...(host && { host }) }),
+      }),
+      {
+        running: "Creating stack",
+        success: `Created ${name.trim()}`,
+        failure: `Failed to create ${name.trim()}`,
+      },
+    );
 
     if (err) {
       setError(err);
@@ -81,7 +91,7 @@ export function RawComposeForm({ onCreated }: Props) {
             />
           </div>
           {error && <p className="text-sm text-cp-red">{error}</p>}
-          <Button type="submit" disabled={loading || !name || !compose} className="w-full" data-testid="raw-create-btn">
+          <Button type="submit" disabled={loading || !name || !compose} loading={act.pending("raw-create")} className="w-full" data-testid="raw-create-btn">
             {loading ? "Creating..." : "Create Stack"}
           </Button>
         </form>

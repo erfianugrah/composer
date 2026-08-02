@@ -33,13 +33,30 @@ export interface RunOptions {
   /**
    * Called after a successful action, before the pending flag clears - use it
    * to refetch. Errors thrown here surface as an error toast.
+   *
+   * The return value is ignored, but it is typed loosely on purpose: callers
+   * routinely pass `() => setTimeout(refetch, 500)`, which returns a Timeout.
    */
-  after?: () => void | Promise<void>;
+  after?: () => unknown;
   /** Suppress the success toast (for actions whose result is self-evident). */
   quiet?: boolean;
 }
 
-type ApiResult = { error: string | null };
+/** Exactly apiFetch's return shape, so `() => apiFetch<T>(...)` type-checks
+ *  without the caller reshaping anything. */
+type ApiResult<T> = { data: T; error: null } | { data: null; error: string };
+
+/**
+ * What `run` resolves to. The API payload and error are passed through so a
+ * caller can still use the response body or drive an inline banner - routing
+ * a call through this hook must never cost you information.
+ */
+export interface ActionResult<T> {
+  data: T | null;
+  error: string | null;
+  /** Convenience: true when the call succeeded and `after` did not throw. */
+  ok: boolean;
+}
 
 export function useAction() {
   const [pendingKeys, setPendingKeys] = useState<Record<string, string>>({});
@@ -59,25 +76,32 @@ export function useAction() {
 
   /**
    * Run one mutating API call with pending state and outcome reporting.
-   * `fn` must resolve to the `{ error }` shape returned by `apiFetch`.
+   * `fn` must resolve to the `{ data, error }` shape returned by `apiFetch`.
    */
   const run = useCallback(
-    async (key: string, fn: () => Promise<ApiResult>, labels: ActionLabels, opts: RunOptions = {}): Promise<boolean> => {
-      if (inFlight.current.has(key)) return false;
+    async <T = unknown>(
+      key: string,
+      fn: () => Promise<ApiResult<T>>,
+      labels: ActionLabels,
+      opts: RunOptions = {},
+    ): Promise<ActionResult<T>> => {
+      // Re-entrant click while the same action is already running.
+      if (inFlight.current.has(key)) return { data: null, error: null, ok: false };
       inFlight.current.add(key);
       setPending(key, labels.running);
       try {
-        const { error } = await fn();
+        const { data, error } = await fn();
         if (error) {
           toast.error(labels.failure, { detail: error });
-          return false;
+          return { data, error, ok: false };
         }
         await opts.after?.();
         if (!opts.quiet) toast.success(labels.success);
-        return true;
+        return { data, error: null, ok: true };
       } catch (e) {
-        toast.error(labels.failure, { detail: e instanceof Error ? e.message : String(e) });
-        return false;
+        const message = e instanceof Error ? e.message : String(e);
+        toast.error(labels.failure, { detail: message });
+        return { data: null, error: message, ok: false };
       } finally {
         inFlight.current.delete(key);
         setPending(key, null);

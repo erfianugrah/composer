@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 
 interface WebhookSummary { id: string; stack_name: string; provider: string; branch_filter: string; auto_redeploy: boolean; url: string; }
 interface WebhookDetail { id: string; stack_name: string; provider: string; secret: string; url: string; branch_filter: string; auto_redeploy: boolean; }
@@ -39,6 +40,7 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
   const [autoRedeploy, setAutoRedeploy] = useState(true);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [deliveriesFor, setDeliveriesFor] = useState<string | null>(null);
+  const act = useAction();
 
   function fetchWebhooks() {
     apiFetch<{ webhooks: WebhookSummary[] }>("/api/v1/webhooks").then(({ data }) => {
@@ -55,11 +57,19 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
     setCreating(true);
     setError("");
     setNewWebhook(null);
-    const { data, error: err } = await apiFetch<WebhookDetail>("/api/v1/webhooks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stack_name: stackName, provider, branch_filter: branchFilter.trim() || undefined, auto_redeploy: autoRedeploy }),
-    });
+    const { data, error: err } = await act.run<WebhookDetail>(
+      `${stackName}:create-hook`,
+      () => apiFetch<WebhookDetail>("/api/v1/webhooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stack_name: stackName, provider, branch_filter: branchFilter.trim() || undefined, auto_redeploy: autoRedeploy }),
+      }),
+      {
+        running: "Creating webhook",
+        success: `Created webhook for ${stackName}`,
+        failure: `Failed to create webhook for ${stackName}`,
+      },
+    );
     if (err) setError(err);
     else if (data) { setNewWebhook(data); fetchWebhooks(); }
     setCreating(false);
@@ -88,7 +98,7 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={autoRedeploy} onChange={(e) => setAutoRedeploy(e.target.checked)} className="rounded" />Auto-redeploy on push</label>
             {error && <p className="text-sm text-cp-red">{error}</p>}
-            <Button type="submit" disabled={creating}>{creating ? "Creating..." : "Create Webhook"}</Button>
+            <Button type="submit" disabled={creating} loading={act.pending(`${stackName}:create-hook`)}>{creating ? "Creating..." : "Create Webhook"}</Button>
           </form>
           {newWebhook && (
             <div className="mt-3 rounded border border-cp-green/30 bg-cp-green/5 p-3 space-y-1">
@@ -133,9 +143,18 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
                       <ConfirmButton
                         size="xs"
                         message="Delete this webhook?"
+                        loading={act.pending(`${stackName}:delete-hook-${w.id}`)}
                         onConfirm={async () => {
-                          await apiFetch(`/api/v1/webhooks/${w.id}`, { method: "DELETE" });
-                          fetchWebhooks();
+                          await act.run(
+                            `${stackName}:delete-hook-${w.id}`,
+                            () => apiFetch(`/api/v1/webhooks/${w.id}`, { method: "DELETE" }),
+                            {
+                              running: "Deleting webhook",
+                              success: `Deleted webhook for ${stackName}`,
+                              failure: `Failed to delete webhook`,
+                            },
+                            { after: fetchWebhooks },
+                          );
                         }}
                       >Delete</ConfirmButton>
                     </div>

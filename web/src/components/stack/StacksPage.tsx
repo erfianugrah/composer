@@ -6,6 +6,7 @@ import { GitCloneForm } from "./GitCloneForm";
 import { RawComposeForm } from "./RawComposeForm";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 type CreateMode = null | "template" | "git" | "yaml";
@@ -23,6 +24,7 @@ type CreateMode = null | "template" | "git" | "yaml";
 export function StacksPage() {
   const navigate = useNavigate();
   const [createMode, setCreateMode] = useState<CreateMode>(null);
+  const act = useAction();
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -42,12 +44,20 @@ export function StacksPage() {
   }
 
   async function handleTemplateCreate(name: string, compose: string) {
-    const { error } = await apiFetch("/api/v1/stacks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), compose }),
-    });
-    if (!error) handleCreated(name.trim());
+    await act.run(
+      "create-template",
+      () => apiFetch("/api/v1/stacks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), compose }),
+      }),
+      {
+        running: "Creating",
+        success: `Created ${name}`,
+        failure: `Failed to create ${name}`,
+      },
+      { after: () => handleCreated(name.trim()) },
+    );
   }
 
   return (

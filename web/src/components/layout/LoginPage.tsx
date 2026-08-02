@@ -44,6 +44,7 @@ export function LoginPage() {
     setError("");
     setLoading(true);
 
+    // feedback-exempt: login redirects to / on success (navigation-away flow)
     const { error: lErr } = await apiFetch("/api/v1/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -67,6 +68,7 @@ export function LoginPage() {
     setError("");
     setLoading(true);
 
+    // feedback-exempt: bootstrap creates first admin, auto-login redirects to /
     const { error: bErr } = await apiFetch("/api/v1/auth/bootstrap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -80,6 +82,7 @@ export function LoginPage() {
     }
 
     // Bootstrap succeeded -- now log in automatically
+    // feedback-exempt: auto-login after bootstrap redirects to / (navigation-away flow)
     const { error: lErr } = await apiFetch("/api/v1/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -11,6 +11,7 @@ import { useSelection } from "@/lib/use-selection";
 import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface KeySummary {
@@ -73,6 +74,7 @@ export function ApiKeyManagement() {
   const [name, setName] = useState("");
   const [role, setRole] = useState("operator");
   const [expiresAt, setExpiresAt] = useState("");
+  const act = useAction();
 
   function fetchKeys() {
     apiFetch<{ keys: KeySummary[] }>("/api/v1/keys").then(({ data, error: err }) => {
@@ -89,11 +91,19 @@ export function ApiKeyManagement() {
     setCreating(true);
     setNewKey(null);
     setError("");
-    const { data, error: err } = await apiFetch<KeyCreated>("/api/v1/keys", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), role, ...(expiresAt ? { expires_at: new Date(expiresAt).toISOString() } : {}) }),
-    });
+    const { data, error: err } = await act.run<KeyCreated>(
+      "create-key",
+      () => apiFetch<KeyCreated>("/api/v1/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), role, ...(expiresAt ? { expires_at: new Date(expiresAt).toISOString() } : {}) }),
+      }),
+      {
+        running: "Creating API key",
+        success: `Created API key: ${name.trim()}`,
+        failure: `Failed to create API key`,
+      },
+    );
     if (err) setError(err);
     else if (data) {
       setNewKey(data);
@@ -104,9 +114,17 @@ export function ApiKeyManagement() {
   }
 
   async function handleDelete(id: string) {
-    const { error: err } = await apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" });
+    const { error: err } = await act.run(
+      `delete-key-${id}`,
+      () => apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" }),
+      {
+        running: "Revoking API key",
+        success: "Revoked API key",
+        failure: "Failed to revoke API key",
+      },
+      { after: fetchKeys },
+    );
     if (err) setError(err);
-    else fetchKeys();
   }
 
   const filtered = keys.filter((k) => {
@@ -183,7 +201,7 @@ export function ApiKeyManagement() {
             title="Expiration date (optional)"
             data-testid="key-expires"
           />
-          <Button type="submit" disabled={creating || !name} size="sm" data-testid="key-create-btn">
+          <Button type="submit" disabled={creating || !name} loading={act.pending("create-key")} size="sm" data-testid="key-create-btn">
             {creating ? "…" : "Create"}
           </Button>
         </form>
@@ -253,6 +271,7 @@ export function ApiKeyManagement() {
                       size="xs"
                       message="Revoke this API key?"
                       confirmLabel="Revoke"
+                      loading={act.pending(`delete-key-${k.id}`)}
                       onConfirm={() => handleDelete(k.id)}
                       data-testid={`key-delete-${k.id}`}
                     >

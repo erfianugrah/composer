@@ -32,6 +32,7 @@ export function DockerConsole() {
     setHistoryIdx(-1);
     setCommand("");
 
+    // feedback-exempt: result is displayed inline in the console history
     const { data, error } = await apiFetch<{ stdout: string; stderr: string; exit_code: number }>(
       "/api/v1/docker/exec",
       {

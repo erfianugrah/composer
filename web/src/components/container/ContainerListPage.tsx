@@ -6,6 +6,7 @@ import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow 
 import { FilterInput } from "@/components/ui/filter-input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy, runBulk } from "@/lib/use-busy";
@@ -71,6 +72,7 @@ export function ContainerListPage() {
     const s = new URLSearchParams(window.location.search).get("status");
     return s === "running" || s === "stopped" ? s : "all";
   });
+  const act = useAction();
 
   // Persist filter state in URL.
   useEffect(() => {
@@ -239,10 +241,17 @@ export function ContainerListPage() {
                           <div className="flex items-center gap-1 justify-end">
                             {c.status !== "running" && (
                               <Button size="xs" variant="outline" onClick={async () => {
-                                const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/start${hostSuffix()}`, { method: "POST" });
-                                if (e) setError(`Start failed: ${e}`);
-                                else setTimeout(fetchContainers, 1000);
-                              }}>Start</Button>
+                                await act.run(
+                                  `${c.id}:start`,
+                                  () => apiFetch(`/api/v1/containers/${c.id}/start${hostSuffix()}`, { method: "POST" }),
+                                  {
+                                    running: `Starting ${c.name}`,
+                                    success: `Started ${c.name}`,
+                                    failure: `Failed to start ${c.name}`,
+                                  },
+                                  { after: () => setTimeout(fetchContainers, 1000) },
+                                );
+                              }} loading={act.pending(`${c.id}:start`)}>Start</Button>
                             )}
                             {c.status === "running" && (
                               <>
@@ -250,15 +259,29 @@ export function ContainerListPage() {
                                   {expanded ? "Hide" : "Logs"}
                                 </Button>
                                 <Button size="xs" variant="outline" onClick={async () => {
-                                  const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/restart${hostSuffix()}`, { method: "POST" });
-                                  if (e) setError(`Restart failed: ${e}`);
-                                  else setTimeout(fetchContainers, 1000);
-                                }}>Restart</Button>
+                                  await act.run(
+                                    `${c.id}:restart`,
+                                    () => apiFetch(`/api/v1/containers/${c.id}/restart${hostSuffix()}`, { method: "POST" }),
+                                    {
+                                      running: `Restarting ${c.name}`,
+                                      success: `Restarted ${c.name}`,
+                                      failure: `Failed to restart ${c.name}`,
+                                    },
+                                    { after: () => setTimeout(fetchContainers, 1000) },
+                                  );
+                                }} loading={act.pending(`${c.id}:restart`)}>Restart</Button>
                                 <Button size="xs" variant="destructive" onClick={async () => {
-                                  const { error: e } = await apiFetch(`/api/v1/containers/${c.id}/stop${hostSuffix()}`, { method: "POST" });
-                                  if (e) setError(`Stop failed: ${e}`);
-                                  else setTimeout(fetchContainers, 1000);
-                                }}>Stop</Button>
+                                  await act.run(
+                                    `${c.id}:stop`,
+                                    () => apiFetch(`/api/v1/containers/${c.id}/stop${hostSuffix()}`, { method: "POST" }),
+                                    {
+                                      running: `Stopping ${c.name}`,
+                                      success: `Stopped ${c.name}`,
+                                      failure: `Failed to stop ${c.name}`,
+                                    },
+                                    { after: () => setTimeout(fetchContainers, 1000) },
+                                  );
+                                }} loading={act.pending(`${c.id}:stop`)}>Stop</Button>
                               </>
                             )}
                           </div>

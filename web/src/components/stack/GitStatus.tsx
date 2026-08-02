@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 
 interface GitStatusData {
   repo_url: string;
@@ -39,6 +40,7 @@ export function GitStatus({ stackName }: { stackName: string }) {
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
+  const act = useAction();
 
   async function fetchStatus() {
     const { data, error: err } = await apiFetch<GitStatusData>(
@@ -66,7 +68,15 @@ export function GitStatus({ stackName }: { stackName: string }) {
   async function handleSync() {
     setSyncing(true);
     setError("");
-    const { error: err } = await apiFetch(`/api/v1/stacks/${stackName}/sync`, { method: "POST" });
+    const { error: err } = await act.run(
+      `${stackName}:sync`,
+      () => apiFetch(`/api/v1/stacks/${stackName}/sync`, { method: "POST" }),
+      {
+        running: "Syncing",
+        success: `Synced ${stackName}`,
+        failure: `Failed to sync ${stackName}`,
+      },
+    );
     if (err) setError(err);
     await Promise.all([fetchStatus(), fetchLog()]);
     setSyncing(false);
@@ -90,6 +100,7 @@ export function GitStatus({ stackName }: { stackName: string }) {
                 variant="outline"
                 onClick={handleSync}
                 disabled={syncing}
+                loading={act.pending(`${stackName}:sync`)}
                 data-testid="git-sync-btn"
               >
                 {syncing ? "Syncing..." : "Sync"}
@@ -176,13 +187,21 @@ export function GitStatus({ stackName }: { stackName: string }) {
                     message={`Rollback to ${commit.short_sha}?`}
                     confirmLabel="Rollback"
                     onConfirm={async () => {
-                      const { error: err } = await apiFetch(`/api/v1/stacks/${stackName}/rollback`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ commit_sha: commit.sha }),
-                      });
+                      const { error: err } = await act.run(
+                        `${stackName}:rollback`,
+                        () => apiFetch(`/api/v1/stacks/${stackName}/rollback`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ commit_sha: commit.sha }),
+                        }),
+                        {
+                          running: "Rolling back",
+                          success: `Rolled back ${stackName} to ${commit.short_sha}`,
+                          failure: `Failed to rollback ${stackName}`,
+                        },
+                        { after: () => { fetchStatus(); fetchLog(); } },
+                      );
                       if (err) setError(err);
-                      else { fetchStatus(); fetchLog(); }
                     }}
                     data-testid={`rollback-${commit.short_sha}`}
                   >

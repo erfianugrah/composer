@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface ImportResult {
@@ -16,6 +17,7 @@ export function ImportStacks() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState("");
+  const act = useAction();
 
   async function handleImport(e: React.FormEvent) {
     e.preventDefault();
@@ -23,14 +25,22 @@ export function ImportStacks() {
     setError("");
     setResult(null);
 
-    const { data, error: err } = await apiFetch<ImportResult>("/api/v1/stacks/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source_dir: sourceDir.trim() }),
-    });
+    const result = await act.run<ImportResult>(
+      "import-stacks",
+      () => apiFetch<ImportResult>("/api/v1/stacks/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_dir: sourceDir.trim() }),
+      }),
+      {
+        running: "Importing stacks",
+        success: "Import complete",
+        failure: "Import failed",
+      },
+    );
 
-    if (err) setError(err);
-    else setResult(data);
+    if (result.error) setError(result.error);
+    else if (result.data) setResult(result.data);
     setLoading(false);
   }
 
@@ -55,7 +65,7 @@ export function ImportStacks() {
             className="flex-1"
             data-testid="import-source-dir"
           />
-          <Button type="submit" disabled={loading || !sourceDir} size="sm" data-testid="import-btn">
+          <Button type="submit" disabled={loading || !sourceDir} loading={act.pending("import-stacks")} size="sm" data-testid="import-btn">
             {loading ? "Importing..." : "Import"}
           </Button>
         </form>
