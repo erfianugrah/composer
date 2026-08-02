@@ -120,7 +120,12 @@ export function VolumesPage() {
               () => apiFetch(
                 `/api/v1/volumes/prune?async=true${selectedHost ? `&host=${encodeURIComponent(selectedHost)}` : ""}`, { method: "POST" },
               ),
-              { running: "Pruning", success: "Pruned unused volumes", failure: "Prune failed" },
+              {
+                running: "Pruning",
+                dispatched: "Volume prune started",
+                success: "Pruned unused volumes",
+                failure: "Volume prune failed",
+              },
               { after: fetch_ },
             );
             if (data?.job_id) setNotice(`Prune started -- see Jobs drawer (${data.job_id})`);

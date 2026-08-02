@@ -8,6 +8,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/data-table";
 import { clickableRow } from "@/lib/row-interactions";
 import { apiFetch } from "@/lib/api/errors";
 import { useAction } from "@/lib/use-action";
+import { actionKey, containerActionLabels, transitionalStatusFor } from "@/lib/container-actions";
 
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
 const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
@@ -91,32 +92,7 @@ function hostQuery(host?: string): string {
   return host ? `?host=${encodeURIComponent(host)}` : "";
 }
 
-/** Pending key for one container's lifecycle verb, so one row's in-flight
- *  action does not disable every other row's buttons. */
-function actionKey(id: string, action: string): string {
-  return `${id}:${action}`;
-}
 
-/** Status text shown on the row while the verb is in flight. These are real
- *  intermediate states, not an optimistic guess at the final one. */
-const transitionalStatus: Record<string, string> = {
-  start: "starting",
-  stop: "stopping",
-  restart: "restarting",
-  pause: "pausing",
-  unpause: "resuming",
-};
-
-/** Lifecycle verbs a container row can run, in the order rendered. */
-const lifecycleVerbs = ["start", "stop", "restart", "pause", "unpause"] as const;
-
-const verbPast: Record<string, string> = {
-  start: "Started",
-  stop: "Stopped",
-  restart: "Restarted",
-  pause: "Paused",
-  unpause: "Resumed",
-};
 
 export function StackDetail({ stackName }: { stackName: string }) {
   const [stack, setStack] = useState<StackData | null>(null);
@@ -187,11 +163,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
     act.run(
       actionKey(id, action),
       () => apiFetch(`/api/v1/containers/${id}/${action}${hostQuery(stack?.host)}`, { method: "POST" }),
-      {
-        running: transitionalStatus[action] ?? `${action}ing`,
-        success: `${verbPast[action] ?? `${action}ed`} ${name}`,
-        failure: `Failed to ${action} ${name}`,
-      },
+      containerActionLabels(action, name),
       { after: fetchStack },
     );
 
@@ -447,9 +419,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
                           // A verb in flight outranks the last-known status:
                           // the row must react on click, not a second later
                           // when the refetch lands.
-                          const transitioning = lifecycleVerbs
-                            .map((v) => act.pendingLabel(actionKey(c.id, v)))
-                            .find(Boolean);
+                          const transitioning = transitionalStatusFor(c.id, act.pendingLabel);
                           if (transitioning) {
                             return (
                               <Badge className="bg-cp-yellow/20 text-cp-yellow border-cp-yellow/30" data-testid={`container-status-${c.id}`}>

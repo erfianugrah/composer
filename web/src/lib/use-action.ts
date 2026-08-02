@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { toast } from "@/components/ui/toast";
+import { apiFetch } from "@/lib/api/errors";
 
 /**
  * Single-item action runner - the counterpart to `runBulk` in use-busy.ts.
@@ -27,6 +28,16 @@ export interface ActionLabels {
   success: string;
   /** Failure prefix, e.g. "Restart failed". The API error becomes the detail. */
   failure: string;
+  /**
+   * Used instead of `success` when the server only ACCEPTED the work - the
+   * response carries a job id and the operation is still running.
+   *
+   * Without this, an async endpoint reports "Pruned unused images" the instant
+   * the request is acknowledged, which is a claim nobody has verified. Same
+   * defect as a status badge inferred from absent data: do not assert an
+   * outcome you have not observed.
+   */
+  dispatched?: string;
 }
 
 export interface RunOptions {
@@ -45,6 +56,54 @@ export interface RunOptions {
 /** Exactly apiFetch's return shape, so `() => apiFetch<T>(...)` type-checks
  *  without the caller reshaping anything. */
 type ApiResult<T> = { data: T; error: null } | { data: null; error: string };
+
+/** How long to keep polling a background job before giving up on reporting
+ *  its outcome. The job keeps running server-side; only our watch stops. */
+const JOB_WATCH_TIMEOUT_MS = 5 * 60_000;
+const JOB_POLL_INTERVAL_MS = 1500;
+
+interface JobSummary {
+  id: string;
+  status: string;
+  output?: string;
+  error?: string;
+}
+
+/** Narrow an arbitrary response payload to a job id, if it carries one. */
+function jobIdOf(data: unknown): string | null {
+  if (data && typeof data === "object" && "job_id" in data) {
+    const id = (data as { job_id?: unknown }).job_id;
+    if (typeof id === "string" && id !== "") return id;
+  }
+  return null;
+}
+
+/**
+ * Poll a background job to completion and report the REAL outcome.
+ *
+ * Jobs are in-memory server-side with no push channel, so the alternative was
+ * telling the operator "started, go look in the Jobs drawer" and never
+ * following up. Polling one job id is cheap and closes the loop where it
+ * started - at the control they clicked.
+ */
+async function watchJob(jobId: string, labels: ActionLabels, after?: () => unknown): Promise<void> {
+  const deadline = Date.now() + JOB_WATCH_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, JOB_POLL_INTERVAL_MS));
+    const { data, error } = await apiFetch<JobSummary>(`/api/v1/jobs/${encodeURIComponent(jobId)}`);
+    if (error || !data) return; // job list rotated or the request failed - stay silent rather than guess
+    if (data.status === "completed") {
+      toast.success(labels.success, { detail: data.output?.trim() || undefined });
+      await after?.();
+      return;
+    }
+    if (data.status === "failed") {
+      toast.error(labels.failure, { detail: data.error?.trim() || undefined });
+      await after?.();
+      return;
+    }
+  }
+}
 
 /**
  * What `run` resolves to. The API payload and error are passed through so a
@@ -95,6 +154,22 @@ export function useAction() {
           toast.error(labels.failure, { detail: error });
           return { data, error, ok: false };
         }
+
+        // Accepted-but-not-finished: the server handed back a job id. Report
+        // that honestly, then watch the job and report the real outcome when
+        // it lands. The refetch is deferred to completion too - refetching now
+        // would just re-read the pre-job state.
+        const jobId = jobIdOf(data);
+        if (jobId) {
+          if (!opts.quiet) {
+            toast.info(labels.dispatched ?? `${labels.running} started`, {
+              detail: "Running in the background - progress in the Jobs drawer",
+            });
+          }
+          void watchJob(jobId, labels, opts.after);
+          return { data, error: null, ok: true };
+        }
+
         await opts.after?.();
         if (!opts.quiet) toast.success(labels.success);
         return { data, error: null, ok: true };

@@ -7,6 +7,7 @@ import { FilterInput } from "@/components/ui/filter-input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api/errors";
 import { useAction } from "@/lib/use-action";
+import { actionKey, containerActionLabels, transitionalStatusFor } from "@/lib/container-actions";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy, runBulk } from "@/lib/use-busy";
@@ -224,7 +225,17 @@ export function ContainerListPage() {
                         <TD className="font-medium truncate max-w-[260px]" title={c.name}>{c.name}</TD>
                         <TD>
                           <div className="flex items-center gap-1">
-                            <Badge className={statusColor[c.status] || statusColor.created}>{c.status}</Badge>
+                            {(() => {
+                              // Same rule as the stack page: a verb in flight
+                              // outranks the last-known status so the row
+                              // reacts on click, not after the refetch.
+                              const transitioning = transitionalStatusFor(c.id, act.pendingLabel);
+                              return transitioning ? (
+                                <Badge className="bg-cp-yellow/20 text-cp-yellow border-cp-yellow/30" data-testid={`container-status-${c.id}`}>{transitioning}</Badge>
+                              ) : (
+                                <Badge className={statusColor[c.status] || statusColor.created} data-testid={`container-status-${c.id}`}>{c.status}</Badge>
+                              );
+                            })()}
                             {c.health !== "none" && c.health && (
                               <Badge className={statusColor[c.health] || statusColor.none}>{c.health}</Badge>
                             )}
@@ -242,16 +253,12 @@ export function ContainerListPage() {
                             {c.status !== "running" && (
                               <Button size="xs" variant="outline" onClick={async () => {
                                 await act.run(
-                                  `${c.id}:start`,
+                                  actionKey(c.id, "start"),
                                   () => apiFetch(`/api/v1/containers/${c.id}/start${hostSuffix()}`, { method: "POST" }),
-                                  {
-                                    running: `Starting ${c.name}`,
-                                    success: `Started ${c.name}`,
-                                    failure: `Failed to start ${c.name}`,
-                                  },
+                                  containerActionLabels("start", c.name),
                                   { after: () => setTimeout(fetchContainers, 1000) },
                                 );
-                              }} loading={act.pending(`${c.id}:start`)}>Start</Button>
+                              }} loading={act.pending(actionKey(c.id, "start"))}>Start</Button>
                             )}
                             {c.status === "running" && (
                               <>
@@ -260,28 +267,20 @@ export function ContainerListPage() {
                                 </Button>
                                 <Button size="xs" variant="outline" onClick={async () => {
                                   await act.run(
-                                    `${c.id}:restart`,
+                                    actionKey(c.id, "restart"),
                                     () => apiFetch(`/api/v1/containers/${c.id}/restart${hostSuffix()}`, { method: "POST" }),
-                                    {
-                                      running: `Restarting ${c.name}`,
-                                      success: `Restarted ${c.name}`,
-                                      failure: `Failed to restart ${c.name}`,
-                                    },
+                                    containerActionLabels("restart", c.name),
                                     { after: () => setTimeout(fetchContainers, 1000) },
                                   );
-                                }} loading={act.pending(`${c.id}:restart`)}>Restart</Button>
+                                }} loading={act.pending(actionKey(c.id, "restart"))}>Restart</Button>
                                 <Button size="xs" variant="destructive" onClick={async () => {
                                   await act.run(
-                                    `${c.id}:stop`,
+                                    actionKey(c.id, "stop"),
                                     () => apiFetch(`/api/v1/containers/${c.id}/stop${hostSuffix()}`, { method: "POST" }),
-                                    {
-                                      running: `Stopping ${c.name}`,
-                                      success: `Stopped ${c.name}`,
-                                      failure: `Failed to stop ${c.name}`,
-                                    },
+                                    containerActionLabels("stop", c.name),
                                     { after: () => setTimeout(fetchContainers, 1000) },
                                   );
-                                }} loading={act.pending(`${c.id}:stop`)}>Stop</Button>
+                                }} loading={act.pending(actionKey(c.id, "stop"))}>Stop</Button>
                               </>
                             )}
                           </div>

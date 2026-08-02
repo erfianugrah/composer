@@ -715,3 +715,74 @@ test.describe("Toaster", () => {
     expect(hasToastModule).toBe(true);
   });
 });
+
+test.describe("Async job actions", () => {
+  // An endpoint that hands back a job id has ACCEPTED the work, not finished
+  // it. Reporting "Pruned unused volumes" at that moment is a claim nobody has
+  // verified - the same defect as inferring a status badge from absent data.
+  test("prune reports dispatch, then the real outcome when the job lands", async ({ page }) => {
+    let jobStatus = "running";
+
+    await page.route("**/api/v1/volumes/prune**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ job_id: "job-42" }),
+      }),
+    );
+    await page.route("**/api/v1/volumes?**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ volumes: [] }) }),
+    );
+    await page.route("**/api/v1/volumes", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ volumes: [] }) }),
+    );
+    await page.route("**/api/v1/jobs/job-42", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ id: "job-42", status: jobStatus, output: "reclaimed 1.2GB" }),
+      }),
+    );
+
+    await page.goto("/volumes");
+    await page.getByRole("button", { name: "Prune Unused" }).click();
+    await page.getByRole("button", { name: "Confirm" }).click();
+
+    // Dispatched: honest about what has actually happened so far.
+    await expect(page.getByText("Volume prune started")).toBeVisible();
+    // And crucially, it must NOT yet claim the work is done.
+    await expect(page.getByText("Pruned unused volumes")).toBeHidden();
+
+    // The job finishes; the operator finds out without going anywhere.
+    jobStatus = "completed";
+    await expect(page.getByText("Pruned unused volumes")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("reclaimed 1.2GB")).toBeVisible();
+  });
+
+  test("a failed job reports failure, not success", async ({ page }) => {
+    await page.route("**/api/v1/volumes/prune**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ job_id: "job-99" }) }),
+    );
+    await page.route("**/api/v1/volumes?**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ volumes: [] }) }),
+    );
+    await page.route("**/api/v1/volumes", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ volumes: [] }) }),
+    );
+    await page.route("**/api/v1/jobs/job-99", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ id: "job-99", status: "failed", error: "daemon refused" }),
+      }),
+    );
+
+    await page.goto("/volumes");
+    await page.getByRole("button", { name: "Prune Unused" }).click();
+    await page.getByRole("button", { name: "Confirm" }).click();
+
+    await expect(page.getByText("Volume prune failed")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("daemon refused")).toBeVisible();
+    await expect(page.getByText("Pruned unused volumes")).toBeHidden();
+  });
+});

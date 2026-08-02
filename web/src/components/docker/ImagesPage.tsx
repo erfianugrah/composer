@@ -46,9 +46,16 @@ function PruneDropdown({ onPrune, onResult, selectedHost, act }: { onPrune: () =
     const { data, error } = await act.run<{ job_id?: string; space_reclaimed?: string }>(
       "prune-images",
       () => apiFetch(`/api/v1/images/prune?${params.toString()}`, { method: "POST" }),
-      { running: "Pruning", success: "Pruned unused images", failure: "Prune failed" },
+      {
+        running: "Pruning",
+        dispatched: "Image prune started",
+        success: "Pruned unused images",
+        failure: "Image prune failed",
+      },
       { after: onPrune },
     );
+    // The toast reports dispatch now and the real outcome when the job lands.
+    // This inline notice carries the job id for the Jobs drawer.
     if (data?.job_id) onResult(`Prune started -- see Jobs drawer (${data.job_id})`);
     else if (data?.space_reclaimed) onResult(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
   }
