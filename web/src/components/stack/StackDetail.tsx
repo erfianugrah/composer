@@ -257,13 +257,12 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 className="text-xs"
                 message="Detach from git? Keeps compose file, removes .git."
                 onConfirm={async () => {
-                  const { error } = await act.run(
+                  await act.run(
                     "detach-git",
                     () => apiFetch(`/api/v1/stacks/${stackName}/convert/local`, { method: "POST" }),
                     { running: "Detaching", success: `Detached git from ${stackName}`, failure: `Failed to detach git from ${stackName}` },
                     { after: fetchStack },
                   );
-                  if (error) setActionError(error);
                 }}
                 data-testid="btn-detach-git"
               >Detach Git</ConfirmButton>

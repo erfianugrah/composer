@@ -113,6 +113,7 @@ export function SystemConfig() {
           const { data: refreshed } = await apiFetch<ConfigData>("/api/v1/system/config");
           if (refreshed) setConfig(refreshed);
         },
+        inlineError: true,
       },
     );
     if (err) {
@@ -362,7 +363,7 @@ function SSHKeysCard({
         body: JSON.stringify({ name: sshKeyName.trim(), content: sshKeyContent.trim() }),
       }),
       { running: "Adding", success: `Added SSH key ${sshKeyName.trim()}`, failure: `Failed to add SSH key ${sshKeyName.trim()}` },
-      { after: () => { setSSHKeyName(""); setSSHKeyContent(""); refresh(); } },
+      { after: () => { setSSHKeyName(""); setSSHKeyContent(""); refresh(); }, inlineError: true },
     );
     if (err) {
       setSSHKeyMsg(err);

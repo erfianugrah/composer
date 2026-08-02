@@ -157,7 +157,7 @@ export function ImagesPage() {
               "pull-image",
               () => apiFetch(`/api/v1/images/pull${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref: ref.trim() }) }),
               { running: "Pulling", success: `Pulled ${ref.trim()}`, failure: `Failed to pull ${ref.trim()}` },
-              { after: () => { setRef(""); fetch_(); } },
+              { after: () => { setRef(""); fetch_(); }, inlineError: true },
             );
             if (err) setError(err);
           }} className="flex gap-2">

@@ -105,7 +105,7 @@ export function StackRegistryAuths({ stackName }: { stackName: string }) {
         success: editing ? `Updated credential for ${registryName}` : `Added credential for ${registryName}`,
         failure: editing ? `Failed to update credential for ${registryName}` : `Failed to add credential for ${registryName}`,
       },
-      { after: () => { if (editing) setEditing(null); setForm({ registry: "", username: "", secret: "", email: "" }); fetchAll(); } },
+      { after: () => { if (editing) setEditing(null); setForm({ registry: "", username: "", secret: "", email: "" }); fetchAll(); }, inlineError: true },
     );
     if (err) setError(err);
   }

@@ -71,12 +71,11 @@ export function DockerHosts() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
-        }),
-        {
+        }), {
           running: "Saving",
           success: `Saved ${form.name.trim()}`,
           failure: `Failed to save ${form.name.trim()}`,
-        },
+        }, { inlineError: true },
       );
       if (err) setError(err);
       else { cancelEdit(); fetchHosts(); }
@@ -87,12 +86,11 @@ export function DockerHosts() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
-        }),
-        {
+        }), {
           running: "Adding",
           success: `Added ${form.name.trim()}`,
           failure: `Failed to add ${form.name.trim()}`,
-        },
+        }, { inlineError: true },
       );
       if (err) setError(err);
       else { cancelEdit(); fetchHosts(); }
@@ -102,7 +100,7 @@ export function DockerHosts() {
 
   async function deleteHost(h: DockerHost) {
     setError("");
-    const { error: err } = await act.run(
+    await act.run(
       `delete-host-${h.id}`,
       () => apiFetch(`/api/v1/hosts/${h.id}`, { method: "DELETE" }),
       {
@@ -112,7 +110,6 @@ export function DockerHosts() {
       },
       { after: fetchHosts },
     );
-    if (err) setError(err);
   }
 
   return (

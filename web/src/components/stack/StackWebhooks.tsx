@@ -63,12 +63,11 @@ export function StackWebhooks({ stackName }: { stackName: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stack_name: stackName, provider, branch_filter: branchFilter.trim() || undefined, auto_redeploy: autoRedeploy }),
-      }),
-      {
+      }), {
         running: "Creating webhook",
         success: `Created webhook for ${stackName}`,
         failure: `Failed to create webhook for ${stackName}`,
-      },
+      }, { inlineError: true },
     );
     if (err) setError(err);
     else if (data) { setNewWebhook(data); fetchWebhooks(); }

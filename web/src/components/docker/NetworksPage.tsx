@@ -104,7 +104,7 @@ export function NetworksPage() {
               "create-network",
               () => apiFetch(`/api/v1/networks${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), driver }) }),
               { running: "Creating", success: `Created network ${name.trim()}`, failure: `Failed to create network ${name.trim()}` },
-              { after: () => { setName(""); fetch_(); } },
+              { after: () => { setName(""); fetch_(); }, inlineError: true },
             );
             if (err) setError(err);
           }} className="flex gap-2">

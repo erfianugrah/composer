@@ -84,7 +84,7 @@ export function UserManagement() {
         body: JSON.stringify({ email: email.trim(), password, role }),
       }),
       { running: "Creating", success: `Created user ${email.trim()}`, failure: `Failed to create user ${email.trim()}` },
-      { after: () => { setEmail(""); setPassword(""); setRole("viewer"); fetchUsers(); } },
+      { after: () => { setEmail(""); setPassword(""); setRole("viewer"); fetchUsers(); }, inlineError: true },
     );
     if (err) setError(err);
   }
@@ -106,7 +106,7 @@ export function UserManagement() {
         body: JSON.stringify({ password: newPassword }),
       }),
       { running: "Changing", success: `Changed password for ${email}`, failure: `Failed to change password for ${email}` },
-      { after: () => { setError(""); setChangingPassword(null); setNewPassword(""); } },
+      { after: () => { setError(""); setChangingPassword(null); setNewPassword(""); }, inlineError: true },
     );
     if (err) setError(err);
   }
@@ -229,7 +229,7 @@ export function UserManagement() {
                         value={u.role}
                         onChange={async (e) => {
                           const newRole = e.target.value;
-                          const { error: err } = await act.run(
+                          await act.run(
                             `role-${u.id}`,
                             () => apiFetch(`/api/v1/users/${u.id}`, {
                               method: "PUT",
@@ -239,7 +239,6 @@ export function UserManagement() {
                             { running: "Changing", success: `Changed role for ${u.email} to ${newRole}`, failure: `Failed to change role for ${u.email}` },
                             { after: fetchUsers },
                           );
-                          if (err) setError(err);
                         }}
                         className={`text-xs px-2 py-0.5 rounded border font-medium ${roleColor[u.role] || roleColor.viewer}`}
                         data-testid={`user-role-${u.id}`}

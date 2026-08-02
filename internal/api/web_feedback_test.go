@@ -68,6 +68,7 @@ var mutatingCall = regexp.MustCompile(`method:\s*["'` + "`" + `](POST|PUT|DELETE
 
 type callSite struct {
 	start   int    // index of the callee identifier
+	end     int    // index just past the call's closing paren
 	args    string // text between the call's outer parens
 	snippet string // the call as written
 }
@@ -107,7 +108,7 @@ func findCalls(text, name string) []callSite {
 		if end < 0 {
 			continue
 		}
-		out = append(out, callSite{start: i, args: text[j+1 : end], snippet: text[i:min(end+1, len(text))]})
+		out = append(out, callSite{start: i, end: end, args: text[j+1 : end], snippet: text[i:min(end+1, len(text))]})
 		i = j
 	}
 	return out

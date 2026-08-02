@@ -68,7 +68,7 @@ export function GitStatus({ stackName }: { stackName: string }) {
   async function handleSync() {
     setSyncing(true);
     setError("");
-    const { error: err } = await act.run(
+    await act.run(
       `${stackName}:sync`,
       () => apiFetch(`/api/v1/stacks/${stackName}/sync`, { method: "POST" }),
       {
@@ -77,7 +77,6 @@ export function GitStatus({ stackName }: { stackName: string }) {
         failure: `Failed to sync ${stackName}`,
       },
     );
-    if (err) setError(err);
     await Promise.all([fetchStatus(), fetchLog()]);
     setSyncing(false);
   }

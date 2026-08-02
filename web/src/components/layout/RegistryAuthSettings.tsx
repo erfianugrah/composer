@@ -99,7 +99,7 @@ export function RegistryAuthSettings() {
         success: editing ? `Updated credential for ${registryName}` : `Added credential for ${registryName}`,
         failure: editing ? `Failed to update credential for ${registryName}` : `Failed to add credential for ${registryName}`,
       },
-      { after: () => { if (editing) cancelEdit(); else setForm(emptyForm); fetchCreds(); } },
+      { after: () => { if (editing) cancelEdit(); else setForm(emptyForm); fetchCreds(); }, inlineError: true },
     );
     if (err) setError(err);
   }

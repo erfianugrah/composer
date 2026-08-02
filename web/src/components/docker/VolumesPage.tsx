@@ -100,7 +100,7 @@ export function VolumesPage() {
               "create-volume",
               () => apiFetch(`/api/v1/volumes${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) }),
               { running: "Creating", success: `Created volume ${name.trim()}`, failure: `Failed to create volume ${name.trim()}` },
-              { after: () => { setName(""); fetch_(); } },
+              { after: () => { setName(""); fetch_(); }, inlineError: true },
             );
             if (err) setError(err);
           }} className="flex gap-2">

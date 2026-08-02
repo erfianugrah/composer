@@ -42,7 +42,11 @@ func TestWebActionsReportErrorExactlyOnce(t *testing.T) {
 			declaresInline := inlineErrorOpt.MatchString(call.args)
 
 			errVar := errorBindingBefore(text, call.start)
-			rendered := errVar != "" && rendersInline(lines, line, errVar)
+			// Scan from where the CALL ENDS, not a fixed offset from where it
+			// starts: a run() with a long options object pushed its own
+			// `if (err) setError(err)` outside a start-relative window, and the
+			// gate went green with a real double-report still in the tree.
+			rendered := errVar != "" && rendersInline(lines, lineOf(text, call.end), errVar)
 
 			switch {
 			case rendered && !declaresInline:
@@ -80,15 +84,75 @@ func errorBindingBefore(text string, callStart int) string {
 }
 
 // rendersInline reports whether the bound error is handed to a set*() state
-// setter within the statements following the call.
-func rendersInline(lines []string, callLine int, errVar string) bool {
+// setter in the statements immediately following the call. `callEndLine` is
+// the line the call's closing paren sits on, so the window is independent of
+// how many lines the arguments span.
+func rendersInline(lines []string, callEndLine int, errVar string) bool {
 	setter := regexp.MustCompile(`\bset[A-Z]\w*\(\s*` + regexp.QuoteMeta(errVar) + `\b`)
-	start := callLine - 1
-	end := min(start+14, len(lines))
+	start := max(callEndLine-1, 0)
+	end := min(start+6, len(lines))
 	for _, l := range lines[start:end] {
 		if setter.MatchString(l) {
 			return true
 		}
 	}
 	return false
+}
+
+// TestRendersInlineWindow pins the lookahead used by the error-channel gate.
+//
+// The first version measured from where the call STARTED, so a run() with a
+// long options object pushed its own `if (err) setError(err)` past the window
+// and the gate reported the file clean. A permissive gate is worse than none:
+// it converts "not checked" into "checked and fine". The window is now
+// measured from the call's closing paren.
+func TestRendersInlineWindow(t *testing.T) {
+	tests := []struct {
+		name        string
+		lines       []string
+		callEndLine int
+		want        bool
+	}{
+		{
+			name: "banner immediately after the call",
+			lines: []string{
+				`);`,
+				`if (err) setError(err);`,
+			},
+			callEndLine: 1,
+			want:        true,
+		},
+		{
+			name: "banner after a long options object still counts",
+			lines: append(
+				[]string{`const { error: err } = await act.run(`},
+				append(make([]string, 12), `);`, `if (err) setError(err);`)...,
+			),
+			callEndLine: 14, // the `);` line
+			want:        true,
+		},
+		{
+			name: "an unrelated setter far below does not count",
+			lines: append(
+				[]string{`);`},
+				append(make([]string, 20), `if (err) setError(err);`)...,
+			),
+			callEndLine: 1,
+			want:        false,
+		},
+		{
+			name: "a setter for a different variable does not count",
+			lines: []string{
+				`);`,
+				`if (other) setError(other);`,
+			},
+			callEndLine: 1,
+			want:        false,
+		},
+	}
+	for _, tt := range tests {
+		if got := rendersInline(tt.lines, tt.callEndLine, "err"); got != tt.want {
+			t.Errorf("%s: rendersInline() = %v, want %v", tt.name, got, tt.want)
+		}
+	}
 }

@@ -97,12 +97,12 @@ export function ApiKeyManagement() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), role, ...(expiresAt ? { expires_at: new Date(expiresAt).toISOString() } : {}) }),
-      }),
-      {
+      }), {
         running: "Creating API key",
         success: `Created API key: ${name.trim()}`,
         failure: `Failed to create API key`,
       },
+      { inlineError: true },
     );
     if (err) setError(err);
     else if (data) {
@@ -114,7 +114,7 @@ export function ApiKeyManagement() {
   }
 
   async function handleDelete(id: string) {
-    const { error: err } = await act.run(
+    await act.run(
       `delete-key-${id}`,
       () => apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" }),
       {
@@ -124,7 +124,6 @@ export function ApiKeyManagement() {
       },
       { after: fetchKeys },
     );
-    if (err) setError(err);
   }
 
   const filtered = keys.filter((k) => {
