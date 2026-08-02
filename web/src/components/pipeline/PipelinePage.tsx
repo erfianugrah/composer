@@ -265,7 +265,7 @@ export function PipelinePage() {
         }),
       }),
       { running: "Creating", success: `Created pipeline ${createName.trim()}`, failure: `Failed to create pipeline ${createName.trim()}` },
-      { after: () => { setShowCreate(false); setCreateName(""); setCreateDesc(""); setCreateSteps([newStep(0)]); fetchPipelines(); } },
+      { after: () => { setShowCreate(false); setCreateName(""); setCreateDesc(""); setCreateSteps([newStep(0)]); fetchPipelines(); }, inlineError: true },
     );
     if (err) setError(err);
   }

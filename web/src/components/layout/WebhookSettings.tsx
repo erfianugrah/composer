@@ -103,7 +103,7 @@ export function WebhookSettings() {
         }),
       }),
       { running: "Creating", success: `Created webhook for ${stackName.trim()}`, failure: `Failed to create webhook for ${stackName.trim()}` },
-      { after: () => { setStackName(""); setBranchFilter(""); fetchWebhooks(); } },
+      { after: () => { setStackName(""); setBranchFilter(""); fetchWebhooks(); }, inlineError: true },
     );
     if (err) setError(err);
     else if (data) setNewWebhook(data);

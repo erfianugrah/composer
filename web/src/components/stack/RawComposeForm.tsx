@@ -46,6 +46,7 @@ export function RawComposeForm({ onCreated }: Props) {
         success: `Created ${name.trim()}`,
         failure: `Failed to create ${name.trim()}`,
       },
+      { inlineError: true },
     );
 
     if (err) {

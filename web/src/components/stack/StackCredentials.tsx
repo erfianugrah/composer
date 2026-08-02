@@ -80,7 +80,7 @@ export function StackCredentials({ stackName }: { stackName: string }) {
         }),
       }),
       { running: "Saving", success: `Saved credentials for ${stackName}`, failure: `Failed to save credentials for ${stackName}` },
-      { after: () => { setSaveMsg("Saved"); setEditing(false); fetchCreds(); } },
+      { after: () => { setSaveMsg("Saved"); setEditing(false); fetchCreds(); }, inlineError: true },
     );
     if (err) setSaveMsg(err);
   }

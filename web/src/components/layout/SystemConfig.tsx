@@ -92,6 +92,7 @@ export function SystemConfig() {
           const { data: refreshed } = await apiFetch<ConfigData>("/api/v1/system/config");
           if (refreshed) setConfig(refreshed);
         },
+        inlineError: true,
       },
     );
     if (err) {
@@ -185,6 +186,7 @@ export function SystemConfig() {
                     const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
                     if (r) setConfig(r);
                   },
+                  inlineError: true,
                 },
               );
               if (err) { setGitTokenMsg(err); }

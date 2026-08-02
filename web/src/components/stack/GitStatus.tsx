@@ -200,7 +200,6 @@ export function GitStatus({ stackName }: { stackName: string }) {
                         },
                         { after: () => { fetchStatus(); fetchLog(); } },
                       );
-                      if (err) setError(err);
                     }}
                     data-testid={`rollback-${commit.short_sha}`}
                   >

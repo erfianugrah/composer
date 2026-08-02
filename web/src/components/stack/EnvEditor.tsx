@@ -43,6 +43,7 @@ export function EnvEditor({ stackName, initialContent, sopsEncrypted }: Props) {
         success: `Saved .env for ${stackName}`,
         failure: `Failed to save .env for ${stackName}`,
       },
+      { inlineError: true },
     );
     if (!err) { setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 2000); }
     else setError(err);

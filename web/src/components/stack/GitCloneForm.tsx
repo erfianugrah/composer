@@ -69,6 +69,7 @@ export function GitCloneForm({ onCreated }: Props) {
         success: `Created ${name.trim()}`,
         failure: `Failed to clone ${name.trim()}`,
       },
+      { inlineError: true },
     );
 
     if (err) {
