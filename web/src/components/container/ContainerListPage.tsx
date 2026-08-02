@@ -17,6 +17,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { DockerHostSelect } from "@/components/docker/DockerHostSelect";
+import { statusColor, statusClass, transitionalColor } from "@/lib/status-colors";
 
 const LogViewer = lazy(() => import("./LogViewer").then(m => ({ default: m.LogViewer })));
 const DockerConsole = lazy(() => import("./DockerConsole").then(m => ({ default: m.DockerConsole })));
@@ -31,16 +32,6 @@ interface ContainerInfo {
   health: string;
 }
 
-// Reserve red for true alert states (unhealthy). Exited is steady-state, neutral.
-const statusColor: Record<string, string> = {
-  running: "bg-cp-green/20 text-cp-green border-cp-green/30",
-  exited: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-  created: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-  paused: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
-  healthy: "bg-cp-green/20 text-cp-green border-cp-green/30",
-  unhealthy: "bg-cp-red/20 text-cp-red border-cp-red/30",
-  none: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-};
 
 type StatusFilter = "all" | "running" | "stopped";
 type SortKey = "name" | "status" | "image";
@@ -231,13 +222,13 @@ export function ContainerListPage() {
                               // reacts on click, not after the refetch.
                               const transitioning = transitionalStatusFor(c.id, act.pendingLabel);
                               return transitioning ? (
-                                <Badge className="bg-cp-yellow/20 text-cp-yellow border-cp-yellow/30" data-testid={`container-status-${c.id}`}>{transitioning}</Badge>
+                                <Badge className={transitionalColor} data-testid={`container-status-${c.id}`}>{transitioning}</Badge>
                               ) : (
-                                <Badge className={statusColor[c.status] || statusColor.created} data-testid={`container-status-${c.id}`}>{c.status}</Badge>
+                                <Badge className={statusClass(c.status)} data-testid={`container-status-${c.id}`}>{c.status}</Badge>
                               );
                             })()}
                             {c.health !== "none" && c.health && (
-                              <Badge className={statusColor[c.health] || statusColor.none}>{c.health}</Badge>
+                              <Badge className={statusClass(c.health)}>{c.health}</Badge>
                             )}
                           </div>
                         </TD>

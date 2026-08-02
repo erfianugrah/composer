@@ -24,6 +24,7 @@ import { EnvEditor } from "./EnvEditor";
 import { StackWebhooks } from "./StackWebhooks";
 import { StackCredentials } from "./StackCredentials";
 import { highlightDockerfile } from "@/lib/dockerfile-highlight";
+import { statusColor, statusClass, transitionalColor } from "@/lib/status-colors";
 
 interface StackFile {
   name: string;
@@ -61,18 +62,6 @@ interface StackData {
 }
 
 // Color rules: reserve red for genuine alert states (unhealthy).
-// Steady non-running states are neutral — a stopped container is not an error.
-const statusColor: Record<string, string> = {
-  running: "bg-cp-green/20 text-cp-green border-cp-green/30",
-  stopped: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-  exited: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-  paused: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
-  partial: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
-  unknown: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-  healthy: "bg-cp-green/20 text-cp-green border-cp-green/30",
-  unhealthy: "bg-cp-red/20 text-cp-red border-cp-red/30",
-  none: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-};
 
 // shortDigest renders a docker image digest as a stable 12-char tag, matching
 // the convention `docker images --no-trunc` uses for image IDs. Accepts the
@@ -245,7 +234,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold" data-testid="stack-name">{stack.name}</h2>
-          <Badge className={statusColor[stack.status] || statusColor.unknown} data-testid="stack-status">
+          <Badge className={statusClass(stack.status)} data-testid="stack-status">
             {stack.status}
           </Badge>
           {stack.source === "git" ? (
@@ -421,19 +410,19 @@ export function StackDetail({ stackName }: { stackName: string }) {
                           const transitioning = transitionalStatusFor(c.id, act.pendingLabel);
                           if (transitioning) {
                             return (
-                              <Badge className="bg-cp-yellow/20 text-cp-yellow border-cp-yellow/30" data-testid={`container-status-${c.id}`}>
+                              <Badge className={transitionalColor} data-testid={`container-status-${c.id}`}>
                                 {transitioning}
                               </Badge>
                             );
                           }
                           return c.completed_one_off ? (
-                            <Badge className="bg-cp-blue/20 text-cp-blue border-cp-blue/30" data-testid={`container-status-${c.id}`}>completed</Badge>
+                            <Badge className={statusColor.completed} data-testid={`container-status-${c.id}`}>completed</Badge>
                           ) : (
-                            <Badge className={statusColor[c.status] || statusColor.unknown} data-testid={`container-status-${c.id}`}>{c.status}</Badge>
+                            <Badge className={statusClass(c.status)} data-testid={`container-status-${c.id}`}>{c.status}</Badge>
                           );
                         })()}
                         {c.health !== "none" && (
-                          <Badge className={statusColor[c.health] || statusColor.unknown}>{c.health}</Badge>
+                          <Badge className={statusClass(c.health)}>{c.health}</Badge>
                         )}
                       </div>
                     </TD>

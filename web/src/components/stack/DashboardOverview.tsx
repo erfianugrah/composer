@@ -15,6 +15,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { statusColor, statusClass } from "@/lib/status-colors";
 
 interface StackSummary {
   name: string;
@@ -27,13 +28,6 @@ interface StackSummary {
   updated_at: string;
 }
 
-// Reserve red for true alert states. "stopped" is steady-state, not alarming.
-const statusColor: Record<string, string> = {
-  running: "bg-cp-green/20 text-cp-green border-cp-green/30",
-  stopped: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-  partial: "bg-cp-peach/20 text-cp-peach border-cp-peach/30",
-  unknown: "bg-cp-600/20 text-muted-foreground border-cp-600/30",
-};
 
 type StatusFilter = "all" | "running" | "stopped" | "partial";
 type SortKey = "name" | "status" | "containers" | "source" | "updated";
@@ -233,7 +227,7 @@ export function DashboardOverview() {
                       </a>
                     </TD>
                     <TD>
-                      <Badge className={statusColor[stack.status] || statusColor.unknown}>{stack.status}</Badge>
+                      <Badge className={statusClass(stack.status)}>{stack.status}</Badge>
                     </TD>
                     <TD className={cn("text-right font-data text-muted-foreground", hideOnNarrow)}>
                       {stack.host ? (

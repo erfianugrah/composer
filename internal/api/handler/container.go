@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -159,15 +160,37 @@ func (h *ContainerHandler) Get(ctx context.Context, input *struct {
 // validateContainerScope checks that a container is managed by Docker Compose
 // (has the com.docker.compose.project label). Prevents operating on infrastructure
 // containers like Composer itself, Postgres, Valkey, etc.
+// Scope check outcomes. These are distinct failures and must not collapse
+// into one status: "no such container" is the caller addressing something
+// that does not exist, while "not part of a stack" is this API declining to
+// touch a container it does not manage.
+var (
+	errContainerNotFound          = errors.New("container not found")
+	errContainerNotInComposeStack = errors.New("container is not part of a Docker Compose stack")
+)
+
 func (h *ContainerHandler) validateScope(ctx context.Context, cli *docker.Client, id string) error {
 	c, err := cli.InspectContainer(ctx, id)
 	if err != nil {
-		return fmt.Errorf("container not found")
+		return fmt.Errorf("%w: %s", errContainerNotFound, id)
 	}
 	if c.ServiceName == "" {
-		return fmt.Errorf("container is not part of a Docker Compose stack")
+		return errContainerNotInComposeStack
 	}
 	return nil
+}
+
+// scopeError maps a validateScope failure to the right HTTP status.
+//
+// Both cases used to return 403. That made a plain typo, and more commonly a
+// request aimed at the wrong docker host, read as an authorization failure -
+// which is what the UI then showed the operator. A container that is not on
+// this daemon is missing, not forbidden.
+func scopeError(err error) error {
+	if errors.Is(err, errContainerNotFound) {
+		return huma.Error404NotFound(err.Error())
+	}
+	return huma.Error403Forbidden(err.Error())
 }
 
 func (h *ContainerHandler) Start(ctx context.Context, input *struct {
@@ -182,7 +205,7 @@ func (h *ContainerHandler) Start(ctx context.Context, input *struct {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	if err := h.validateScope(ctx, cli, input.ID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
+		return nil, scopeError(err)
 	}
 	if err := cli.StartContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
@@ -202,7 +225,7 @@ func (h *ContainerHandler) Stop(ctx context.Context, input *struct {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	if err := h.validateScope(ctx, cli, input.ID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
+		return nil, scopeError(err)
 	}
 	if err := cli.StopContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
@@ -222,7 +245,7 @@ func (h *ContainerHandler) Restart(ctx context.Context, input *struct {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	if err := h.validateScope(ctx, cli, input.ID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
+		return nil, scopeError(err)
 	}
 	if err := cli.RestartContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
@@ -242,7 +265,7 @@ func (h *ContainerHandler) Pause(ctx context.Context, input *struct {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	if err := h.validateScope(ctx, cli, input.ID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
+		return nil, scopeError(err)
 	}
 	if err := cli.PauseContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
@@ -262,7 +285,7 @@ func (h *ContainerHandler) Unpause(ctx context.Context, input *struct {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	if err := h.validateScope(ctx, cli, input.ID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
+		return nil, scopeError(err)
 	}
 	if err := cli.UnpauseContainer(ctx, input.ID); err != nil {
 		return nil, dockerError(ctx, err)
