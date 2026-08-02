@@ -51,6 +51,17 @@ export interface RunOptions {
   after?: () => unknown;
   /** Suppress the success toast (for actions whose result is self-evident). */
   quiet?: boolean;
+  /**
+   * The caller renders this action's failure itself - an inline banner beside
+   * the form being submitted, where the message can persist while the user
+   * fixes the input. Suppresses the error toast.
+   *
+   * This is a choice of channel, not a licence to drop the error: one failure
+   * must be reported exactly once, and never zero times. A form submit
+   * usually wants the inline banner; a row or menu action has nowhere to put
+   * one and wants the toast.
+   */
+  inlineError?: boolean;
 }
 
 /** Exactly apiFetch's return shape, so `() => apiFetch<T>(...)` type-checks
@@ -151,7 +162,7 @@ export function useAction() {
       try {
         const { data, error } = await fn();
         if (error) {
-          toast.error(labels.failure, { detail: error });
+          if (!opts.inlineError) toast.error(labels.failure, { detail: error });
           return { data, error, ok: false };
         }
 
