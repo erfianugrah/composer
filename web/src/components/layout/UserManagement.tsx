@@ -10,6 +10,7 @@ import { useSelection } from "@/lib/use-selection";
 import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface UserSummary {
@@ -48,11 +49,11 @@ function formatLastLogin(iso: string | null): string {
 export function UserManagement() {
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
   const [changingPassword, setChangingPassword] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const act = useAction();
 
   // Form state
   const [email, setEmail] = useState("");
@@ -74,41 +75,40 @@ export function UserManagement() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setCreating(true);
     setError("");
-    const { error: err } = await apiFetch("/api/v1/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim(), password, role }),
-    });
-    if (err) {
-      setError(err);
-    } else {
-      setEmail("");
-      setPassword("");
-      setRole("viewer");
-      fetchUsers();
-    }
-    setCreating(false);
+    const { error: err } = await act.run(
+      "create-user",
+      () => apiFetch("/api/v1/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password, role }),
+      }),
+      { running: "Creating", success: `Created user ${email.trim()}`, failure: `Failed to create user ${email.trim()}` },
+      { after: () => { setEmail(""); setPassword(""); setRole("viewer"); fetchUsers(); } },
+    );
+    if (err) setError(err);
   }
 
-  async function handleDelete(id: string) {
-    await apiFetch(`/api/v1/users/${id}`, { method: "DELETE" });
-    fetchUsers();
+  async function handleDelete(id: string, email: string) {
+    await act.run(`delete-user-${id}`, () => apiFetch(`/api/v1/users/${id}`, { method: "DELETE" }), { running: "Removing", success: `Removed user ${email}`, failure: `Failed to remove user ${email}` }, { after: fetchUsers });
   }
 
-  async function handleChangePassword(id: string) {
+  async function handleChangePassword(id: string, email: string) {
     if (newPassword.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
     }
-    const { error: err } = await apiFetch(`/api/v1/users/${id}/password`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: newPassword }),
-    });
+    const { error: err } = await act.run(
+      `change-pw-${id}`,
+      () => apiFetch(`/api/v1/users/${id}/password`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword }),
+      }),
+      { running: "Changing", success: `Changed password for ${email}`, failure: `Failed to change password for ${email}` },
+      { after: () => { setError(""); setChangingPassword(null); setNewPassword(""); } },
+    );
     if (err) setError(err);
-    else { setError(""); setChangingPassword(null); setNewPassword(""); }
   }
 
   const filtered = users.filter((u) => {
@@ -182,8 +182,8 @@ export function UserManagement() {
                 <option value="operator">Operator</option>
                 <option value="admin">Admin</option>
               </select>
-              <Button type="submit" disabled={creating} size="sm" data-testid="user-create-btn">
-                {creating ? "…" : "Add"}
+              <Button type="submit" disabled={act.pending("create-user")} size="sm" loading={act.pending("create-user")} data-testid="user-create-btn">
+                Add
               </Button>
             </div>
           </div>
@@ -229,13 +229,17 @@ export function UserManagement() {
                         value={u.role}
                         onChange={async (e) => {
                           const newRole = e.target.value;
-                          const { error: err } = await apiFetch(`/api/v1/users/${u.id}`, {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ role: newRole }),
-                          });
+                          const { error: err } = await act.run(
+                            `role-${u.id}`,
+                            () => apiFetch(`/api/v1/users/${u.id}`, {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ role: newRole }),
+                            }),
+                            { running: "Changing", success: `Changed role for ${u.email} to ${newRole}`, failure: `Failed to change role for ${u.email}` },
+                            { after: fetchUsers },
+                          );
                           if (err) setError(err);
-                          else fetchUsers();
                         }}
                         className={`text-xs px-2 py-0.5 rounded border font-medium ${roleColor[u.role] || roleColor.viewer}`}
                         data-testid={`user-role-${u.id}`}
@@ -261,7 +265,7 @@ export function UserManagement() {
                         <ConfirmButton
                           size="xs"
                           message="Delete this user?"
-                          onConfirm={() => handleDelete(u.id)}
+                          onConfirm={() => handleDelete(u.id, u.email)}
                           data-testid={`user-delete-${u.id}`}
                         >
                           Delete
@@ -274,7 +278,7 @@ export function UserManagement() {
                       <td colSpan={5} className="px-3 py-3 border-b border-border/40">
                         <form
                           className="flex items-center gap-2"
-                          onSubmit={(e) => { e.preventDefault(); handleChangePassword(u.id); }}
+                          onSubmit={(e) => { e.preventDefault(); handleChangePassword(u.id, u.email); }}
                         >
                           <span className="text-xs text-muted-foreground">New password for {u.email}:</span>
                           <Input

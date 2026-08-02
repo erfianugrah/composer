@@ -9,6 +9,7 @@ import { useSelection } from "@/lib/use-selection";
 import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface SSHKeyInfo {
@@ -51,18 +52,16 @@ export function SystemConfig() {
 
   // Age key form
   const [ageKeyInput, setAgeKeyInput] = useState("");
-  const [ageKeySaving, setAgeKeySaving] = useState(false);
   const [ageKeyMsg, setAgeKeyMsg] = useState("");
 
   // SSH key form
   const [sshKeyName, setSSHKeyName] = useState("");
   const [sshKeyContent, setSSHKeyContent] = useState("");
-  const [sshKeySaving, setSSHKeySaving] = useState(false);
   const [sshKeyMsg, setSSHKeyMsg] = useState("");
+  const act = useAction();
 
   // Git token form
   const [gitTokenInput, setGitTokenInput] = useState("");
-  const [gitTokenSaving, setGitTokenSaving] = useState(false);
   const [gitTokenMsg, setGitTokenMsg] = useState("");
 
   useEffect(() => {
@@ -79,45 +78,48 @@ export function SystemConfig() {
   }, []);
 
   async function handleSaveAgeKey() {
-    setAgeKeySaving(true);
     setAgeKeyMsg("");
-    const { data, error: err } = await apiFetch<{ public_key: string; saved: boolean }>(
-      "/api/v1/system/config/age-key",
-      {
+    const { data, error: err } = await act.run<{ public_key: string; saved: boolean }>(
+      "save-age-key",
+      () => apiFetch("/api/v1/system/config/age-key", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ age_key: ageKeyInput.trim() }),
-      }
+      }),
+      { running: "Saving", success: "Saved age key", failure: "Failed to save age key" },
+      {
+        after: async () => {
+          const { data: refreshed } = await apiFetch<ConfigData>("/api/v1/system/config");
+          if (refreshed) setConfig(refreshed);
+        },
+      },
     );
     if (err) {
       setAgeKeyMsg(err);
     } else if (data) {
       setAgeKeyMsg(data.public_key ? `Saved. Public key: ${data.public_key}` : "Key removed.");
       setAgeKeyInput("");
-      // Refresh config
-      const { data: refreshed } = await apiFetch<ConfigData>("/api/v1/system/config");
-      if (refreshed) setConfig(refreshed);
     }
-    setAgeKeySaving(false);
   }
 
   async function handleGenerateAgeKey() {
-    setAgeKeySaving(true);
     setAgeKeyMsg("");
-    // Generate via the age key endpoint -- we'll generate client-side isn't possible,
-    // so we use a special value to trigger server-side generation
-    const { data, error: err } = await apiFetch<{ private_key: string; public_key: string }>(
-      "/api/v1/system/config/age-key/generate",
-      { method: "POST" }
+    const { data, error: err } = await act.run<{ private_key: string; public_key: string }>(
+      "generate-age-key",
+      () => apiFetch("/api/v1/system/config/age-key/generate", { method: "POST" }),
+      { running: "Generating", success: "Generated age key", failure: "Failed to generate age key" },
+      {
+        after: async () => {
+          const { data: refreshed } = await apiFetch<ConfigData>("/api/v1/system/config");
+          if (refreshed) setConfig(refreshed);
+        },
+      },
     );
     if (err) {
       setAgeKeyMsg(err);
     } else if (data) {
       setAgeKeyMsg(`Generated and saved. Public key: ${data.public_key}`);
-      const { data: refreshed } = await apiFetch<ConfigData>("/api/v1/system/config");
-      if (refreshed) setConfig(refreshed);
     }
-    setAgeKeySaving(false);
   }
 
   if (loading) return <Card><CardContent><p className="text-sm text-muted-foreground p-4">Loading config...</p></CardContent></Card>;
@@ -138,8 +140,7 @@ export function SystemConfig() {
         setSSHKeyName={setSSHKeyName}
         sshKeyContent={sshKeyContent}
         setSSHKeyContent={setSSHKeyContent}
-        sshKeySaving={sshKeySaving}
-        setSSHKeySaving={setSSHKeySaving}
+        act={act}
         sshKeyMsg={sshKeyMsg}
         setSSHKeyMsg={setSSHKeyMsg}
       />
@@ -167,34 +168,47 @@ export function SystemConfig() {
               className="flex-1 font-data text-xs"
             />
             <Button size="sm" onClick={async () => {
-              setGitTokenSaving(true); setGitTokenMsg("");
-              const { error: err } = await apiFetch("/api/v1/system/config/git-token", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ token: gitTokenInput.trim() }),
-              });
+              setGitTokenMsg("");
+              const { error: err } = await act.run(
+                "save-git-token",
+                () => apiFetch("/api/v1/system/config/git-token", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ token: gitTokenInput.trim() }),
+                }),
+                { running: "Saving", success: gitTokenInput.trim() ? "Saved git token" : "Removed git token", failure: "Failed to save git token" },
+                {
+                  after: async () => {
+                    setGitTokenMsg(gitTokenInput.trim() ? "Saved" : "Removed");
+                    setGitTokenInput("");
+                    const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
+                    if (r) setConfig(r);
+                  },
+                },
+              );
               if (err) { setGitTokenMsg(err); }
-              else { setGitTokenMsg(gitTokenInput.trim() ? "Saved" : "Removed"); setGitTokenInput("");
-                const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
-                if (r) setConfig(r);
-              }
-              setGitTokenSaving(false);
-            }} disabled={gitTokenSaving || !gitTokenInput}>
-              {gitTokenSaving ? "..." : "Save"}
+            }} disabled={act.pending("save-git-token") || act.pending("remove-git-token") || !gitTokenInput} loading={act.pending("save-git-token")}>
+              Save
             </Button>
             {config.git_token_set && (
               <Button size="sm" variant="destructive" onClick={async () => {
-                setGitTokenSaving(true);
-                await apiFetch("/api/v1/system/config/git-token", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ token: "" }),
-                });
-                setGitTokenMsg("Removed");
-                const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
-                if (r) setConfig(r);
-                setGitTokenSaving(false);
-              }}>Remove</Button>
+                await act.run(
+                  "remove-git-token",
+                  () => apiFetch("/api/v1/system/config/git-token", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ token: "" }),
+                  }),
+                  { running: "Removing", success: "Removed git token", failure: "Failed to remove git token" },
+                  {
+                    after: async () => {
+                      setGitTokenMsg("Removed");
+                      const { data: r } = await apiFetch<ConfigData>("/api/v1/system/config");
+                      if (r) setConfig(r);
+                    },
+                  },
+                );
+              }} disabled={act.pending("remove-git-token") || act.pending("save-git-token")} loading={act.pending("remove-git-token")}>Remove</Button>
             )}
           </div>
           {gitTokenMsg && <p className={`text-xs ${gitTokenMsg.includes("Saved") || gitTokenMsg.includes("Removed") ? "text-cp-green" : "text-cp-red"}`}>{gitTokenMsg}</p>}
@@ -238,11 +252,11 @@ export function SystemConfig() {
                 placeholder="AGE-SECRET-KEY-..."
                 className="flex-1 font-data text-xs"
               />
-              <Button size="sm" onClick={handleSaveAgeKey} disabled={ageKeySaving || !ageKeyInput}>
-                {ageKeySaving ? "..." : "Save"}
-              </Button>
-              {!config.age_key_loaded && (
-                <Button size="sm" variant="outline" onClick={handleGenerateAgeKey} disabled={ageKeySaving}>
+              <Button size="sm" onClick={handleSaveAgeKey} disabled={act.pending("save-age-key") || !ageKeyInput} loading={act.pending("save-age-key")}>
+              Save
+            </Button>
+            {!config.age_key_loaded && (
+                <Button size="sm" variant="outline" onClick={handleGenerateAgeKey} disabled={act.pending("generate-age-key")} loading={act.pending("generate-age-key")}>
                   Generate
                 </Button>
               )}
@@ -304,8 +318,7 @@ interface SSHKeysCardProps {
   setSSHKeyName: (v: string) => void;
   sshKeyContent: string;
   setSSHKeyContent: (v: string) => void;
-  sshKeySaving: boolean;
-  setSSHKeySaving: (v: boolean) => void;
+  act: ReturnType<typeof useAction>;
   sshKeyMsg: string;
   setSSHKeyMsg: (v: string) => void;
 }
@@ -317,8 +330,7 @@ function SSHKeysCard({
   setSSHKeyName,
   sshKeyContent,
   setSSHKeyContent,
-  sshKeySaving,
-  setSSHKeySaving,
+  act,
   sshKeyMsg,
   setSSHKeyMsg,
 }: SSHKeysCardProps) {
@@ -341,22 +353,22 @@ function SSHKeysCard({
 
   async function addKey() {
     if (!sshKeyName.trim() || !sshKeyContent.trim()) return;
-    setSSHKeySaving(true);
     setSSHKeyMsg("");
-    const { data, error: err } = await apiFetch<{ path: string; encrypted: boolean; fingerprint?: string }>("/api/v1/system/config/ssh-keys", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: sshKeyName.trim(), content: sshKeyContent.trim() }),
-    });
+    const { data, error: err } = await act.run<{ path: string; encrypted: boolean; fingerprint?: string }>(
+      "add-ssh-key",
+      () => apiFetch("/api/v1/system/config/ssh-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: sshKeyName.trim(), content: sshKeyContent.trim() }),
+      }),
+      { running: "Adding", success: `Added SSH key ${sshKeyName.trim()}`, failure: `Failed to add SSH key ${sshKeyName.trim()}` },
+      { after: () => { setSSHKeyName(""); setSSHKeyContent(""); refresh(); } },
+    );
     if (err) {
       setSSHKeyMsg(err);
     } else {
       setSSHKeyMsg(`Saved + encrypted${data?.fingerprint ? ` (${data.fingerprint})` : ""}`);
-      setSSHKeyName("");
-      setSSHKeyContent("");
-      await refresh();
     }
-    setSSHKeySaving(false);
   }
 
   return (
@@ -423,8 +435,7 @@ function SSHKeysCard({
                       size="xs"
                       message={`Delete ${key.name}?`}
                       onConfirm={async () => {
-                        await apiFetch(`/api/v1/system/config/ssh-keys/${key.name}`, { method: "DELETE" });
-                        await refresh();
+                        await act.run(`delete-ssh-${key.name}`, () => apiFetch(`/api/v1/system/config/ssh-keys/${key.name}`, { method: "DELETE" }), { running: "Removing", success: `Removed SSH key ${key.name}`, failure: `Failed to remove SSH key ${key.name}` }, { after: refresh });
                       }}
                     >
                       Delete
@@ -444,8 +455,8 @@ function SSHKeysCard({
               placeholder="id_github"
               className="w-40 font-data text-xs"
             />
-            <Button size="sm" onClick={addKey} disabled={sshKeySaving || !sshKeyName || !sshKeyContent}>
-              {sshKeySaving ? "…" : "Add Key"}
+            <Button size="sm" onClick={addKey} disabled={act.pending("add-ssh-key") || !sshKeyName || !sshKeyContent} loading={act.pending("add-ssh-key")}>
+              Add Key
             </Button>
           </div>
           <textarea

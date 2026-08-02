@@ -11,6 +11,7 @@ import { useSelection } from "@/lib/use-selection";
 import { useBusy, runBulk } from "@/lib/use-busy";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface WebhookSummary {
@@ -57,12 +58,12 @@ const accessors = {
 export function WebhookSettings() {
   const [webhooks, setWebhooks] = useState<WebhookSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
   const [newWebhook, setNewWebhook] = useState<WebhookDetail | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
   const [deliveries, setDeliveries] = useState<Record<string, Delivery[]>>({});
   const [deliveriesFor, setDeliveriesFor] = useState<string | null>(null);
+  const act = useAction();
 
   // Form state
   const [stackName, setStackName] = useState("");
@@ -87,33 +88,29 @@ export function WebhookSettings() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setCreating(true);
     setNewWebhook(null);
     setError("");
-    const { data, error: err } = await apiFetch<WebhookDetail>("/api/v1/webhooks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        stack_name: stackName.trim(),
-        provider,
-        branch_filter: branchFilter.trim() || undefined,
-        auto_redeploy: autoRedeploy,
+    const { data, error: err } = await act.run<WebhookDetail>(
+      "create-webhook",
+      () => apiFetch("/api/v1/webhooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stack_name: stackName.trim(),
+          provider,
+          branch_filter: branchFilter.trim() || undefined,
+          auto_redeploy: autoRedeploy,
+        }),
       }),
-    });
+      { running: "Creating", success: `Created webhook for ${stackName.trim()}`, failure: `Failed to create webhook for ${stackName.trim()}` },
+      { after: () => { setStackName(""); setBranchFilter(""); fetchWebhooks(); } },
+    );
     if (err) setError(err);
-    else if (data) {
-      setNewWebhook(data);
-      setStackName("");
-      setBranchFilter("");
-      fetchWebhooks();
-    }
-    setCreating(false);
+    else if (data) setNewWebhook(data);
   }
 
-  async function handleDelete(id: string) {
-    const { error: err } = await apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" });
-    if (err) setError(err);
-    else fetchWebhooks();
+  async function handleDelete(id: string, stack: string) {
+    await act.run(`delete-webhook-${id}`, () => apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" }), { running: "Removing", success: `Removed webhook for ${stack}`, failure: `Failed to remove webhook for ${stack}` }, { after: fetchWebhooks });
   }
 
   async function toggleDeliveries(id: string) {
@@ -200,8 +197,8 @@ export function WebhookSettings() {
               {stackNames.map((n) => <option key={n} value={n} />)}
             </datalist>
             {error && <p className="text-sm text-cp-red">{error}</p>}
-            <Button type="submit" disabled={creating || !stackName} data-testid="webhook-create-btn">
-              {creating ? "Creating…" : "Create Webhook"}
+            <Button type="submit" disabled={act.pending("create-webhook") || !stackName} loading={act.pending("create-webhook")} data-testid="webhook-create-btn">
+              Create Webhook
             </Button>
           </form>
 
@@ -324,7 +321,7 @@ export function WebhookSettings() {
                             <ConfirmButton
                               size="xs"
                               message="Delete this webhook?"
-                              onConfirm={() => handleDelete(wh.id)}
+                              onConfirm={() => handleDelete(wh.id, wh.stack_name)}
                               data-testid={`webhook-delete-${wh.id}`}
                             >
                               Delete

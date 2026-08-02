@@ -6,6 +6,7 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/data-table";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 /**
@@ -36,7 +37,7 @@ export function StackRegistryAuths({ stackName }: { stackName: string }) {
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<RegistryCred | null>(null);
   const [form, setForm] = useState({ registry: "", username: "", secret: "", email: "" });
-  const [submitting, setSubmitting] = useState(false);
+  const act = useAction();
 
   function fetchAll() {
     setLoading(true);
@@ -82,39 +83,35 @@ export function StackRegistryAuths({ stackName }: { stackName: string }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setSubmitting(true);
     const body = {
       registry: form.registry.trim(),
       username: form.username.trim(),
       ...(form.secret ? { secret: form.secret } : {}),
       ...(form.email.trim() && { email: form.email.trim() }),
-      stack_name: stackName, // always scoped to this stack
+      stack_name: stackName,
     };
-    if (editing) {
-      const { error: err } = await apiFetch(`/api/v1/registries/${editing.id}`, {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-      });
-      if (err) setError(err);
-      else { setEditing(null); setForm({ registry: "", username: "", secret: "", email: "" }); fetchAll(); }
-    } else {
-      if (!form.secret) {
-        setError("Secret is required when creating a credential.");
-        setSubmitting(false);
-        return;
-      }
-      const { error: err } = await apiFetch(`/api/v1/registries`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, secret: form.secret }),
-      });
-      if (err) setError(err);
-      else { setForm({ registry: "", username: "", secret: "", email: "" }); fetchAll(); }
+    if (!editing && !form.secret) {
+      setError("Secret is required when creating a credential.");
+      return;
     }
-    setSubmitting(false);
+    const url = editing ? `/api/v1/registries/${editing.id}` : `/api/v1/registries`;
+    const method = editing ? "PUT" : "POST";
+    const registryName = editing ? editing.registry : form.registry.trim();
+    const { error: err } = await act.run(
+      "save-registry",
+      () => apiFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+      {
+        running: "Saving",
+        success: editing ? `Updated credential for ${registryName}` : `Added credential for ${registryName}`,
+        failure: editing ? `Failed to update credential for ${registryName}` : `Failed to add credential for ${registryName}`,
+      },
+      { after: () => { if (editing) setEditing(null); setForm({ registry: "", username: "", secret: "", email: "" }); fetchAll(); } },
+    );
+    if (err) setError(err);
   }
 
-  async function handleDelete(id: number) {
-    const { error: err } = await apiFetch(`/api/v1/registries/${id}`, { method: "DELETE" });
-    if (err) setError(err);
-    else fetchAll();
+  async function handleDelete(id: number, registry: string) {
+    await act.run(`delete-registry-${id}`, () => apiFetch(`/api/v1/registries/${id}`, { method: "DELETE" }), { running: "Removing", success: `Removed credential for ${registry}`, failure: `Failed to remove credential for ${registry}` }, { after: fetchAll });
   }
 
   return (
@@ -147,8 +144,8 @@ export function StackRegistryAuths({ stackName }: { stackName: string }) {
               <Input type="password" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} placeholder={editing ? "•••• (keep)" : "ghp_..."} data-testid="stack-registry-secret" />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={submitting || !form.registry || !form.username} size="sm" data-testid="stack-registry-submit">
-                {submitting ? "…" : editing ? "Save" : "Add override"}
+              <Button type="submit" disabled={act.pending("save-registry") || !form.registry || !form.username} size="sm" loading={act.pending("save-registry")} data-testid="stack-registry-submit">
+                {editing ? "Save" : "Add override"}
               </Button>
               {editing && (
                 <Button type="button" variant="ghost" size="sm" onClick={startAdd} data-testid="stack-registry-cancel">Cancel</Button>
@@ -187,7 +184,7 @@ export function StackRegistryAuths({ stackName }: { stackName: string }) {
                               size="xs"
                               message={`Delete per-stack credential for ${c.registry}?`}
                               confirmLabel="Delete"
-                              onConfirm={() => handleDelete(c.id)}
+                              onConfirm={() => handleDelete(c.id, c.registry)}
                             >
                               Delete
                             </ConfirmButton>

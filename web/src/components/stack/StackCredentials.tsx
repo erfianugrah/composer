@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 
 interface CredentialsData {
   auth_method: string;
@@ -28,8 +29,8 @@ export function StackCredentials({ stackName }: { stackName: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const act = useAction();
 
   // Edit form - secret fields start empty (user types to replace, leaves empty to clear).
   const [token, setToken] = useState("");
@@ -63,29 +64,30 @@ export function StackCredentials({ stackName }: { stackName: string }) {
   }
 
   async function handleSave() {
-    setSaving(true);
     setSaveMsg("");
-    const { error: err } = await apiFetch(`/api/v1/stacks/${stackName}/credentials`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token: token.trim(),
-        ssh_key: sshKey.trim(),
-        ssh_key_file: sshKeyFile.trim(),
-        age_key: ageKey.trim(),
-        username: username.trim(),
-        password: password.trim(),
+    const { error: err } = await act.run(
+      "save-credentials",
+      () => apiFetch(`/api/v1/stacks/${stackName}/credentials`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: token.trim(),
+          ssh_key: sshKey.trim(),
+          ssh_key_file: sshKeyFile.trim(),
+          age_key: ageKey.trim(),
+          username: username.trim(),
+          password: password.trim(),
+        }),
       }),
-    });
+      { running: "Saving", success: `Saved credentials for ${stackName}`, failure: `Failed to save credentials for ${stackName}` },
+      { after: () => { setSaveMsg("Saved"); setEditing(false); fetchCreds(); } },
+    );
     if (err) setSaveMsg(err);
-    else { setSaveMsg("Saved"); setEditing(false); fetchCreds(); }
-    setSaving(false);
   }
 
   /** Clear a single credential field via the DELETE endpoint (does not touch other fields). */
   async function handleClearField(field: string) {
-    await apiFetch(`/api/v1/stacks/${stackName}/credentials/${field}`, { method: "DELETE" });
-    fetchCreds();
+    await act.run(`clear-${field}`, () => apiFetch(`/api/v1/stacks/${stackName}/credentials/${field}`, { method: "DELETE" }), { running: "Clearing", success: `Cleared ${field} for ${stackName}`, failure: `Failed to clear ${field} for ${stackName}` }, { after: fetchCreds });
   }
 
   if (loading) return <div className="animate-pulse h-20 bg-muted rounded" />;
@@ -174,12 +176,16 @@ export function StackCredentials({ stackName }: { stackName: string }) {
                   message="Clear all per-stack credentials?"
                   confirmLabel="Clear All"
                   onConfirm={async () => {
-                    await apiFetch(`/api/v1/stacks/${stackName}/credentials`, {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ token: "", ssh_key: "", ssh_key_file: "", age_key: "", username: "", password: "" }),
-                    });
-                    fetchCreds();
+                    await act.run(
+                      "clear-all-credentials",
+                      () => apiFetch(`/api/v1/stacks/${stackName}/credentials`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ token: "", ssh_key: "", ssh_key_file: "", age_key: "", username: "", password: "" }),
+                      }),
+                      { running: "Clearing", success: `Cleared all credentials for ${stackName}`, failure: `Failed to clear credentials for ${stackName}` },
+                      { after: fetchCreds },
+                    );
                   }}
                 >
                   Clear All
@@ -297,8 +303,8 @@ export function StackCredentials({ stackName }: { stackName: string }) {
                 />
               </div>
               <div className="flex gap-2">
-                <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? "..." : "Save"}</Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+                <Button size="sm" onClick={handleSave} disabled={act.pending("save-credentials")} loading={act.pending("save-credentials")}>Save</Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={act.pending("save-credentials")}>Cancel</Button>
               </div>
               {saveMsg && <p className={`text-xs ${saveMsg === "Saved" ? "text-cp-green" : "text-cp-red"}`}>{saveMsg}</p>}
             </div>

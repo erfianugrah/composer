@@ -13,6 +13,7 @@ import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { StatCard } from "@/components/ui/stat-card";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { DockerHostSelect } from "@/components/docker/DockerHostSelect";
 
@@ -24,7 +25,7 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
 }
 
-function PruneDropdown({ onPrune, onResult, selectedHost }: { onPrune: () => void; onResult: (msg: string) => void; selectedHost: string; }) {
+function PruneDropdown({ onPrune, onResult, selectedHost, act }: { onPrune: () => void; onResult: (msg: string) => void; selectedHost: string; act: ReturnType<typeof useAction>; }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -39,35 +40,32 @@ function PruneDropdown({ onPrune, onResult, selectedHost }: { onPrune: () => voi
 
   async function prune(all: boolean) {
     setOpen(false);
-    // Always go async: on hosts with many images a synchronous prune ties up
-    // the request for minutes, and the user has no progress feedback. With
-    // ?async=true the prune lands in the Jobs drawer where it can be watched
-    // to completion, and the UI is responsive immediately.
     const params = new URLSearchParams({ async: "true" });
     if (selectedHost) params.set("host", selectedHost);
     if (all) params.set("all", "true");
-    const { data, error } = await apiFetch<{ job_id?: string; space_reclaimed?: string }>(
-      `/api/v1/images/prune?${params.toString()}`, { method: "POST" },
+    const { data, error } = await act.run<{ job_id?: string; space_reclaimed?: string }>(
+      "prune-images",
+      () => apiFetch(`/api/v1/images/prune?${params.toString()}`, { method: "POST" }),
+      { running: "Pruning", success: "Pruned unused images", failure: "Prune failed" },
+      { after: onPrune },
     );
-    if (error) onResult(`Prune failed: ${error}`);
-    else if (data?.job_id) onResult(`Prune started — see Jobs drawer (${data.job_id})`);
+    if (data?.job_id) onResult(`Prune started -- see Jobs drawer (${data.job_id})`);
     else if (data?.space_reclaimed) onResult(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
-    onPrune();
   }
 
   // Dropdown items already require an explicit choice; each row is its own confirm.
   return (
     <div className="flex justify-end relative" ref={ref}>
-      <Button size="sm" variant="destructive" onClick={() => setOpen((v) => !v)}>
+      <Button size="sm" variant="destructive" loading={act.pending("prune-images")} onClick={() => setOpen((v) => !v)}>
         Prune Unused
       </Button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] rounded border border-border bg-popover p-1">
-          <button onClick={() => prune(false)} className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors">
+          <button onClick={() => prune(false)} disabled={act.pending("prune-images")} className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50">
             Dangling only
             <span className="block text-[10px] text-muted-foreground">Untagged images — cannot be undone</span>
           </button>
-          <button onClick={() => prune(true)} className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors">
+          <button onClick={() => prune(true)} disabled={act.pending("prune-images")} className="w-full rounded-sm px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50">
             All unused
             <span className="block text-[10px] text-muted-foreground">Including old tagged versions — cannot be undone</span>
           </button>
@@ -94,7 +92,6 @@ export function ImagesPage() {
   const { data, loading, refetch } = useSWRFetch<{ images: ImageInfo[] }>(imagesUrl);
   const images = data?.images ?? [];
   const [ref, setRef] = useState("");
-  const [pulling, setPulling] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [filter, setFilter] = useState(() => {
@@ -125,6 +122,7 @@ export function ImagesPage() {
   const sel = useSelection<ImageInfo>((i) => i.id, { persistKey: "images" });
   useEffect(() => { sel.prune(images); }, [images, sel.prune]);
   const { busy, run } = useBusy();
+  const act = useAction();
 
   async function bulkRemove() {
     const ids = sorted.filter((i) => sel.isSelected(i.id)).map((i) => i.id);
@@ -147,19 +145,23 @@ export function ImagesPage() {
       <Card>
         <CardHeader><CardTitle className="text-sm">Pull Image</CardTitle></CardHeader>
         <CardContent>
-          <form onSubmit={async (e) => { e.preventDefault(); setError(""); setPulling(true);
-            const { error: err } = await apiFetch(`/api/v1/images/pull${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref: ref.trim() }) });
-            if (err) setError(err); else { setRef(""); fetch_(); }
-            setPulling(false);
+          <form onSubmit={async (e) => { e.preventDefault(); setError("");
+            const { error: err } = await act.run(
+              "pull-image",
+              () => apiFetch(`/api/v1/images/pull${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref: ref.trim() }) }),
+              { running: "Pulling", success: `Pulled ${ref.trim()}`, failure: `Failed to pull ${ref.trim()}` },
+              { after: () => { setRef(""); fetch_(); } },
+            );
+            if (err) setError(err);
           }} className="flex gap-2">
             <Input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="nginx:alpine, ghcr.io/user/image:tag" required className="flex-1" />
-            <Button type="submit" size="sm" disabled={!ref || pulling}>{pulling ? "Pulling..." : "Pull"}</Button>
+            <Button type="submit" size="sm" disabled={!ref} loading={act.pending("pull-image")}>Pull</Button>
           </form>
           {error && <p className="text-sm text-cp-red mt-2">{error}</p>}
         </CardContent>
       </Card>
       <div className="space-y-2">
-        <PruneDropdown onPrune={fetch_} onResult={setNotice} selectedHost={selectedHost} />
+        <PruneDropdown onPrune={fetch_} onResult={setNotice} selectedHost={selectedHost} act={act} />
         {notice && (
           <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground" data-testid="prune-result">
             <span>{notice}</span>
@@ -232,8 +234,7 @@ export function ImagesPage() {
                         size="xs"
                         message={`Remove ${img.tags?.[0] || img.id.slice(0, 12)}?`}
                         onConfirm={async () => {
-                          await apiFetch(`/api/v1/images/${img.id}${hostSuffix()}`, { method: "DELETE" });
-                          fetch_();
+                          await act.run(`remove-${img.id}`, () => apiFetch(`/api/v1/images/${img.id}${hostSuffix()}`, { method: "DELETE" }), { running: "Removing", success: `Removed image ${img.tags?.[0] || img.id.slice(0, 12)}`, failure: `Failed to remove image ${img.tags?.[0] || img.id.slice(0, 12)}` }, { after: fetch_ });
                         }}
                       >
                         Remove

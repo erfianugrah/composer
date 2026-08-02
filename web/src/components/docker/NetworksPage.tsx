@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { highlightJSON } from "@/lib/json-highlight";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { DockerHostSelect } from "@/components/docker/DockerHostSelect";
@@ -70,6 +71,7 @@ export function NetworksPage() {
   const sel = useSelection<NetworkInfo>((n) => n.id, { persistKey: "networks" });
   useEffect(() => { sel.prune(networks); }, [networks, sel.prune]);
   const { busy, run } = useBusy();
+  const act = useAction();
 
   async function bulkRemove() {
     const ids = sorted.filter((n) => sel.isSelected(n.id)).map((n) => n.id);
@@ -98,14 +100,19 @@ export function NetworksPage() {
         <CardHeader><CardTitle className="text-sm">Create Network</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={async (e) => { e.preventDefault(); setError("");
-            const { error: err } = await apiFetch(`/api/v1/networks${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), driver }) });
-            if (err) setError(err); else { setName(""); fetch_(); }
+            const { error: err } = await act.run(
+              "create-network",
+              () => apiFetch(`/api/v1/networks${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), driver }) }),
+              { running: "Creating", success: `Created network ${name.trim()}`, failure: `Failed to create network ${name.trim()}` },
+              { after: () => { setName(""); fetch_(); } },
+            );
+            if (err) setError(err);
           }} className="flex gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Network name" required className="flex-1" />
             <select aria-label="Network driver" value={driver} onChange={(e) => setDriver(e.target.value)} className="flex h-9 rounded border border-input bg-transparent px-3 py-1 text-sm">
               <option value="bridge">bridge</option><option value="overlay">overlay</option><option value="macvlan">macvlan</option><option value="host">host</option>
             </select>
-            <Button type="submit" size="sm" disabled={!name}>Create</Button>
+            <Button type="submit" size="sm" disabled={!name} loading={act.pending("create-network")}>Create</Button>
           </form>
           {error && <p className="text-sm text-cp-red mt-2">{error}</p>}
         </CardContent>
@@ -179,7 +186,7 @@ export function NetworksPage() {
                         <ConfirmButton
                           size="xs"
                           message={`Remove ${n.name}?`}
-                          onConfirm={async () => { await apiFetch(`/api/v1/networks/${n.id}${hostSuffix()}`, { method: "DELETE" }); fetch_(); }}
+                          onConfirm={async () => { await act.run(`remove-${n.id}`, () => apiFetch(`/api/v1/networks/${n.id}${hostSuffix()}`, { method: "DELETE" }), { running: "Removing", success: `Removed network ${n.name}`, failure: `Failed to remove network ${n.name}` }, { after: fetch_ }); }}
                         >
                           Remove
                         </ConfirmButton>

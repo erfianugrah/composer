@@ -15,6 +15,7 @@ import { useBusy, runBulk } from "@/lib/use-busy";
 import { clickableRow } from "@/lib/row-interactions";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 interface PipelineSummary {
@@ -122,12 +123,11 @@ export function PipelinePage() {
   // `initialEditing` prop on mount; the parent clears it after.
   const [editingPipelineId, setEditingPipelineId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState("");
+  const act = useAction();
   const [showCreate, setShowCreate] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDesc, setCreateDesc] = useState("");
   const [createSteps, setCreateSteps] = useState<PipelineStep[]>(() => [newStep(0)]);
-  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -239,44 +239,35 @@ export function PipelinePage() {
   }, [selectedPipeline, runs, expandedRun, page, pageSize, order]);
 
   async function handleRun(pipelineId: string) {
-    setRunning(pipelineId);
-    const { error: err } = await apiFetch(`/api/v1/pipelines/${pipelineId}/run`, { method: "POST" });
+    const { error: err } = await act.run(`run-${pipelineId}`, () => apiFetch(`/api/v1/pipelines/${pipelineId}/run`, { method: "POST" }), { running: "Running", success: `Pipeline started`, failure: `Run failed` }, { after: () => setTimeout(() => { if (selectedPipeline === pipelineId) fetchRuns(pipelineId); }, 1000) });
     if (err) setError(`Run failed: ${err}`);
-    else setTimeout(() => { if (selectedPipeline === pipelineId) fetchRuns(pipelineId); }, 1000);
-    setRunning("");
   }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setCreating(true);
     setError("");
-    // Normalize: assign step-N ids in order, fall back to type as name if empty.
     const steps = createSteps.map((s, i) => ({
       id: `step-${i + 1}`,
       name: s.name.trim() || s.type,
       type: s.type,
       config: s.config,
     }));
-    const { error: err } = await apiFetch("/api/v1/pipelines", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: createName.trim(),
-        description: createDesc.trim(),
-        steps,
-        triggers: [{ type: "manual", config: {} }],
+    const { error: err } = await act.run(
+      "create-pipeline",
+      () => apiFetch("/api/v1/pipelines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: createName.trim(),
+          description: createDesc.trim(),
+          steps,
+          triggers: [{ type: "manual", config: {} }],
+        }),
       }),
-    });
-    if (err) {
-      setError(err);
-    } else {
-      setShowCreate(false);
-      setCreateName("");
-      setCreateDesc("");
-      setCreateSteps([newStep(0)]);
-      fetchPipelines();
-    }
-    setCreating(false);
+      { running: "Creating", success: `Created pipeline ${createName.trim()}`, failure: `Failed to create pipeline ${createName.trim()}` },
+      { after: () => { setShowCreate(false); setCreateName(""); setCreateDesc(""); setCreateSteps([newStep(0)]); fetchPipelines(); } },
+    );
+    if (err) setError(err);
   }
 
   function updateStep(index: number, next: PipelineStep) {
@@ -299,10 +290,8 @@ export function PipelinePage() {
   }
 
   async function handleDelete(pipelineId: string) {
-    const { error: err } = await apiFetch(`/api/v1/pipelines/${pipelineId}`, { method: "DELETE" });
+    const { error: err } = await act.run(`delete-${pipelineId}`, () => apiFetch(`/api/v1/pipelines/${pipelineId}`, { method: "DELETE" }), { running: "Removing", success: `Removed pipeline`, failure: `Delete failed` }, { after: () => { if (selectedPipeline === pipelineId) setSelectedPipeline(null); fetchPipelines(); } });
     if (err) { setError(`Delete failed: ${err}`); return; }
-    if (selectedPipeline === pipelineId) setSelectedPipeline(null);
-    fetchPipelines();
   }
 
   if (loading) {
@@ -356,8 +345,8 @@ export function PipelinePage() {
                 </Button>
               </div>
               {error && <p className="text-sm text-cp-red">{error}</p>}
-              <Button type="submit" disabled={creating || !createName} className="w-full" data-testid="pipeline-create-btn">
-                {creating ? "Creating..." : `Create Pipeline (${createSteps.length} step${createSteps.length === 1 ? "" : "s"})`}
+              <Button type="submit" disabled={act.pending("create-pipeline") || !createName} loading={act.pending("create-pipeline")} className="w-full" data-testid="pipeline-create-btn">
+                {`Create Pipeline (${createSteps.length} step${createSteps.length === 1 ? "" : "s"})`}
               </Button>
             </form>
           </CardContent>
@@ -368,7 +357,7 @@ export function PipelinePage() {
         pipelines={pipelines}
         selectedPipeline={selectedPipeline}
         setSelectedPipeline={setSelectedPipeline}
-        running={running}
+        pending={act.pending}
         handleRun={handleRun}
         handleEdit={(id) => {
           // Set the editing intent before changing selection. The Config card
@@ -559,7 +548,7 @@ interface PipelineTableProps {
   pipelines: PipelineSummary[];
   selectedPipeline: string | null;
   setSelectedPipeline: (fn: (cur: string | null) => string | null) => void;
-  running: string;
+  pending: (key: string) => boolean;
   handleRun: (id: string) => void;
   handleEdit: (id: string) => void;
   handleDelete: (id: string) => Promise<void>;
@@ -572,7 +561,7 @@ function PipelineTable({
   pipelines,
   selectedPipeline,
   setSelectedPipeline,
-  running,
+  pending,
   handleRun,
   handleEdit,
   handleDelete,
@@ -706,10 +695,11 @@ function PipelineTable({
                       <Button
                         size="xs"
                         onClick={() => handleRun(pl.id)}
-                        disabled={running === pl.id}
+                        disabled={pending(`run-${pl.id}`)}
+                        loading={pending(`run-${pl.id}`)}
                         data-testid={`run-${pl.id}`}
                       >
-                        {running === pl.id ? "Running…" : "Run"}
+                        Run
                       </Button>
                       <ConfirmButton
                         size="xs"

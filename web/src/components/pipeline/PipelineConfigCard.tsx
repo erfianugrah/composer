@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StepEditor, newStep, type PipelineStep } from "@/components/pipeline/StepEditor";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { useCurrentUser } from "@/lib/use-current-user";
 
 // Step types that can execute arbitrary code on the host and therefore
@@ -98,8 +99,8 @@ export function PipelineConfigCard({
   const [editSteps, setEditSteps] = useState<PipelineStep[]>([]);
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
-  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const act = useAction();
   // Snapshot of edit-state at hydration time. handleCancel uses it to
   // detect whether the form has unsaved changes — only prompts if yes.
   const pristineSnapshot = useRef<string>("");
@@ -208,7 +209,6 @@ export function PipelineConfigCard({
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!detail) return;
-    setSaving(true);
     setSaveError("");
     const steps = editSteps.map((s, i) => ({
       id: s.id || `step-${i + 1}`,
@@ -219,31 +219,34 @@ export function PipelineConfigCard({
       continue_on_error: s.continueOnError,
       depends_on: s.dependsOn,
     }));
-    const { error: err } = await apiFetch(`/api/v1/pipelines/${pipelineId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: editName.trim(),
-        description: editDesc.trim(),
-        steps,
-        triggers: detail.triggers, // preserve cron/webhook/event triggers verbatim
+    const { error: err } = await act.run(
+      "save-pipeline",
+      () => apiFetch(`/api/v1/pipelines/${pipelineId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName.trim(),
+          description: editDesc.trim(),
+          steps,
+          triggers: detail.triggers,
+        }),
       }),
-    });
-    if (err) {
-      setSaveError(`Save failed: ${err}`);
-    } else {
-      setEditing(false);
-      onSaved();
-      // Refresh local detail so the read-only view reflects the new state.
-      setLoading(true);
-      apiFetch<PipelineDetail>(`/api/v1/pipelines/${pipelineId}`).then(
-        ({ data }) => {
-          if (data) setDetail(data);
-          setLoading(false);
+      { running: "Saving", success: `Saved pipeline ${editName.trim()}`, failure: `Save failed` },
+      {
+        after: () => {
+          setEditing(false);
+          onSaved();
+          setLoading(true);
+          apiFetch<PipelineDetail>(`/api/v1/pipelines/${pipelineId}`).then(
+            ({ data }) => {
+              if (data) setDetail(data);
+              setLoading(false);
+            },
+          );
         },
-      );
-    }
-    setSaving(false);
+      },
+    );
+    if (err) setSaveError(`Save failed: ${err}`);
   }
 
   function handleCancel() {
@@ -353,16 +356,17 @@ export function PipelineConfigCard({
             <div className="flex items-center gap-2">
               <Button
                 type="submit"
-                disabled={saving || !editName}
+                disabled={act.pending("save-pipeline") || !editName}
+                loading={act.pending("save-pipeline")}
                 data-testid="pipeline-edit-save"
               >
-                {saving ? "Saving…" : "Save"}
+                Save
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleCancel}
-                disabled={saving}
+                disabled={act.pending("save-pipeline")}
                 data-testid="pipeline-edit-cancel"
               >
                 Cancel

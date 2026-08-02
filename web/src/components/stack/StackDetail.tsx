@@ -232,26 +232,31 @@ export function StackDetail({ stackName }: { stackName: string }) {
   }, [stackName]);
 
   async function handleDelete() {
-    setActionLoading("delete");
     setActionError("");
-    const { error } = await apiFetch(`/api/v1/stacks/${stackName}?remove_volumes=true`, { method: "DELETE" });
+    const { error } = await act.run(
+      `delete-${stackName}`,
+      () => apiFetch(`/api/v1/stacks/${stackName}?remove_volumes=true`, { method: "DELETE" }),
+      { running: "Deleting", success: `Deleted stack ${stackName}`, failure: `Delete failed` },
+    );
     if (error) {
       setActionError(`Delete failed: ${error}`);
-      setActionLoading("");
     } else {
-      // Stack deleted -- navigate back to the list view.
       navigate("/");
     }
   }
 
   async function handleSaveCompose(content: string) {
-    const { error } = await apiFetch(`/api/v1/stacks/${stackName}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ compose: content }),
-    });
+    const { error } = await act.run(
+      "save-compose",
+      () => apiFetch(`/api/v1/stacks/${stackName}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ compose: content }),
+      }),
+      { running: "Saving", success: `Saved compose for ${stackName}`, failure: `Failed to save compose for ${stackName}` },
+      { after: fetchStack },
+    );
     if (error) throw new Error(error);
-    fetchStack();
   }
 
   if (loading) {
@@ -280,9 +285,13 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 className="text-xs"
                 message="Detach from git? Keeps compose file, removes .git."
                 onConfirm={async () => {
-                  const { error } = await apiFetch(`/api/v1/stacks/${stackName}/convert/local`, { method: "POST" });
+                  const { error } = await act.run(
+                    "detach-git",
+                    () => apiFetch(`/api/v1/stacks/${stackName}/convert/local`, { method: "POST" }),
+                    { running: "Detaching", success: `Detached git from ${stackName}`, failure: `Failed to detach git from ${stackName}` },
+                    { after: fetchStack },
+                  );
                   if (error) setActionError(error);
-                  else fetchStack();
                 }}
                 data-testid="btn-detach-git"
               >Detach Git</ConfirmButton>
@@ -300,14 +309,18 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 autoFocus
                 onKeyDown={(e) => { if (e.key === "Escape") setAttachGitUrl(null); }}
               />
-              <Button size="xs" disabled={!attachGitUrl?.trim()} onClick={() => {
-                apiFetch(`/api/v1/stacks/${stackName}/convert/git`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ repo_url: attachGitUrl!.trim() }),
-                }).then(({ error }) => {
+              <Button size="xs" disabled={!attachGitUrl?.trim() || act.pending("attach-git")} loading={act.pending("attach-git")} onClick={() => {
+                act.run(
+                  "attach-git",
+                  () => apiFetch(`/api/v1/stacks/${stackName}/convert/git`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ repo_url: attachGitUrl!.trim() }),
+                  }),
+                  { running: "Attaching", success: `Attached git to ${stackName}`, failure: `Failed to attach git to ${stackName}` },
+                  { after: () => { setAttachGitUrl(null); fetchStack(); } },
+                ).then(({ error }) => {
                   if (error) setActionError(error);
-                  else { setAttachGitUrl(null); fetchStack(); }
                 });
               }}>Go</Button>
               <Button size="xs" variant="ghost" onClick={() => setAttachGitUrl(null)}>Cancel</Button>
@@ -335,9 +348,10 @@ export function StackDetail({ stackName }: { stackName: string }) {
             confirmLabel="Delete"
             onConfirm={handleDelete}
             disabled={streamingBusy}
+            loading={act.pending(`delete-${stackName}`)}
             data-testid="btn-delete"
           >
-            {actionLoading === "delete" ? "Deleting…" : "Delete"}
+            Delete
           </ConfirmButton>
         </div>
       </div>
@@ -615,8 +629,12 @@ export function StackDetail({ stackName }: { stackName: string }) {
       {activeTab === "compose" && (
         <section aria-label="compose.yaml" className="space-y-3">
           <div className="flex items-center justify-end">
-            <Button size="xs" variant="outline" onClick={async () => {
-              const { data, error } = await apiFetch<{ stdout: string; stderr: string }>(`/api/v1/stacks/${stackName}/validate`, { method: "POST" });
+            <Button size="xs" variant="outline" loading={act.pending("validate-compose")} onClick={async () => {
+              const { data, error } = await act.run<{ stdout: string; stderr: string }>(
+                "validate-compose",
+                () => apiFetch(`/api/v1/stacks/${stackName}/validate`, { method: "POST" }),
+                { running: "Validating", success: "Compose is valid", failure: "Validation failed" },
+              );
               if (error) {
                 setActionError(`Validation failed: ${error}`);
               } else {

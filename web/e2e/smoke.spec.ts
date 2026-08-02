@@ -281,8 +281,13 @@ test.describe("Docker Hosts", () => {
     await form.getByPlaceholder("Cert dir (optional, for mTLS)").fill("/certs");
     await page.getByTestId("hosts-submit").click();
 
-    await expect(page.getByText("remote1")).toBeVisible();
-    await expect(page.getByText("tcp://docker-remote.example:2376")).toBeVisible();
+    // Scope to the table row: the success toast also names the host, so an
+    // unscoped getByText now matches two elements.
+    const row = page.getByTestId("hosts-row-1");
+    await expect(row.getByText("remote1")).toBeVisible();
+    await expect(row.getByText("tcp://docker-remote.example:2376")).toBeVisible();
+    // The operator must also be told the action succeeded.
+    await expect(page.getByText("Added remote1")).toBeVisible();
   });
 
   test("stack list shows the host badge", async ({ page }) => {

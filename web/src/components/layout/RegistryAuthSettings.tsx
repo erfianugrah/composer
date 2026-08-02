@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/data-table";
 import { FilterInput } from "@/components/ui/filter-input";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 /**
@@ -43,7 +44,7 @@ export function RegistryAuthSettings() {
   const [filter, setFilter] = useState("");
   const [editing, setEditing] = useState<RegistryCred | null>(null);
   const [form, setForm] = useState(emptyForm);
-  const [submitting, setSubmitting] = useState(false);
+  const act = useAction();
 
   function fetchCreds() {
     apiFetch<{ credentials: RegistryCred[] }>("/api/v1/registries").then(({ data, error: err }) => {
@@ -76,7 +77,6 @@ export function RegistryAuthSettings() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setSubmitting(true);
     const body = {
       registry: form.registry.trim(),
       username: form.username.trim(),
@@ -84,36 +84,28 @@ export function RegistryAuthSettings() {
       ...(form.email.trim() && { email: form.email.trim() }),
       ...(form.stack_name.trim() && { stack_name: form.stack_name.trim() }),
     };
-    if (editing) {
-      const { error: err } = await apiFetch(`/api/v1/registries/${editing.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (err) setError(err);
-      else { cancelEdit(); fetchCreds(); }
-    } else {
-      // POST requires a secret
-      if (!form.secret) {
-        setError("Secret is required when creating a credential.");
-        setSubmitting(false);
-        return;
-      }
-      const { error: err } = await apiFetch(`/api/v1/registries`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, secret: form.secret }),
-      });
-      if (err) setError(err);
-      else { setForm(emptyForm); fetchCreds(); }
+    if (!editing && !form.secret) {
+      setError("Secret is required when creating a credential.");
+      return;
     }
-    setSubmitting(false);
+    const url = editing ? `/api/v1/registries/${editing.id}` : `/api/v1/registries`;
+    const method = editing ? "PUT" : "POST";
+    const registryName = editing ? editing.registry : form.registry.trim();
+    const { error: err } = await act.run(
+      "save-registry",
+      () => apiFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+      {
+        running: "Saving",
+        success: editing ? `Updated credential for ${registryName}` : `Added credential for ${registryName}`,
+        failure: editing ? `Failed to update credential for ${registryName}` : `Failed to add credential for ${registryName}`,
+      },
+      { after: () => { if (editing) cancelEdit(); else setForm(emptyForm); fetchCreds(); } },
+    );
+    if (err) setError(err);
   }
 
-  async function handleDelete(id: number) {
-    const { error: err } = await apiFetch(`/api/v1/registries/${id}`, { method: "DELETE" });
-    if (err) setError(err);
-    else fetchCreds();
+  async function handleDelete(id: number, registry: string) {
+    await act.run(`delete-registry-${id}`, () => apiFetch(`/api/v1/registries/${id}`, { method: "DELETE" }), { running: "Removing", success: `Removed credential for ${registry}`, failure: `Failed to remove credential for ${registry}` }, { after: fetchCreds });
   }
 
   const filtered = useMemo(() => {
@@ -193,8 +185,8 @@ export function RegistryAuthSettings() {
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={submitting || !form.registry || !form.username} size="sm" data-testid="registry-submit">
-                {submitting ? "…" : editing ? "Save" : "Add"}
+              <Button type="submit" disabled={act.pending("save-registry") || !form.registry || !form.username} size="sm" loading={act.pending("save-registry")} data-testid="registry-submit">
+                {editing ? "Save" : "Add"}
               </Button>
               {editing && (
                 <Button type="button" variant="ghost" size="sm" onClick={cancelEdit} data-testid="registry-cancel">
@@ -248,7 +240,7 @@ export function RegistryAuthSettings() {
                         size="xs"
                         message={`Delete credential for ${c.registry}${c.stack_name ? ` (stack: ${c.stack_name})` : " (global)"}?`}
                         confirmLabel="Delete"
-                        onConfirm={() => handleDelete(c.id)}
+                        onConfirm={() => handleDelete(c.id, c.registry)}
                         data-testid={`registry-delete-${c.id}`}
                       >
                         Delete

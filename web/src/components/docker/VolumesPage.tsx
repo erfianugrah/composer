@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/errors";
+import { useAction } from "@/lib/use-action";
 import { highlightJSON } from "@/lib/json-highlight";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { DockerHostSelect } from "@/components/docker/DockerHostSelect";
@@ -66,6 +67,7 @@ export function VolumesPage() {
   const sel = useSelection<VolumeInfo>((v) => v.name, { persistKey: "volumes" });
   useEffect(() => { sel.prune(volumes); }, [volumes, sel.prune]);
   const { busy, run } = useBusy();
+  const act = useAction();
 
   async function bulkRemove() {
     const names = sorted.filter((v) => sel.isSelected(v.name)).map((v) => v.name);
@@ -94,11 +96,16 @@ export function VolumesPage() {
         <CardHeader><CardTitle className="text-sm">Create Volume</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={async (e) => { e.preventDefault(); setError("");
-            const { error: err } = await apiFetch(`/api/v1/volumes${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
-            if (err) setError(err); else { setName(""); fetch_(); }
+            const { error: err } = await act.run(
+              "create-volume",
+              () => apiFetch(`/api/v1/volumes${hostSuffix()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) }),
+              { running: "Creating", success: `Created volume ${name.trim()}`, failure: `Failed to create volume ${name.trim()}` },
+              { after: () => { setName(""); fetch_(); } },
+            );
+            if (err) setError(err);
           }} className="flex gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Volume name" required className="flex-1" />
-            <Button type="submit" size="sm" disabled={!name}>Create</Button>
+            <Button type="submit" size="sm" disabled={!name} loading={act.pending("create-volume")}>Create</Button>
           </form>
           {error && <p className="text-sm text-cp-red mt-2">{error}</p>}
         </CardContent>
@@ -108,14 +115,16 @@ export function VolumesPage() {
           size="sm"
           message="Remove all unused volumes? Cannot be undone."
           onConfirm={async () => {
-            // Async so it shows up in the Jobs drawer instead of blocking the page.
-            const { data, error } = await apiFetch<{ job_id?: string; space_reclaimed?: string }>(
-              `/api/v1/volumes/prune?async=true${selectedHost ? `&host=${encodeURIComponent(selectedHost)}` : ""}`, { method: "POST" },
+            const { data, error } = await act.run<{ job_id?: string; space_reclaimed?: string }>(
+              "prune-volumes",
+              () => apiFetch(
+                `/api/v1/volumes/prune?async=true${selectedHost ? `&host=${encodeURIComponent(selectedHost)}` : ""}`, { method: "POST" },
+              ),
+              { running: "Pruning", success: "Pruned unused volumes", failure: "Prune failed" },
+              { after: fetch_ },
             );
-            if (error) setNotice(`Prune failed: ${error}`);
-            else if (data?.job_id) setNotice(`Prune started — see Jobs drawer (${data.job_id})`);
+            if (data?.job_id) setNotice(`Prune started -- see Jobs drawer (${data.job_id})`);
             else if (data?.space_reclaimed) setNotice(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
-            fetch_();
           }}
         >
           Prune Unused
@@ -187,7 +196,7 @@ export function VolumesPage() {
                         <ConfirmButton
                           size="xs"
                           message={`Remove ${v.name}?`}
-                          onConfirm={async () => { await apiFetch(`/api/v1/volumes/${v.name}${hostSuffix()}`, { method: "DELETE" }); fetch_(); }}
+                          onConfirm={async () => { await act.run(`remove-${v.name}`, () => apiFetch(`/api/v1/volumes/${v.name}${hostSuffix()}`, { method: "DELETE" }), { running: "Removing", success: `Removed volume ${v.name}`, failure: `Failed to remove volume ${v.name}` }, { after: fetch_ }); }}
                         >
                           Remove
                         </ConfirmButton>
