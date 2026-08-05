@@ -82,8 +82,8 @@
     },
     {
       "name": "e2e-count-floor",
-      "cmd": "cd web && test \"$(bunx playwright test --list --reporter=line 2>&1 | rg -o 'Total: ([0-9]+) test' -r '$1')\" -ge 67",
-      "hint": "The Playwright suite collects fewer than 67 tests, so browser tests were deleted or stopped being collected. Restore them; do not lower the floor.",
+      "cmd": "cd web && test \"$(bunx playwright test --list --reporter=line 2>&1 | rg -o 'Total: ([0-9]+) test' -r '$1')\" -ge 76",
+      "hint": "The Playwright suite collects fewer than 76 tests, so browser tests were deleted or stopped being collected. Restore them; do not lower the floor.",
       "canary": "sed -i '/^test.describe(\"Stack container bulk actions\"/,$d' web/e2e/smoke.spec.ts"
     },
     {

@@ -239,8 +239,8 @@ export function PipelinePage() {
   }, [selectedPipeline, runs, expandedRun, page, pageSize, order]);
 
   async function handleRun(pipelineId: string) {
-    const { error: err } = await act.run(`run-${pipelineId}`, () => apiFetch(`/api/v1/pipelines/${pipelineId}/run`, { method: "POST" }), { running: "Running", success: `Pipeline started`, failure: `Run failed` }, { after: () => setTimeout(() => { if (selectedPipeline === pipelineId) fetchRuns(pipelineId); }, 1000) });
-    if (err) setError(`Run failed: ${err}`);
+    // Row action: the toast owns the failure.
+    await act.run(`run-${pipelineId}`, () => apiFetch(`/api/v1/pipelines/${pipelineId}/run`, { method: "POST" }), { running: "Running", success: `Pipeline started`, failure: `Run failed` }, { after: () => setTimeout(() => { if (selectedPipeline === pipelineId) fetchRuns(pipelineId); }, 1000) });
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -290,8 +290,8 @@ export function PipelinePage() {
   }
 
   async function handleDelete(pipelineId: string) {
-    const { error: err } = await act.run(`delete-${pipelineId}`, () => apiFetch(`/api/v1/pipelines/${pipelineId}`, { method: "DELETE" }), { running: "Removing", success: `Removed pipeline`, failure: `Delete failed` }, { after: () => { if (selectedPipeline === pipelineId) setSelectedPipeline(null); fetchPipelines(); } });
-    if (err) { setError(`Delete failed: ${err}`); return; }
+    // Row action: the toast owns the failure.
+    await act.run(`delete-${pipelineId}`, () => apiFetch(`/api/v1/pipelines/${pipelineId}`, { method: "DELETE" }), { running: "Removing", success: `Removed pipeline`, failure: `Delete failed` }, { after: () => { if (selectedPipeline === pipelineId) setSelectedPipeline(null); fetchPipelines(); } });
   }
 
   if (loading) {

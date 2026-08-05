@@ -233,6 +233,8 @@ export function PipelineConfigCard({
       }),
       { running: "Saving", success: `Saved pipeline ${editName.trim()}`, failure: `Save failed` },
       {
+        // Form submit: the banner persists while the user fixes the field.
+        inlineError: true,
         after: () => {
           setEditing(false);
           onSaved();

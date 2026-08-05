@@ -250,11 +250,10 @@ export function StackDetail({ stackName }: { stackName: string }) {
       () => apiFetch(`/api/v1/stacks/${stackName}?remove_volumes=true`, { method: "DELETE" }),
       { running: "Deleting", success: `Deleted stack ${stackName}`, failure: `Delete failed` },
     );
-    if (error) {
-      setActionError(`Delete failed: ${error}`);
-    } else {
-      navigate("/");
-    }
+    // Header action, so the toast owns the failure. A banner would be
+    // pointless here anyway: success navigates away from the page holding it.
+    if (error) return;
+    navigate("/");
   }
 
   async function handleSaveCompose(content: string) {
@@ -684,6 +683,9 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 "validate-compose",
                 () => apiFetch(`/api/v1/stacks/${stackName}/validate`, { method: "POST" }),
                 { running: "Validating", success: "Compose is valid", failure: "Validation failed" },
+                // The banner owns this failure: it carries the actual
+                // compose error, which is the whole point of validating.
+                { inlineError: true },
               );
               if (error) {
                 setActionError(`Validation failed: ${error}`);

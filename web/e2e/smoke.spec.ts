@@ -793,6 +793,22 @@ test.describe("Async job actions", () => {
   });
 });
 
+// `astro preview` serves the built files verbatim, so /stacks/demo 404s. The
+// Go server walks up to /stacks/index.html for exactly this path (see
+// internal/api/static.go SPA fallback); replay that here so tests drive the
+// same URLs an operator does rather than a synthetic entry point. The pattern
+// is the fully-qualified document URL so it cannot also swallow the
+// /api/v1/stacks/demo XHR.
+async function gotoStackDetail(page: import("@playwright/test").Page, path: string) {
+  const base = "http://localhost:4321";
+  await page.route(`${base}${path}`, async (route) => {
+    if (route.request().resourceType() !== "document") return route.fallback();
+    const shell = await route.fetch({ url: `${base}/stacks/` });
+    return route.fulfill({ response: shell });
+  });
+  await page.goto(path);
+}
+
 test.describe("Stack container bulk actions", () => {
   // A stack detail payload with a mix of states, so each bulk verb has a
   // distinct eligible subset and the button counts are meaningful.
@@ -816,21 +832,7 @@ test.describe("Stack container bulk actions", () => {
     );
   }
 
-  // `astro preview` serves the built files verbatim, so /stacks/demo 404s.
-  // The Go server walks up to /stacks/index.html for exactly this path (see
-  // internal/api/static.go SPA fallback); replay that here so the test drives
-  // the same URL an operator does rather than a synthetic entry point. The
-  // pattern is the fully-qualified document URL so it cannot also swallow
-  // the /api/v1/stacks/demo XHR.
-  async function gotoStackDetail(page: import("@playwright/test").Page, path: string) {
-    const base = "http://localhost:4321";
-    await page.route(`${base}${path}`, async (route) => {
-      if (route.request().resourceType() !== "document") return route.fallback();
-      const shell = await route.fetch({ url: `${base}/stacks/` });
-      return route.fulfill({ response: shell });
-    });
-    await page.goto(path);
-  }
+
 
   test("selecting containers reveals a bulk bar with per-verb counts", async ({ page }) => {
     await mockStack(page);
@@ -936,5 +938,160 @@ test.describe("Stack container bulk actions", () => {
 
     await expect(page.getByText("Restarted 1 of 2 containers; 1 failed")).toBeVisible();
     await expect(page.getByText("Restarted 2 containers")).toBeHidden();
+  });
+});
+
+test.describe("Stack detail tabs", () => {
+  // Two shapes, because most of the tab bar's logic is conditional on them:
+  // a git-backed stack with a Dockerfile and a running container, and a
+  // plain local stack whose containers are all stopped.
+  function stack(over: Record<string, unknown> = {}) {
+    return {
+      name: "demo",
+      path: "/srv/demo",
+      source: "git",
+      status: "running",
+      host: "remote1",
+      compose_content: "services:\n  web:\n    image: nginx:1\n",
+      env_content: "TZ=Asia/Singapore\n",
+      dockerfiles: [{ name: "Dockerfile", content: "FROM nginx:1\nRUN echo hi\n" }],
+      containers: [
+        { id: "aaa", name: "web", service_name: "web", image: "nginx:1", status: "running", health: "none" },
+      ],
+      git_config: { repo_url: "git@example:demo.git", branch: "main", sync_status: "clean", last_commit_sha: "abc1234" },
+      ...over,
+    };
+  }
+
+  async function mock(page: import("@playwright/test").Page, body: Record<string, unknown>) {
+    await page.route("**/api/v1/stacks/demo", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) }),
+    );
+    // Tab panels each fetch their own data; answer them emptily so a tab
+    // renders its own empty state instead of a network error.
+    await page.route("**/api/v1/stacks/demo/**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+    );
+  }
+
+  test("git-only tabs appear for a git stack and are absent for a local one", async ({ page }) => {
+    await mock(page, stack());
+    await gotoStackDetail(page, "/stacks/demo");
+    for (const t of ["webhooks", "credentials", "git"]) {
+      await expect(page.getByTestId(`tab-${t}`)).toBeVisible();
+    }
+
+    // Same page, local source: those three tabs have no meaning without a
+    // repo behind the stack, so they must not be offered at all.
+    await page.unrouteAll();
+    await mock(page, stack({ source: "local", git_config: undefined }));
+    await gotoStackDetail(page, "/stacks/demo");
+    await expect(page.getByTestId("tab-containers")).toBeVisible();
+    for (const t of ["webhooks", "credentials", "git"]) {
+      await expect(page.getByTestId(`tab-${t}`)).toHaveCount(0);
+    }
+  });
+
+  test("the Dockerfiles tab is offered only when the stack ships one", async ({ page }) => {
+    await mock(page, stack());
+    await gotoStackDetail(page, "/stacks/demo");
+    await expect(page.getByTestId("tab-dockerfiles")).toBeVisible();
+
+    await page.unrouteAll();
+    await mock(page, stack({ dockerfiles: [] }));
+    await gotoStackDetail(page, "/stacks/demo");
+    await expect(page.getByTestId("tab-containers")).toBeVisible();
+    await expect(page.getByTestId("tab-dockerfiles")).toHaveCount(0);
+  });
+
+  test("a tab deep-link opens that tab, and an unknown one falls back to Containers", async ({ page }) => {
+    await mock(page, stack());
+    await gotoStackDetail(page, "/stacks/demo/dockerfiles");
+    await expect(page.getByTestId("tab-dockerfiles")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("region", { name: "Dockerfiles" })).toBeVisible();
+
+    // An unrecognised segment must not render a blank page: the tab list is
+    // a closed vocabulary and anything outside it means Containers.
+    await page.unrouteAll();
+    await mock(page, stack());
+    await gotoStackDetail(page, "/stacks/demo/not-a-tab");
+    await expect(page.getByTestId("tab-containers")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("region", { name: "Containers" })).toBeVisible();
+  });
+
+  test("clicking a tab switches the panel and puts it in the URL", async ({ page }) => {
+    await mock(page, stack());
+    await gotoStackDetail(page, "/stacks/demo");
+    await expect(page.getByRole("region", { name: "Containers" })).toBeVisible();
+
+    await page.getByTestId("tab-env").click();
+
+    await expect(page).toHaveURL(/\/stacks\/demo\/env$/);
+    await expect(page.getByRole("region", { name: ".env" })).toBeVisible();
+    // Back to Containers drops the segment rather than leaving /containers.
+    await page.getByTestId("tab-containers").click();
+    await expect(page).toHaveURL(/\/stacks\/demo$/);
+  });
+
+  test("the Dockerfiles tab renders each file's name and contents", async ({ page }) => {
+    await mock(page, stack());
+    await gotoStackDetail(page, "/stacks/demo/dockerfiles");
+
+    const panel = page.getByRole("region", { name: "Dockerfiles" });
+    await expect(panel.getByText("Dockerfile", { exact: true })).toBeVisible();
+    await expect(panel.getByText("FROM nginx:1")).toBeVisible();
+  });
+
+  test("Validate on the Compose tab reports the outcome", async ({ page }) => {
+    await mock(page, stack());
+    let validated = 0;
+    await page.route("**/api/v1/stacks/demo/validate", (route) => {
+      validated++;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stdout: "", stderr: "" }) });
+    });
+
+    await gotoStackDetail(page, "/stacks/demo/compose");
+    await page.getByTestId("btn-validate").click();
+
+    await expect(page.getByText("Compose is valid")).toBeVisible();
+    expect(validated).toBe(1);
+  });
+
+  test("a failed Validate surfaces the reason instead of a bare failure", async ({ page }) => {
+    await mock(page, stack());
+    await page.route("**/api/v1/stacks/demo/validate", (route) =>
+      route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ detail: "services.web.image is required" }) }),
+    );
+
+    await gotoStackDetail(page, "/stacks/demo/compose");
+    await page.getByTestId("btn-validate").click();
+
+    // The banner carries the actual compose error, which is the whole point
+    // of validating - and it owns the failure alone. Reporting it a second
+    // time as a toast is the double-report this repo forbids.
+    await expect(page.getByTestId("action-error")).toContainText("services.web.image is required");
+    await expect(page.getByTestId("toast-error")).toHaveCount(0);
+  });
+
+  test("the Terminal tab offers to start a container that is not running", async ({ page }) => {
+    await mock(page, stack({
+      containers: [{ id: "ccc", name: "worker", service_name: "worker", image: "worker:1", status: "exited", health: "none" }],
+    }));
+    await gotoStackDetail(page, "/stacks/demo/terminal");
+
+    // A terminal against a stopped container is impossible, so the panel has
+    // to say why and offer the one action that fixes it.
+    const panel = page.getByRole("region", { name: "Terminal" });
+    await expect(panel.getByText(/is\s+exited/)).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Start & Open Terminal" })).toBeVisible();
+  });
+
+  test("the Stats tab says so when nothing is running", async ({ page }) => {
+    await mock(page, stack({
+      containers: [{ id: "ccc", name: "worker", service_name: "worker", image: "worker:1", status: "exited", health: "none" }],
+    }));
+    await gotoStackDetail(page, "/stacks/demo/stats");
+
+    await expect(page.getByRole("region", { name: "Container Stats" }).getByText("No running containers.")).toBeVisible();
   });
 });

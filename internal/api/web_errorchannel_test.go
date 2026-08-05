@@ -88,7 +88,13 @@ func errorBindingBefore(text string, callStart int) string {
 // the line the call's closing paren sits on, so the window is independent of
 // how many lines the arguments span.
 func rendersInline(lines []string, callEndLine int, errVar string) bool {
-	setter := regexp.MustCompile(`\bset[A-Z]\w*\(\s*` + regexp.QuoteMeta(errVar) + `\b`)
+	// The error need not be the setter's first token. Interpolating it into a
+	// message - setActionError(`Validation failed: ${error}`) - renders it just
+	// as inline as passing it straight through, and anchoring on the opening
+	// paren missed exactly that, so a call site reporting through BOTH the
+	// banner and the toast read as toast-only and passed. Scan to the end of
+	// the statement instead, which also tolerates nested parens.
+	setter := regexp.MustCompile(`\bset[A-Z]\w*\([^;]*\b` + regexp.QuoteMeta(errVar) + `\b`)
 	start := max(callEndLine-1, 0)
 	end := min(start+6, len(lines))
 	for _, l := range lines[start:end] {
