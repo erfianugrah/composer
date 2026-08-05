@@ -23,52 +23,74 @@
     {
       "name": "error-channel",
       "cmd": "go test -count=1 ./internal/api/ -run TestWebActionsReportErrorExactlyOnce",
-      "hint": "Each failure line is an action whose error reaches the user twice (toast + inline banner) or, if it says 'reported nowhere', zero times. Pick one channel: delete the set*(err) line for row/menu actions, or keep it and add `inlineError: true` to the run() options for form submits."
+      "hint": "Each failure line is an action whose error reaches the user twice (toast + inline banner) or, if it says 'reported nowhere', zero times. Pick one channel: delete the set*(err) line for row/menu actions, or keep it and add `inlineError: true` to the run() options for form submits.",
+      "canary": "sd 'after: fetchStack' 'after: fetchStack, inlineError: true' web/src/components/stack/StackDetail.tsx"
     },
     {
       "name": "status-vocab",
       "cmd": "go test -count=1 ./internal/api/ -run TestWebStatusVocabulary",
-      "hint": "A component defined its own statusColor map, chose its own fallback for an unknown status, or the shared map is missing a container state the Go domain emits. Import from @/lib/status-colors and use statusClass(x)."
+      "hint": "A component defined its own statusColor map, chose its own fallback for an unknown status, or the shared map is missing a container state the Go domain emits. Import from @/lib/status-colors and use statusClass(x).",
+      "canary": "printf '\\nconst statusColor: Record<string, string> = { running: \"canary\" };\\n' >> web/src/components/stack/StackDetail.tsx"
     },
     {
       "name": "feedback-guard",
       "cmd": "go test -count=1 ./internal/api/ -run TestWebMutatingCallsReportOutcome",
-      "hint": "This is the task. Each failure line is a mutating apiFetch that reports nothing to the user. Wrap it in useAction's run(...) as described in the task, and bind loading={act.pending(key)} on the control. Enclosure is lexical - the apiFetch must sit inside the run() callback."
+      "hint": "This is the task. Each failure line is a mutating apiFetch that reports nothing to the user. Wrap it in useAction's run(...) as described in the task, and bind loading={act.pending(key)} on the control. Enclosure is lexical - the apiFetch must sit inside the run() callback.",
+      "canary": "printf '\\nexport function __CanaryStop({ id }: { id: string }) {\\n  return <button onClick={() => { apiFetch(`/api/v1/containers/${id}/stop`, { method: \"POST\" }); }}>stop</button>;\\n}\\n' >> web/src/components/stack/StackDetail.tsx"
     },
     {
       "name": "hostparam-guard",
       "cmd": "go test -count=1 ./internal/api/ -run TestWebCallsHostAwareEndpointsWithHost",
-      "hint": "A URL lost its ?host= parameter. Multi-host stacks resolve on the wrong docker daemon without it. Keep the hostSuffix()/hostQuery() interpolation inside the URL literal when you move a call into run()."
+      "hint": "A URL lost its ?host= parameter. Multi-host stacks resolve on the wrong docker daemon without it. Keep the hostSuffix()/hostQuery() interpolation inside the URL literal when you move a call into run().",
+      "canary": "sd '\\$\\{action\\}\\$\\{hostQuery\\(stack\\?\\.host\\)\\}' '${action}' web/src/components/stack/StackDetail.tsx"
     },
     {
       "name": "typecheck",
       "cmd": "cd web && ./node_modules/.bin/tsc --noEmit -p tsconfig.json",
-      "hint": "TypeScript errors. Common cause: run() expects a function returning apiFetch's { error } shape - pass `() => apiFetch(...)`, not the awaited result."
+      "hint": "TypeScript errors. Common cause: run() expects a function returning apiFetch's { error } shape - pass `() => apiFetch(...)`, not the awaited result.",
+      "canary": "printf '\\nconst __canary: number = \"not a number\";\\n' >> web/src/lib/use-busy.ts"
     },
     {
       "name": "vet",
       "cmd": "go vet ./...",
-      "hint": "Go vet failure. You should not be editing Go at all for this task."
+      "hint": "Go vet failure. You should not be editing Go at all for this task.",
+      "canary": "printf '\\nfunc canaryVetBadPrintf() { fmt.Printf(\"%%d\\\\n\", \"not an int\") }\\n' >> internal/api/static.go"
     },
     {
       "name": "unit",
       "cmd": "go test -count=1 ./internal/... -skip 'TestWebMutatingCallsReportOutcome|TestWebCallsHostAwareEndpointsWithHost|TestWebActionsReportErrorExactlyOnce|TestWebStatusVocabulary'",
-      "hint": "A Go test broke. The two web guard tests are excluded here (they have their own sensors), so this is a real regression - you should not be editing Go at all for this task."
+      "hint": "A Go test broke. The two web guard tests are excluded here (they have their own sensors), so this is a real regression - you should not be editing Go at all for this task.",
+      "canary": "printf '\\nfunc TestZZCanaryUnit(t *testing.T) { t.Fatal(\"canary planted a failing test\") }\\n' >> internal/api/static_test.go"
+    },
+    {
+      "name": "unit-count-floor",
+      "cmd": "test $(go test ./internal/... -list '.*' | grep -c '^Test') -ge 379",
+      "hint": "Fewer Go tests are being collected than the floor, so tests were deleted or renamed out of collection. Restore them; do not lower the floor to match.",
+      "canary": "sd 'func TestRegisterStaticFiles_SPAFallback' 'func disabledCanaryRegisterStaticFiles_SPAFallback' internal/api/static_test.go"
     },
     {
       "name": "build",
       "cmd": "cd web && bunx --bun astro build",
-      "hint": "The frontend build failed - a syntax or import error in a component you edited."
+      "hint": "The frontend build failed - a syntax or import error in a component you edited.",
+      "canary": "printf '\\nexport function __CanaryBuild( { return ((( ;\\n' >> web/src/lib/use-busy.ts"
     },
     {
       "name": "e2e",
-      "cmd": "cd web && bunx playwright test --reporter=line",
-      "hint": "A browser test broke - a real behavioural regression in a flow you touched. Note that adding a toast can break an unscoped getByText() assertion via Playwright strict mode (two matches: toast + table). That is a genuine signal: fix the component if behaviour changed, but the e2e specs are outside your write scope, so report it rather than editing them."
+      "cmd": "make build-frontend >/dev/null && cd web && bunx playwright test --reporter=line",
+      "hint": "A browser test broke - a real behavioural regression in a flow you touched. Note that adding a toast can break an unscoped getByText() assertion via Playwright strict mode (two matches: toast + table). That is a genuine signal: fix the component if behaviour changed, but the e2e specs are outside your write scope, so report it rather than editing them.",
+      "canary": "sd 'select-all-stack-containers' 'select-all-canary-broken' web/src/components/stack/StackDetail.tsx"
+    },
+    {
+      "name": "e2e-count-floor",
+      "cmd": "cd web && test \"$(bunx playwright test --list --reporter=line 2>&1 | rg -o 'Total: ([0-9]+) test' -r '$1')\" -ge 67",
+      "hint": "The Playwright suite collects fewer than 67 tests, so browser tests were deleted or stopped being collected. Restore them; do not lower the floor.",
+      "canary": "sed -i '/^test.describe(\"Stack container bulk actions\"/,$d' web/e2e/smoke.spec.ts"
     },
     {
       "name": "judge",
-      "cmd": "bun ~/.pi/agent/skills/self-correcting-loop/judge.ts --model anthropic/claude-opus-4.8 --spec 'Each mutating action in the web UI reports its failure through exactly one channel: an error toast, or an inline banner with inlineError:true suppressing the toast.' --rubric 'FAIL if: any error path was deleted without a replacement channel; any inlineError:true was added to a callsite that has no visible inline banner; a form submit lost its persistent inline error in favour of a transient toast; a row/table/dropdown action kept a banner that is now the only reason its error state exists (dead state left behind); the success path, labels, pending keys or loading bindings were altered; pre-request field validation banners were removed. PASS if every callsite reports failure exactly once, the channel fits the surface (banner for form submits, toast for row actions), and nothing else changed.'",
-      "hint": "The reviewer rejected the change. Read its reasoning and fix the specific conversions it named - do not revert everything."
+      "cmd": "bun ~/.pi/agent/skills/self-correcting-loop/judge.ts --model anthropic/claude-opus-4.8 --spec 'Review this diff for conformance with the web UI conventions this repo enforces, and judge ONLY what the diff actually changes. The conventions: (1) every mutating apiFetch is wrapped in useAction'\\''s run() so the control shows pending state and the user gets exactly one outcome message; (2) one failure, one message - either an error toast or an inline banner with inlineError:true suppressing the toast, never both and never neither, with banners for form submits and toasts for row/table/dropdown actions; (3) never claim an outcome that was not observed - an endpoint answering with a job id has accepted work, not finished it, so it uses run()'\\''s dispatched label and polls; (4) one status vocabulary - statusClass() from @/lib/status-colors, no private statusColor maps and no per-component fallback; (5) any container/image/network/volume endpoint call interpolates hostSuffix()/hostQuery() inside the URL literal, because without ?host= it resolves against the wrong docker daemon. A convention whose surface this diff does not touch is not violated by this diff - a change that is simply unrelated to these conventions (harness config, Go internals, docs) satisfies the spec vacuously and PASSES.' --rubric 'FAIL if the diff: introduces a mutating call that reports nothing to the user; reports one failure through two channels, or adds inlineError:true where no inline banner renders that error; replaces a form submit'\\''s persistent banner with a transient toast; leaves dead error state behind after removing a channel; reports success for work that was only dispatched; defines a private status colour map or its own fallback instead of statusClass(); omits ?host= on a host-aware endpoint; deletes, skips, narrows or weakens a test rather than fixing the code; stubs or no-ops a function and presents it as an implementation; needs a paragraph-long comment to justify a workaround (fix the code instead); or drops existing behaviour while moving code - refetches, dialog closes, form resets and pre-request validation all stay. PASS if every callsite the diff touches obeys the five conventions, the channel fits the surface, tests were not weakened, and the diff does nothing else. Do NOT fail a diff merely because it does not implement some other change you would have liked, and do not demand work the diff was never scoped to do.'",
+      "hint": "The reviewer rejected the change. Read its reasoning and fix the specific conversions it named - do not revert everything.",
+      "canary": "sd 'after: fetchStack' 'after: fetchStack, inlineError: true' web/src/components/stack/StackDetail.tsx"
     }
   ]
 }
