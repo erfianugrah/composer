@@ -76,7 +76,7 @@
     },
     {
       "name": "e2e",
-      "cmd": "make build-frontend >/dev/null && cd web && bunx playwright test --reporter=line",
+      "cmd": "make build-frontend >/dev/null && cd web && out=$(bunx playwright test --reporter=line 2>&1); rc=$?; if [ $rc -eq 0 ]; then printf '%s\\n' \"$out\" | tail -3; else printf '%s\\n' \"$out\" | rg -v '\\[[0-9]+/[0-9]+\\]' | tail -60; for f in test-results/*/error-context.md; do [ -f \"$f\" ] || continue; echo \"--- $f ---\"; head -30 \"$f\"; done; fi; exit $rc",
       "hint": "A browser test broke - a real behavioural regression in a flow you touched. Note that adding a toast can break an unscoped getByText() assertion via Playwright strict mode (two matches: toast + table). That is a genuine signal: fix the component if behaviour changed, but the e2e specs are outside your write scope, so report it rather than editing them.",
       "canary": "sd 'select-all-stack-containers' 'select-all-canary-broken' web/src/components/stack/StackDetail.tsx"
     },
