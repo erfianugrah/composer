@@ -24,19 +24,19 @@
       "name": "error-channel",
       "cmd": "go test -count=1 ./internal/api/ -run TestWebActionsReportErrorExactlyOnce",
       "hint": "Each failure line is an action whose error reaches the user twice (toast + inline banner) or, if it says 'reported nowhere', zero times. Pick one channel: delete the set*(err) line for row/menu actions, or keep it and add `inlineError: true` to the run() options for form submits.",
-      "canary": "sd 'after: fetchStack' 'after: fetchStack, inlineError: true' web/src/components/stack/StackDetail.tsx"
+      "canary": "printf '\\nasync function __canaryChannel(setMsg: (s: string) => void) {\\n  const { error } = await act.run(\"canary\", () => apiFetch(\"/api/v1/x\", { method: \"POST\" }), { running: \"r\", success: \"s\", failure: \"f\" });\\n  if (error) setMsg(`Failed: ${error}`);\\n}\\n' >> web/src/components/stack/StackDetail.tsx"
     },
     {
       "name": "status-vocab",
       "cmd": "go test -count=1 ./internal/api/ -run TestWebStatusVocabulary",
       "hint": "A component defined its own statusColor map, chose its own fallback for an unknown status, or the shared map is missing a container state the Go domain emits. Import from @/lib/status-colors and use statusClass(x).",
-      "canary": "printf '\\nconst statusColor: Record<string, string> = { running: \"canary\" };\\n' >> web/src/components/stack/StackDetail.tsx"
+      "canary": "printf '\\nconst __canaryTone: Record<string, string> = {\\n  running: \"text-cp-green\",\\n  exited: \"text-muted-foreground\",\\n  paused: \"text-cp-amber\",\\n};\\n' >> web/src/components/stack/StackDetail.tsx"
     },
     {
       "name": "feedback-guard",
       "cmd": "go test -count=1 ./internal/api/ -run TestWebMutatingCallsReportOutcome",
       "hint": "This is the task. Each failure line is a mutating apiFetch that reports nothing to the user. Wrap it in useAction's run(...) as described in the task, and bind loading={act.pending(key)} on the control. Enclosure is lexical - the apiFetch must sit inside the run() callback.",
-      "canary": "printf '\\nexport function __CanaryStop({ id }: { id: string }) {\\n  return <button onClick={() => { apiFetch(`/api/v1/containers/${id}/stop`, { method: \"POST\" }); }}>stop</button>;\\n}\\n' >> web/src/components/stack/StackDetail.tsx"
+      "canary": "printf '\\nexport function __CanaryFeedback({ id }: { id: string }) {\\n  const method = \"POST\";\\n  return <button onClick={() => { apiFetch(`/api/v1/containers/${id}/stop${hostQuery(undefined)}`, { method }); }}>x</button>;\\n}\\n' >> web/src/components/stack/StackDetail.tsx"
     },
     {
       "name": "hostparam-guard",

@@ -46,7 +46,7 @@ func TestWebMutatingCallsReportOutcome(t *testing.T) {
 		text := string(content)
 
 		for _, call := range findCalls(text, "apiFetch") {
-			if !mutatingCall.MatchString(call.args) {
+			if !isMutating(call.args) {
 				continue
 			}
 			if hasExemption(text, call.start) {
@@ -64,7 +64,28 @@ func TestWebMutatingCallsReportOutcome(t *testing.T) {
 	}
 }
 
-var mutatingCall = regexp.MustCompile(`method:\s*["'` + "`" + `](POST|PUT|DELETE|PATCH)`)
+var (
+	// A call is mutating unless it says otherwise. Anchoring on a bare
+	// uppercase verb literal - method: "POST" - was evadable five ways: a
+	// variable verb, a ternary, the { method } shorthand, lowercase "post",
+	// and an options object passed by name. Each of those is the same
+	// unreported mutation, written differently.
+	methodKey   = regexp.MustCompile(`\bmethod\s*(?::|[,}\s])`)
+	explicitGET = regexp.MustCompile(`(?i)\bmethod\s*:\s*["'` + "`" + `]\s*GET`)
+	// apiFetch(url, opts) hides its verb behind an identifier, so the args
+	// cannot be judged here. Treat it as mutating: inline the options, wrap
+	// it in run(), or mark it feedback-exempt.
+	opaqueOptions = regexp.MustCompile(`,\s*[A-Za-z_$][A-Za-z0-9_$]*\s*$`)
+)
+
+// isMutating reports whether an apiFetch call's arguments describe anything
+// other than a plain GET.
+func isMutating(args string) bool {
+	if explicitGET.MatchString(args) {
+		return false
+	}
+	return methodKey.MatchString(args) || opaqueOptions.MatchString(strings.TrimSpace(args))
+}
 
 type callSite struct {
 	start   int    // index of the callee identifier
