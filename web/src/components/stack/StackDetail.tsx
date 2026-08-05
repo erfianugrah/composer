@@ -4,11 +4,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
-import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TH, TD, SelectAllTH } from "@/components/ui/data-table";
+import { BulkBar } from "@/components/ui/bulk-bar";
 import { clickableRow } from "@/lib/row-interactions";
 import { apiFetch } from "@/lib/api/errors";
 import { useAction } from "@/lib/use-action";
-import { actionKey, containerActionLabels, transitionalStatusFor } from "@/lib/container-actions";
+import { useSelection } from "@/lib/use-selection";
+import { useBusy, runBulk } from "@/lib/use-busy";
+import {
+  actionKey,
+  bulkContainerLabels,
+  containerActionLabels,
+  transitionalStatusFor,
+  type LifecycleVerb,
+} from "@/lib/container-actions";
 
 // Lazy load browser-only components (xterm + CodeMirror don't work in Node SSR)
 const Terminal = lazy(() => import("@/components/terminal/Terminal").then(m => ({ default: m.Terminal })));
@@ -60,6 +69,8 @@ interface StackData {
     last_commit_sha: string;
   };
 }
+
+type StackContainer = StackData["containers"][number];
 
 // Color rules: reserve red for genuine alert states (unhealthy).
 
@@ -155,6 +166,46 @@ export function StackDetail({ stackName }: { stackName: string }) {
       containerActionLabels(action, name),
       { after: fetchStack },
     );
+
+  // Bulk selection for the Containers tab. A stack routinely holds a dozen
+  // services, so "stop these four" was previously four separate clicks each
+  // waiting on its own round trip. Scoped per stack so switching stacks does
+  // not carry a selection across to a different set of containers.
+  const containers = stack?.containers ?? [];
+  const sel = useSelection<StackContainer>((c) => c.id, { persistKey: `stack-containers:${stackName}` });
+  // Drop selected ids that no longer exist, so a persisted selection can
+  // never fire a verb at a container the refetch removed. Keyed on `stack`
+  // rather than the derived array, which is a fresh identity every render.
+  useEffect(() => { if (stack) sel.prune(stack.containers); }, [stack, sel.prune]);
+  const { busy: bulkBusy, run: runBulkBusy } = useBusy();
+
+  // Each verb only applies to the containers it is legal for, and the button
+  // reports that count -- selecting 6 containers of which 2 run means
+  // "Stop (2)", not a bulk call that 404s on the other four.
+  const selected = containers.filter((c) => sel.isSelected(c.id));
+  const selRunning = selected.filter((c) => c.status === "running");
+  const selPaused = selected.filter((c) => c.status === "paused");
+  const selStopped = selected.filter((c) => c.status !== "running" && c.status !== "paused");
+
+  function bulkTargets(action: LifecycleVerb): StackContainer[] {
+    if (action === "start") return selStopped;
+    if (action === "unpause") return selPaused;
+    return selRunning;
+  }
+
+  async function bulkContainerAction(action: LifecycleVerb) {
+    const ids = bulkTargets(action).map((c) => c.id);
+    if (ids.length === 0) return;
+    await runBulkBusy(async () => {
+      await runBulk(
+        ids,
+        (id) => apiFetch(`/api/v1/containers/${id}/${action}${hostQuery(stack?.host)}`, { method: "POST" }),
+        bulkContainerLabels(action),
+      );
+      sel.clear();
+      await fetchStack();
+    });
+  }
 
   const fetchStack = async () => {
     const { data, error } = await apiFetch<StackData>(`/api/v1/stacks/${stackName}`);
@@ -373,9 +424,37 @@ export function StackDetail({ stackName }: { stackName: string }) {
           {stack.containers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No containers running</p>
           ) : (
+            <>
+            <BulkBar count={sel.size} onClear={sel.clear} busy={bulkBusy}>
+              <Button size="xs" variant="outline" onClick={() => bulkContainerAction("start")} disabled={bulkBusy || selStopped.length === 0}>
+                Start ({selStopped.length})
+              </Button>
+              <Button size="xs" variant="outline" onClick={() => bulkContainerAction("restart")} disabled={bulkBusy || selRunning.length === 0}>
+                Restart ({selRunning.length})
+              </Button>
+              <Button size="xs" variant="outline" onClick={() => bulkContainerAction("pause")} disabled={bulkBusy || selRunning.length === 0}>
+                Pause ({selRunning.length})
+              </Button>
+              {/* Unpause only appears when something paused is selected: a
+                  permanently-zero button is noise in a five-verb bar. */}
+              {selPaused.length > 0 && (
+                <Button size="xs" variant="outline" onClick={() => bulkContainerAction("unpause")} disabled={bulkBusy}>
+                  Unpause ({selPaused.length})
+                </Button>
+              )}
+              <ConfirmButton
+                size="xs"
+                message={`Stop ${selRunning.length} running container${selRunning.length === 1 ? "" : "s"}?`}
+                onConfirm={() => bulkContainerAction("stop")}
+                disabled={bulkBusy || selRunning.length === 0}
+              >
+                Stop ({selRunning.length})
+              </ConfirmButton>
+            </BulkBar>
             <Table data-testid="container-list">
               <THead>
                 <TR>
+                  <SelectAllTH rows={stack.containers} selection={sel} testId="select-all-stack-containers" />
                   <TH>Name</TH>
                   <TH>Status</TH>
                   <TH>Image</TH>
@@ -393,6 +472,18 @@ export function StackDetail({ stackName }: { stackName: string }) {
                       inspectContainerId === c.id ? `Hide inspector for ${c.name}` : `Inspect ${c.name}`,
                     )}
                   >
+                    {/* stopPropagation: the row itself toggles the inspector,
+                        and ticking a checkbox must not also open it. */}
+                    <TD className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={sel.isSelected(c.id)}
+                        onChange={() => sel.toggle(c.id)}
+                        aria-label={`Select ${c.name}`}
+                        className="rounded"
+                        data-testid={`select-container-${c.id}`}
+                      />
+                    </TD>
                     <TD className="font-medium truncate max-w-[260px]" title={c.name}>
                       <span className="flex items-center gap-2">
                         <span className="text-muted-foreground text-xs select-none" aria-hidden="true">
@@ -488,6 +579,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
                 ))}
               </TBody>
             </Table>
+            </>
           )}
           {/* Master/detail inspector — reveals when a row is selected. */}
           {inspectContainerId && (() => {

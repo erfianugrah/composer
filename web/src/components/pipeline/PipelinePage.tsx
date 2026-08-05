@@ -591,7 +591,7 @@ function PipelineTable({
       await runBulk(
         ids,
         (id) => apiFetch(`/api/v1/pipelines/${id}`, { method: "DELETE" }),
-        { verb: "Delet", noun: "pipeline" },
+        { verb: "Delet", noun: "pipeline", infinitive: "delete" },
       );
       sel.clear();
       refresh();

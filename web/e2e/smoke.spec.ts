@@ -792,3 +792,149 @@ test.describe("Async job actions", () => {
     await expect(page.getByText("Pruned unused volumes")).toBeHidden();
   });
 });
+
+test.describe("Stack container bulk actions", () => {
+  // A stack detail payload with a mix of states, so each bulk verb has a
+  // distinct eligible subset and the button counts are meaningful.
+  const stackBody = {
+    name: "demo",
+    path: "/srv/demo",
+    source: "local",
+    status: "partial",
+    host: "remote1",
+    compose_content: "services: {}\n",
+    containers: [
+      { id: "aaa", name: "web", service_name: "web", image: "nginx:1", status: "running", health: "none" },
+      { id: "bbb", name: "api", service_name: "api", image: "api:1", status: "running", health: "none" },
+      { id: "ccc", name: "worker", service_name: "worker", image: "worker:1", status: "exited", health: "none" },
+    ],
+  };
+
+  async function mockStack(page: import("@playwright/test").Page) {
+    await page.route("**/api/v1/stacks/demo", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(stackBody) }),
+    );
+  }
+
+  // `astro preview` serves the built files verbatim, so /stacks/demo 404s.
+  // The Go server walks up to /stacks/index.html for exactly this path (see
+  // internal/api/static.go SPA fallback); replay that here so the test drives
+  // the same URL an operator does rather than a synthetic entry point. The
+  // pattern is the fully-qualified document URL so it cannot also swallow
+  // the /api/v1/stacks/demo XHR.
+  async function gotoStackDetail(page: import("@playwright/test").Page, path: string) {
+    const base = "http://localhost:4321";
+    await page.route(`${base}${path}`, async (route) => {
+      if (route.request().resourceType() !== "document") return route.fallback();
+      const shell = await route.fetch({ url: `${base}/stacks/` });
+      return route.fulfill({ response: shell });
+    });
+    await page.goto(path);
+  }
+
+  test("selecting containers reveals a bulk bar with per-verb counts", async ({ page }) => {
+    await mockStack(page);
+    await gotoStackDetail(page, "/stacks/demo");
+
+    // No selection, no bar: the toolbar must not occupy space until it can act.
+    await expect(page.getByTestId("bulk-bar")).toBeHidden();
+
+    await page.getByTestId("select-all-stack-containers").check();
+
+    const bar = page.getByTestId("bulk-bar");
+    await expect(bar).toBeVisible();
+    await expect(bar.getByText("3 selected")).toBeVisible();
+    // Two running, one exited: each verb counts only what it can legally act on.
+    await expect(bar.getByRole("button", { name: "Restart (2)" })).toBeEnabled();
+    await expect(bar.getByRole("button", { name: "Pause (2)" })).toBeEnabled();
+    await expect(bar.getByRole("button", { name: "Stop (2)" })).toBeEnabled();
+    await expect(bar.getByRole("button", { name: "Start (1)" })).toBeEnabled();
+    // Nothing is paused, so Unpause is not rendered at all.
+    await expect(bar.getByRole("button", { name: /^Unpause/ })).toHaveCount(0);
+  });
+
+  test("ticking a checkbox does not open the row inspector", async ({ page }) => {
+    await mockStack(page);
+    await gotoStackDetail(page, "/stacks/demo");
+
+    await page.getByTestId("select-container-aaa").check();
+
+    await expect(page.getByTestId("bulk-bar")).toBeVisible();
+    await expect(page.getByLabel("Inspector for web")).toHaveCount(0);
+  });
+
+  test("bulk restart posts to every running container on the stack's host", async ({ page }) => {
+    await mockStack(page);
+    const posted: string[] = [];
+    await page.route("**/api/v1/containers/*/restart**", (route) => {
+      posted.push(new URL(route.request().url()).pathname + new URL(route.request().url()).search);
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+
+    await gotoStackDetail(page, "/stacks/demo");
+    await page.getByTestId("select-all-stack-containers").check();
+    await page.getByRole("button", { name: "Restart (2)" }).click();
+
+    await expect(page.getByText("Restarted 2 containers")).toBeVisible();
+    expect(posted.sort()).toEqual([
+      "/api/v1/containers/aaa/restart?host=remote1",
+      "/api/v1/containers/bbb/restart?host=remote1",
+    ]);
+    // A completed bulk action drops the selection; the bar goes away.
+    await expect(page.getByTestId("bulk-bar")).toBeHidden();
+  });
+
+  test("bulk start posts only to the containers that are not running", async ({ page }) => {
+    await mockStack(page);
+    const posted: string[] = [];
+    await page.route("**/api/v1/containers/*/start**", (route) => {
+      posted.push(new URL(route.request().url()).pathname.split("/")[4]);
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+
+    await gotoStackDetail(page, "/stacks/demo");
+    await page.getByTestId("select-all-stack-containers").check();
+    await page.getByRole("button", { name: "Start (1)" }).click();
+
+    // All three are selected, but only the exited one is a legal target: a
+    // verb must never fan out to a container it cannot act on.
+    await expect(page.getByText("Started 1 container")).toBeVisible();
+    expect(posted).toEqual(["ccc"]);
+  });
+
+  test("bulk stop asks for confirmation before firing", async ({ page }) => {
+    await mockStack(page);
+    let stops = 0;
+    await page.route("**/api/v1/containers/*/stop**", (route) => {
+      stops++;
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+
+    await gotoStackDetail(page, "/stacks/demo");
+    await page.getByTestId("select-container-aaa").check();
+    await page.getByRole("button", { name: "Stop (1)" }).click();
+
+    // The confirm step is the gate: nothing has been stopped yet.
+    expect(stops).toBe(0);
+    await page.getByRole("button", { name: "Confirm" }).click();
+    await expect(page.getByText("Stopped 1 container")).toBeVisible();
+    expect(stops).toBe(1);
+  });
+
+  test("a partly-failed bulk names the failure instead of claiming success", async ({ page }) => {
+    await mockStack(page);
+    await page.route("**/api/v1/containers/aaa/restart**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+    );
+    await page.route("**/api/v1/containers/bbb/restart**", (route) =>
+      route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "daemon refused" }) }),
+    );
+
+    await gotoStackDetail(page, "/stacks/demo");
+    await page.getByTestId("select-all-stack-containers").check();
+    await page.getByRole("button", { name: "Restart (2)" }).click();
+
+    await expect(page.getByText("Restarted 1 of 2 containers; 1 failed")).toBeVisible();
+    await expect(page.getByText("Restarted 2 containers")).toBeHidden();
+  });
+});

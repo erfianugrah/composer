@@ -73,7 +73,7 @@ export function VolumesPage() {
     const names = sorted.filter((v) => sel.isSelected(v.name)).map((v) => v.name);
     await run(async () => {
       await runBulk(names, (n) => apiFetch(`/api/v1/volumes/${encodeURIComponent(n)}${hostSuffix()}`, { method: "DELETE" }), {
-        verb: "Remov", noun: "volume",
+        verb: "Remov", noun: "volume", infinitive: "remove",
       });
       sel.clear();
       fetch_();

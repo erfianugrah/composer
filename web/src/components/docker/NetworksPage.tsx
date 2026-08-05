@@ -77,7 +77,7 @@ export function NetworksPage() {
     const ids = sorted.filter((n) => sel.isSelected(n.id)).map((n) => n.id);
     await run(async () => {
       await runBulk(ids, (id) => apiFetch(`/api/v1/networks/${id}${hostSuffix()}`, { method: "DELETE" }), {
-        verb: "Remov", noun: "network",
+        verb: "Remov", noun: "network", infinitive: "remove",
       });
       sel.clear();
       fetch_();

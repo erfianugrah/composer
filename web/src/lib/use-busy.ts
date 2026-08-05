@@ -41,13 +41,24 @@ export interface BulkOutcome {
  *
  * On completion, emits a toast describing the outcome:
  *   - all ok      → success toast "<verb>ed N <noun>"
- *   - all failed  → error toast with the first error detail
+ *   - all failed  → error toast with the first error detail (uses
+ *                   `labels.infinitive` so the sentence is grammatical)
  *   - mixed       → error toast "<verb>ed N of M; K failed" with first error
  */
 export async function runBulk(
   ids: string[],
   op: (id: string) => Promise<{ error: string | null }>,
-  labels: { verb: string; noun: string },
+  labels: {
+    /** Past-tense stem: "Delet" renders "Deleted 3 users". */
+    verb: string;
+    noun: string;
+    /**
+     * Infinitive used by the failure toast. Without it the stem leaks into
+     * the sentence ("Failed to delet 3 users"), because a past-tense stem is
+     * not a verb. Optional so existing callers keep working.
+     */
+    infinitive?: string;
+  },
 ): Promise<BulkOutcome> {
   const results = await Promise.allSettled(ids.map((id) => op(id).then((r) => ({ id, error: r.error }))));
   const failures: Array<{ id: string; error: string }> = [];
@@ -66,7 +77,7 @@ export async function runBulk(
   if (failures.length === 0) {
     toast.success(`${labels.verb}ed ${total} ${noun}`);
   } else if (ok === 0) {
-    toast.error(`Failed to ${labels.verb.toLowerCase()} ${total} ${noun}`, {
+    toast.error(`Failed to ${labels.infinitive ?? labels.verb.toLowerCase()} ${total} ${noun}`, {
       detail: failures[0]?.error,
     });
   } else {

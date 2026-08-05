@@ -135,7 +135,7 @@ export function ImagesPage() {
     const ids = sorted.filter((i) => sel.isSelected(i.id)).map((i) => i.id);
     await run(async () => {
       await runBulk(ids, (id) => apiFetch(`/api/v1/images/${id}${hostSuffix()}`, { method: "DELETE" }), {
-        verb: "Remov", noun: "image",
+        verb: "Remov", noun: "image", infinitive: "remove",
       });
       sel.clear();
       fetch_();

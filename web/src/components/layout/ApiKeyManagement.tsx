@@ -140,7 +140,7 @@ export function ApiKeyManagement() {
     const ids = sorted.filter((k) => sel.isSelected(k.id)).map((k) => k.id);
     await run(async () => {
       await runBulk(ids, (id) => apiFetch(`/api/v1/keys/${id}`, { method: "DELETE" }), {
-        verb: "Revok", noun: "key",
+        verb: "Revok", noun: "key", infinitive: "revoke",
       });
       sel.clear();
       fetchKeys();

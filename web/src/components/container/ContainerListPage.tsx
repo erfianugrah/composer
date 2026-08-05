@@ -7,7 +7,7 @@ import { FilterInput } from "@/components/ui/filter-input";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api/errors";
 import { useAction } from "@/lib/use-action";
-import { actionKey, containerActionLabels, transitionalStatusFor } from "@/lib/container-actions";
+import { actionKey, bulkContainerLabels, containerActionLabels, transitionalStatusFor } from "@/lib/container-actions";
 import { useSort } from "@/lib/use-sort";
 import { useSelection } from "@/lib/use-selection";
 import { useBusy, runBulk } from "@/lib/use-busy";
@@ -116,11 +116,12 @@ export function ContainerListPage() {
   async function bulk(action: "start" | "stop" | "restart") {
     const targets = action === "start" ? selectedStopped : selectedRunning;
     const ids = targets.map((c) => c.id);
-    const verb = action === "start" ? "Start" : action === "stop" ? "Stopp" : "Restart";
     await run(async () => {
-      await runBulk(ids, (id) => apiFetch(`/api/v1/containers/${id}/${action}${hostSuffix()}`, { method: "POST" }), {
-        verb, noun: "container",
-      });
+      await runBulk(
+        ids,
+        (id) => apiFetch(`/api/v1/containers/${id}/${action}${hostSuffix()}`, { method: "POST" }),
+        bulkContainerLabels(action),
+      );
       sel.clear();
       setTimeout(fetchContainers, 1000);
     });

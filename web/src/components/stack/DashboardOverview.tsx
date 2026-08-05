@@ -92,9 +92,10 @@ export function DashboardOverview() {
     const targets = action === "up" ? selectedStopped : selectedRunning;
     const names = targets.map((s) => s.name);
     const verb = action === "up" ? "Deploy" : action === "down" ? "Stopp" : "Restart";
+    const infinitive = action === "up" ? "deploy" : action === "down" ? "stop" : "restart";
     await run(async () => {
       await runBulk(names, (n) => apiFetch(`/api/v1/stacks/${encodeURIComponent(n)}/${action}`, { method: "POST" }), {
-        verb, noun: "stack",
+        verb, noun: "stack", infinitive,
       });
       sel.clear();
     });

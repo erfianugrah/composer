@@ -136,7 +136,7 @@ export function WebhookSettings() {
     const ids = sorted.filter((w) => sel.isSelected(w.id)).map((w) => w.id);
     await run(async () => {
       await runBulk(ids, (id) => apiFetch(`/api/v1/webhooks/${id}`, { method: "DELETE" }), {
-        verb: "Delet", noun: "webhook",
+        verb: "Delet", noun: "webhook", infinitive: "delete",
       });
       sel.clear();
       fetchWebhooks();

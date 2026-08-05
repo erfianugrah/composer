@@ -125,7 +125,7 @@ export function UserManagement() {
     const ids = sorted.filter((u) => sel.isSelected(u.id)).map((u) => u.id);
     await run(async () => {
       await runBulk(ids, (id) => apiFetch(`/api/v1/users/${id}`, { method: "DELETE" }), {
-        verb: "Delet", noun: "user",
+        verb: "Delet", noun: "user", infinitive: "delete",
       });
       sel.clear();
       fetchUsers();

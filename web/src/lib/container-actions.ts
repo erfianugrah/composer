@@ -58,6 +58,27 @@ export function containerActionLabels(verb: string, name: string): ActionLabels 
 }
 
 /**
+ * Past-tense stem `runBulk` appends "ed" to. Kept next to the singular
+ * wording so the bulk bar and the per-row buttons cannot drift apart.
+ */
+const bulkStem: Record<LifecycleVerb, string> = {
+  start: "Start",
+  stop: "Stopp",
+  restart: "Restart",
+  pause: "Paus",
+  unpause: "Unpaus",
+};
+
+/**
+ * Toast wording for a bulk lifecycle action across N containers. Both
+ * container tables (stack detail, containers page) feed this straight into
+ * `runBulk`.
+ */
+export function bulkContainerLabels(verb: LifecycleVerb) {
+  return { verb: bulkStem[verb], noun: "container", infinitive: verb };
+}
+
+/**
  * The transitional label for whichever lifecycle verb is currently running on
  * this container, or null when it is idle. Drives the row badge.
  */

@@ -347,7 +347,7 @@ function SSHKeysCard({
       await runBulk(
         names,
         (n) => apiFetch(`/api/v1/system/config/ssh-keys/${n}`, { method: "DELETE" }),
-        { verb: "Delet", noun: "SSH key" },
+        { verb: "Delet", noun: "SSH key", infinitive: "delete" },
       );
       sel.clear();
       await refresh();
