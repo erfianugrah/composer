@@ -21,7 +21,9 @@
     "Do not modify, rename, or weaken any existing test. New tests use the exact names the guide specifies.",
     "If go commands fail inside the sandbox on a read-only build cache, export GOCACHE=/tmp/gocache GOMODCACHE=$(go env GOMODCACHE).",
     "A sensor satisfied by a stub (panic(\"not implemented\"), TODO body) is a FAILED iteration.",
-    "If you need a paragraph-long comment to justify a workaround, the code is wrong - fix the code."
+    "If you need a paragraph-long comment to justify a workaround, the code is wrong - fix the code.",
+    "Never stage content in scratch files (new_tests.txt etc) - write code and tests directly into their final files with the edit/write tools.",
+    "Work in dependency order and keep the tree compiling: interface first, then store impl, then executor, then wiring, then tests. Before finishing, run: go build ./... && go vet ./... && go test ./internal/infra/store/ ./internal/app/ ./internal/domain/pipeline/ -count=1. An iteration that leaves the tree broken is always rolled back."
   ],
   "sensors": [
     {
