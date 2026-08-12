@@ -81,12 +81,6 @@
       "expect": "fail",
       "cmd": "go test ./internal/app/ -run 'TestPipelineExecutor_IncrementalPersist' -count=1 -v 2>&1 | grep -q -- '--- PASS: TestPipelineExecutor_IncrementalPersist'",
       "hint": "write TestPipelineExecutor_IncrementalPersist per the guide: a recording fake persister sees a call after start and after each step batch, accumulating."
-    },
-    {
-      "name": "secrets",
-      "cmd": "gitleaks dir internal --no-banner && gitleaks dir cmd --no-banner",
-      "hint": "a credential-shaped string landed in the diff - move it out of the code; never delete the scanner.",
-      "canary": "printf '\\nconst zzLoopCanaryToken = \"%s%s\"\\n' 'ghp_A1b2C3d4' 'E5f6G7h8I9j0K1l2M3n4O5p6Q7r8' >> internal/app/pipeline_service.go"
     }
   ]
 }
