@@ -1,96 +1,92 @@
 {
-  "task": "Bring the Composer web UI back into compliance with the feedback and status conventions its sensors enforce. Each failing sensor names the exact files and lines; those are the work list, and green sensors are the definition of done.\n\nThe conventions, and why each exists:\n\n1. EVERY MUTATING CALL REPORTS ITS OUTCOME (`feedback-guard`).\n   Wrap the apiFetch in useAction's run() so the control shows pending state and the user gets one toast:\n\n     const act = useAction();\n     act.run(\n       key,                                              // per control, e.g. `${id}:restart`\n       () => apiFetch(`/api/v1/...`, { method: \"POST\" }),\n       { running: \"Restarting\", success: `Restarted ${name}`, failure: `Failed to restart ${name}` },\n       { after: refetch },\n     );\n     <Button loading={act.pending(key)} .../>\n\n   run() resolves to { data, error, ok } and is generic (`act.run<T>(...)`), so routing a call through it never costs you the response body. Enclosure is lexical - a toast near an unwrapped call does not count. Reference: `containerAction` in components/stack/StackDetail.tsx.\n\n2. ONE FAILURE, ONE MESSAGE (`error-channel`).\n   Either the toast reports it, or an inline banner does with `inlineError: true` in the run options to suppress the toast. Never both, never neither. Form submits want the banner (it persists while the user fixes the field); row, table and dropdown actions want the toast.\n\n3. NEVER CLAIM AN OUTCOME YOU HAVE NOT OBSERVED.\n   An endpoint that answers with a job id has accepted the work, not finished it. run() handles this: give it a `dispatched` label and it reports the dispatch, polls the job, then reports the real result. Do not paper over it with a success message.\n\n4. ONE STATUS VOCABULARY (`status-vocab`).\n   Import from @/lib/status-colors and use statusClass(x) for the fallback. No private statusColor maps, no per-component fallback. Every container state the Go domain emits needs an entry; red is reserved for states a human must act on (unhealthy, dead), not for a container someone stopped on purpose.\n\n5. MULTI-HOST CALLS CARRY ?host= (`hostparam-guard`).\n   Any container/image/network/volume endpoint resolves against the local daemon without it, so an action on a remote stack fails with \"container not found\". Keep the hostSuffix()/hostQuery() interpolation inside the URL literal.\n\nRULES:\n- Do not weaken, skip or delete a sensor or any test. The sensors live under internal/ and are outside your write scope for a reason.\n- Do not drop existing behaviour while moving code: refetches, dialog closes, form resets and pre-request field validation all stay.\n- An action that is genuinely correct to stay silent takes a `feedback-exempt: <reason>` comment with a real reason. Navigation-away flows (login) and console commands whose output lands inline are the established cases; there should be about five in the whole codebase.\n- Keep changes scoped to what the sensors are asking for. This harness is a regression net, not licence for a refactor.",
-  "maxIterations": 12,
-  "models": [
-    "openrouter/deepseek/deepseek-v4-pro",
-    "openrouter/z-ai/glm-5.2",
-    "anthropic/claude-sonnet-5"
-  ],
+  "task": "Implement incremental pipeline-run persistence in composer, per .pi/loop-guide.md (read it first, it is the binding spec). Four pieces: (1) UpdateActive + FailInterrupted methods on pipeline.RunRepository, (2) store implementation in internal/infra/store/pipeline_repo.go with the SQL terminal-state guard, leaving the existing Update method untouched, (3) an optional persist hook on PipelineExecutor (setter, not a constructor change) called after run.Start() and after each batch's RecordStepResult loop, guarded by the run context, errors never failing the run, (4) wiring in NewPipelineService plus a FailInterrupted reaper call in cmd/composerd/main.go. Write the three contract tests the guide names exactly: TestRunRepo_UpdateActive, TestRunRepo_FailInterrupted, TestPipelineExecutor_IncrementalPersist. Update any test fakes implementing RunRepository.",
+  "maxIterations": 15,
+  "models": ["llama-server/loop", "llama-server/qwen3-coder", "anthropic/claude-sonnet-5"],
   "stallPatience": 3,
-  "tools": [
-    "read",
-    "edit",
-    "write",
-    "bash",
-    "grep",
-    "glob"
-  ],
+  "tools": ["read", "edit", "write", "bash", "grep", "glob"],
   "writeScope": [
-    "web/src/components/**",
-    "web/src/lib/**"
+    "internal/domain/pipeline/**",
+    "internal/app/pipeline_*",
+    "internal/infra/store/pipeline_repo*",
+    "cmd/composerd/main.go"
+  ],
+  "agentTimeoutMs": 2700000,
+  "timeoutMs": 600000,
+  "guide": [".pi/loop-guide.md"],
+  "rules": [
+    "NEVER run ./composerd, go run ./cmd/composerd/, or any built composer binary - its startup hook AES-encrypts ~/.ssh and the keys are unrecoverable. Verification is go test / go build / go vet ONLY.",
+    "Do not change the existing RunRepo.Update method's SQL, signature, or semantics - CancelRun depends on them.",
+    "Persist errors from the incremental hook must be warn-logged and swallowed - a persistence failure must never fail a pipeline run.",
+    "No new module dependencies; stdlib + existing deps only.",
+    "Do not modify, rename, or weaken any existing test. New tests use the exact names the guide specifies.",
+    "If go commands fail inside the sandbox on a read-only build cache, export GOCACHE=/tmp/gocache GOMODCACHE=$(go env GOMODCACHE).",
+    "A sensor satisfied by a stub (panic(\"not implemented\"), TODO body) is a FAILED iteration.",
+    "If you need a paragraph-long comment to justify a workaround, the code is wrong - fix the code."
   ],
   "sensors": [
     {
-      "name": "error-channel",
-      "cmd": "go test -count=1 ./internal/api/ -run TestWebActionsReportErrorExactlyOnce",
-      "hint": "Each failure line is an action whose error reaches the user twice (toast + inline banner) or, if it says 'reported nowhere', zero times. Pick one channel: delete the set*(err) line for row/menu actions, or keep it and add `inlineError: true` to the run() options for form submits.",
-      "canary": "printf '\\nasync function __canaryChannel(setMsg: (s: string) => void) {\\n  const { error } = await act.run(\"canary\", () => apiFetch(\"/api/v1/x\", { method: \"POST\" }), { running: \"r\", success: \"s\", failure: \"f\" });\\n  if (error) setMsg(`Failed: ${error}`);\\n}\\n' >> web/src/components/stack/StackDetail.tsx"
-    },
-    {
-      "name": "status-vocab",
-      "cmd": "go test -count=1 ./internal/api/ -run TestWebStatusVocabulary",
-      "hint": "A component defined its own statusColor map, chose its own fallback for an unknown status, or the shared map is missing a container state the Go domain emits. Import from @/lib/status-colors and use statusClass(x).",
-      "canary": "printf '\\nconst __canaryTone: Record<string, string> = {\\n  running: \"text-cp-green\",\\n  exited: \"text-muted-foreground\",\\n  paused: \"text-cp-amber\",\\n};\\n' >> web/src/components/stack/StackDetail.tsx"
-    },
-    {
-      "name": "feedback-guard",
-      "cmd": "go test -count=1 ./internal/api/ -run TestWebMutatingCallsReportOutcome",
-      "hint": "This is the task. Each failure line is a mutating apiFetch that reports nothing to the user. Wrap it in useAction's run(...) as described in the task, and bind loading={act.pending(key)} on the control. Enclosure is lexical - the apiFetch must sit inside the run() callback.",
-      "canary": "printf '\\nexport function __CanaryFeedback({ id }: { id: string }) {\\n  const method = \"POST\";\\n  return <button onClick={() => { apiFetch(`/api/v1/containers/${id}/stop${hostQuery(undefined)}`, { method }); }}>x</button>;\\n}\\n' >> web/src/components/stack/StackDetail.tsx"
-    },
-    {
-      "name": "hostparam-guard",
-      "cmd": "go test -count=1 ./internal/api/ -run TestWebCallsHostAwareEndpointsWithHost",
-      "hint": "A URL lost its ?host= parameter. Multi-host stacks resolve on the wrong docker daemon without it. Keep the hostSuffix()/hostQuery() interpolation inside the URL literal when you move a call into run().",
-      "canary": "sd '\\$\\{action\\}\\$\\{hostQuery\\(stack\\?\\.host\\)\\}' '${action}' web/src/components/stack/StackDetail.tsx"
-    },
-    {
-      "name": "typecheck",
-      "cmd": "cd web && ./node_modules/.bin/tsc --noEmit -p tsconfig.json",
-      "hint": "TypeScript errors. Common cause: run() expects a function returning apiFetch's { error } shape - pass `() => apiFetch(...)`, not the awaited result.",
-      "canary": "printf '\\nconst __canary: number = \"not a number\";\\n' >> web/src/lib/use-busy.ts"
+      "name": "build",
+      "cmd": "go build ./...",
+      "hint": "compile error - read the message, fix the code named in it. web/dist is already built; do not touch frontend code.",
+      "canary": "printf '\\nfunc zzLoopCanaryBroken() { undefinedSymbol() }\\n' >> internal/app/pipeline_executor.go"
     },
     {
       "name": "vet",
       "cmd": "go vet ./...",
-      "hint": "Go vet failure. You should not be editing Go at all for this task.",
-      "canary": "printf '\\nfunc canaryVetBadPrintf() { fmt.Printf(\"%%d\\\\n\", \"not an int\") }\\n' >> internal/api/static.go"
+      "hint": "vet type-checks test files too - a test fake missing the new RunRepository methods fails here, not at build.",
+      "canary": "printf '\\nfunc zzLoopCanaryVet() { _ = fmt.Sprintf(\"%d\", \"x\") }\\n' >> internal/app/pipeline_executor.go"
     },
     {
-      "name": "unit",
-      "cmd": "go test -count=1 ./internal/... -skip 'TestWebMutatingCallsReportOutcome|TestWebCallsHostAwareEndpointsWithHost|TestWebActionsReportErrorExactlyOnce|TestWebStatusVocabulary'",
-      "hint": "A Go test broke. The two web guard tests are excluded here (they have their own sensors), so this is a real regression - you should not be editing Go at all for this task.",
-      "canary": "printf '\\nfunc TestZZCanaryUnit(t *testing.T) { t.Fatal(\"canary planted a failing test\") }\\n' >> internal/api/static_test.go"
+      "name": "no-stubs",
+      "cmd": "test -z \"$(rg --no-messages 'panic\\(\\\"(TODO|not implemented)' internal/ cmd/)\"",
+      "hint": "a stubbed function passes build but gates nothing - implement it for real.",
+      "canary": "printf '\\nfunc zzLoopCanaryStub() { panic(\"not implemented\") }\\n' >> internal/app/pipeline_executor.go"
     },
     {
-      "name": "unit-count-floor",
-      "cmd": "test $(go test ./internal/... -list '.*' | grep -c '^Test') -ge 379",
-      "hint": "Fewer Go tests are being collected than the floor, so tests were deleted or renamed out of collection. Restore them; do not lower the floor to match.",
-      "canary": "sd 'func TestRegisterStaticFiles_SPAFallback' 'func disabledCanaryRegisterStaticFiles_SPAFallback' internal/api/static_test.go"
+      "name": "test-domain",
+      "cmd": "go test ./internal/domain/pipeline/... -count=1",
+      "hint": "domain run/pipeline tests must stay green - you may add methods to the interface but not change existing aggregate behavior."
     },
     {
-      "name": "build",
-      "cmd": "cd web && bunx --bun astro build",
-      "hint": "The frontend build failed - a syntax or import error in a component you edited.",
-      "canary": "printf '\\nexport function __CanaryBuild( { return ((( ;\\n' >> web/src/lib/use-busy.ts"
+      "name": "test-store",
+      "cmd": "go test ./internal/infra/store/ -count=1",
+      "hint": "existing store tests must stay green - Update is untouched; new behavior goes in new methods.",
+      "canary": "printf '\\nfunc TestZZLoopCanary(t *testing.T) { t.Fatal(\"canary\") }\\n' >> internal/infra/store/pipeline_repo_test.go"
     },
     {
-      "name": "e2e",
-      "cmd": "make build-frontend >/dev/null && cd web && out=$(bunx playwright test --reporter=line 2>&1); rc=$?; if [ $rc -eq 0 ]; then printf '%s\\n' \"$out\" | tail -3; else printf '%s\\n' \"$out\" | rg -v '\\[[0-9]+/[0-9]+\\]' | tail -60; for f in test-results/*/error-context.md; do [ -f \"$f\" ] || continue; echo \"--- $f ---\"; head -30 \"$f\"; done; fi; exit $rc",
-      "hint": "A browser test broke - a real behavioural regression in a flow you touched. Note that adding a toast can break an unscoped getByText() assertion via Playwright strict mode (two matches: toast + table). That is a genuine signal: fix the component if behaviour changed, but the e2e specs are outside your write scope, so report it rather than editing them.",
-      "canary": "sd 'select-all-stack-containers' 'select-all-canary-broken' web/src/components/stack/StackDetail.tsx"
+      "name": "test-app",
+      "cmd": "go test ./internal/app/ -count=1",
+      "timeoutMs": 900000,
+      "hint": "app tests fake their deps - a compile break here usually means a fake RunRepository is missing the new interface methods."
     },
     {
-      "name": "e2e-count-floor",
-      "cmd": "cd web && test \"$(bunx playwright test --list --reporter=line 2>&1 | rg -o 'Total: ([0-9]+) test' -r '$1')\" -ge 76",
-      "hint": "The Playwright suite collects fewer than 76 tests, so browser tests were deleted or stopped being collected. Restore them; do not lower the floor.",
-      "canary": "sed -i '/^test.describe(\"Stack container bulk actions\"/,$d' web/e2e/smoke.spec.ts"
+      "name": "test-count-floor",
+      "cmd": "test $(go test ./internal/app ./internal/infra/store ./internal/domain/pipeline -list '.*' 2>/dev/null | grep -c '^Test') -ge 157",
+      "hint": "tests were removed, renamed, or stopped being collected - restore them. The count only goes up."
     },
     {
-      "name": "judge",
-      "cmd": "bun ~/.pi/agent/skills/self-correcting-loop/judge.ts --model anthropic/claude-opus-4.8 --spec 'Review this diff for conformance with the web UI conventions this repo enforces, and judge ONLY what the diff actually changes. The conventions: (1) every mutating apiFetch is wrapped in useAction'\\''s run() so the control shows pending state and the user gets exactly one outcome message; (2) one failure, one message - either an error toast or an inline banner with inlineError:true suppressing the toast, never both and never neither, with banners for form submits and toasts for row/table/dropdown actions; (3) never claim an outcome that was not observed - an endpoint answering with a job id has accepted work, not finished it, so it uses run()'\\''s dispatched label and polls; (4) one status vocabulary - statusClass() from @/lib/status-colors, no private statusColor maps and no per-component fallback; (5) any container/image/network/volume endpoint call interpolates hostSuffix()/hostQuery() inside the URL literal, because without ?host= it resolves against the wrong docker daemon. A convention whose surface this diff does not touch is not violated by this diff - a change that is simply unrelated to these conventions (harness config, Go internals, docs) satisfies the spec vacuously and PASSES.' --rubric 'FAIL if the diff: introduces a mutating call that reports nothing to the user; reports one failure through two channels, or adds inlineError:true where no inline banner renders that error; replaces a form submit'\\''s persistent banner with a transient toast; leaves dead error state behind after removing a channel; reports success for work that was only dispatched; defines a private status colour map or its own fallback instead of statusClass(); omits ?host= on a host-aware endpoint; deletes, skips, narrows or weakens a test rather than fixing the code; stubs or no-ops a function and presents it as an implementation; needs a paragraph-long comment to justify a workaround (fix the code instead); or drops existing behaviour while moving code - refetches, dialog closes, form resets and pre-request validation all stay. PASS if every callsite the diff touches obeys the five conventions, the channel fits the surface, tests were not weakened, and the diff does nothing else. Do NOT fail a diff merely because it does not implement some other change you would have liked, and do not demand work the diff was never scoped to do.'",
-      "hint": "The reviewer rejected the change. Read its reasoning and fix the specific conversions it named - do not revert everything.",
-      "canary": "sd 'after: fetchStack' 'after: fetchStack, inlineError: true' web/src/components/stack/StackDetail.tsx"
+      "name": "feature-update-active",
+      "expect": "fail",
+      "cmd": "go test ./internal/infra/store/ -run 'TestRunRepo_UpdateActive' -count=1 -v 2>&1 | grep -q -- '--- PASS: TestRunRepo_UpdateActive'",
+      "hint": "write TestRunRepo_UpdateActive per the guide: active run persists, terminal run is a nil no-op. The test must exist AND pass."
+    },
+    {
+      "name": "feature-fail-interrupted",
+      "expect": "fail",
+      "cmd": "go test ./internal/infra/store/ -run 'TestRunRepo_FailInterrupted' -count=1 -v 2>&1 | grep -q -- '--- PASS: TestRunRepo_FailInterrupted'",
+      "hint": "write TestRunRepo_FailInterrupted per the guide: pending+running flip to failed, terminal rows untouched, count returned."
+    },
+    {
+      "name": "feature-executor-persist",
+      "expect": "fail",
+      "cmd": "go test ./internal/app/ -run 'TestPipelineExecutor_IncrementalPersist' -count=1 -v 2>&1 | grep -q -- '--- PASS: TestPipelineExecutor_IncrementalPersist'",
+      "hint": "write TestPipelineExecutor_IncrementalPersist per the guide: a recording fake persister sees a call after start and after each step batch, accumulating."
+    },
+    {
+      "name": "secrets",
+      "cmd": "gitleaks dir internal --no-banner && gitleaks dir cmd --no-banner",
+      "hint": "a credential-shaped string landed in the diff - move it out of the code; never delete the scanner.",
+      "canary": "printf '\\nconst zzLoopCanaryToken = \"%s%s\"\\n' 'ghp_A1b2C3d4' 'E5f6G7h8I9j0K1l2M3n4O5p6Q7r8' >> internal/app/pipeline_service.go"
     }
   ]
 }
