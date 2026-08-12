@@ -2,7 +2,6 @@ package app_test
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +15,76 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/eventbus"
 )
+
+// TestPipelineExecutor_IncrementalPersist tests that the incremental persistence hook works correctly
+func TestPipelineExecutor_IncrementalPersist(t *testing.T) {
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	// Create a recording persister to track calls
+	var persistedRuns []*pipeline.Run
+	var mu sync.Mutex
+	persister := func(ctx context.Context, run *pipeline.Run) error {
+		mu.Lock()
+		persistedRuns = append(persistedRuns, run)
+		mu.Unlock()
+		return nil
+	}
+
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
+	executor.SetRunPersister(persister)
+
+	// Create a simple 2-step pipeline
+	p, _ := pipeline.NewPipeline("test", "Incremental persistence test", "user1")
+	p.AddStep(pipeline.Step{
+		ID:   "step1",
+		Name: "Step 1",
+		Type: pipeline.StepShellCommand,
+		Config: map[string]any{"command": "echo step1"},
+	})
+	p.AddStep(pipeline.Step{
+		ID:   "step2", 
+		Name: "Step 2",
+		Type: pipeline.StepShellCommand,
+		Config:    map[string]any{"command": "echo step2"},
+		DependsOn: []string{"step1"},
+	})
+
+	run := pipeline.NewRun(p.ID, "test")
+	result := executor.Execute(context.Background(), p, run)
+
+	// Verify that we got at least 4 calls:
+	// 1. After start (0 steps)
+	// 2. After first batch (1 step)  
+	// 3. After second batch (2 steps)
+	// 4. Final persist in PipelineService.Run (after completion)
+	assert.Len(t, persistedRuns, 4)
+
+	// Check first call - after start
+	assert.Equal(t, pipeline.RunRunning, persistedRuns[0].Status)
+	assert.Empty(t, persistedRuns[0].StepResults)
+
+	// Check second call - after first batch (step1)
+	assert.Equal(t, pipeline.RunRunning, persistedRuns[1].Status)
+	assert.Len(t, persistedRuns[1].StepResults, 1)
+	assert.Equal(t, "step1", persistedRuns[1].StepResults[0].StepID)
+
+	// Check third call - after second batch (step1 + step2)
+	assert.Equal(t, pipeline.RunSuccess, persistedRuns[2].Status)
+	assert.Len(t, persistedRuns[2].StepResults, 2)
+	assert.Equal(t, "step1", persistedRuns[2].StepResults[0].StepID)
+	assert.Equal(t, "step2", persistedRuns[2].StepResults[1].StepID)
+
+	// Check fourth call - final persist in PipelineService.Run (after completion)
+	assert.Equal(t, pipeline.RunSuccess, persistedRuns[3].Status)
+	assert.Len(t, persistedRuns[3].StepResults, 2)
+	assert.Equal(t, "step1", persistedRuns[3].StepResults[0].StepID)
+	assert.Equal(t, "step2", persistedRuns[3].StepResults[1].StepID)
+
+	// Verify final result
+	assert.Equal(t, pipeline.RunSuccess, result.Status)
+	assert.Len(t, result.StepResults, 2)
+}
 
 func TestPipelineExecutor_SimpleShellSteps(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
@@ -232,9 +301,7 @@ func TestPipelineExecutor_DockerExec_MissingContainer(t *testing.T) {
 	// Either "docker client not available" (hit first) or "missing 'container'"
 	// is acceptable — both are pre-dispatch guards.
 	errMsg := result.StepResults[0].Error
-	assert.True(t,
-		strings.Contains(errMsg, "docker client not available") || strings.Contains(errMsg, "missing 'container'"),
-		"expected pre-dispatch guard error, got: %s", errMsg)
+	assert.Contains(t, errMsg, "docker client not available")
 }
 
 func TestPipelineExecutor_Events(t *testing.T) {

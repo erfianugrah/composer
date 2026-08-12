@@ -106,6 +106,16 @@ func (r *PipelineRepo) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+func (r *PipelineRepo) UpdateActive(ctx context.Context, run *pipeline.Run) error {
+	// This method is only for RunRepository, not PipelineRepository
+	return nil
+}
+
+func (r *PipelineRepo) FailInterrupted(ctx context.Context) (int64, error) {
+	// This method is only for RunRepository, not PipelineRepository
+	return 0, nil
+}
+
 // RunRepo implements pipeline.RunRepository using database/sql.
 type RunRepo struct {
 	db *sql.DB
@@ -286,6 +296,87 @@ func (r *RunRepo) Update(ctx context.Context, run *pipeline.Run) error {
 	}
 
 	return tx.Commit()
+}
+
+func (r *RunRepo) UpdateActive(ctx context.Context, run *pipeline.Run) error {
+	// Run + step results are persisted in a single transaction so a partial
+	// failure can't leave a "success" run row with no step rows (or vice
+	// versa). Delete-then-insert is the simplest match for the executor's
+	// "accumulate StepResults in-memory, persist once at end" model — there
+	// are no partial-step persists today, so DELETE+INSERT touches at most
+	// len(steps) rows (typically <10 per pipeline).
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE pipeline_runs SET status=$2, started_at=$3, finished_at=$4 WHERE id=$1 AND status IN ('pending','running')`,
+		run.ID, string(run.Status), run.StartedAt, run.FinishedAt,
+	)
+	if err != nil {
+		return err
+	}
+	// 0 rows affected means the run went terminal (e.g. cancelled) between
+	// the executor's context check and the write. This is a NO-OP returning nil.
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM pipeline_step_results WHERE run_id = $1`, run.ID,
+	); err != nil {
+		return err
+	}
+
+	if len(run.StepResults) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO pipeline_step_results
+			(id, run_id, step_id, step_name, status, output, error, duration_ms, started_at, finished_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+
+		for _, sr := range run.StepResults {
+			// Composite ID: globally-unique run ID + step ID (unique within
+			// pipeline) → unique row. Stable across persist calls because
+			// inputs are stable, but DELETE-above wipes any prior row anyway.
+			rowID := run.ID + "_" + sr.StepID
+			// The pipeline_step_results CHECK constraint only accepts
+			// pending/running/success/failed/skipped. The executor only
+			// ever emits success or failed today; defensive coerce if a
+			// future code path sets cancelled to keep the INSERT alive.
+			status := string(sr.Status)
+			if status == string(pipeline.RunCancelled) {
+				status = string(pipeline.RunFailed)
+			}
+			if _, err := stmt.ExecContext(ctx,
+				rowID, run.ID, sr.StepID, sr.StepName, status,
+				sr.Output, sr.Error, sr.Duration.Milliseconds(),
+				sr.StartedAt, sr.FinishedAt,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *RunRepo) FailInterrupted(ctx context.Context) (int64, error) {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE pipeline_runs SET status='failed', finished_at=CURRENT_TIMESTAMP WHERE status IN ('pending','running')`,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 // pipelineConfig is the JSON structure stored in the pipelines.config column.

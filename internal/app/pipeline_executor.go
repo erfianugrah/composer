@@ -33,6 +33,7 @@ type PipelineExecutor struct {
 	gitCfgs   stack.GitConfigRepository // per-stack SOPS age key
 	stacksDir string                    // global age key fallback
 	locks     *StackLocks               // shared with StackService — prevents concurrent compose ops
+	persistRun func(ctx context.Context, run *pipeline.Run) error // optional incremental persistence hook
 }
 
 // NewPipelineExecutor constructs the executor.
@@ -70,9 +71,23 @@ func (e *PipelineExecutor) Execute(ctx context.Context, p *pipeline.Pipeline, ru
 	}
 
 	run.Start()
+
+	// Persist after start (status running, 0 steps)
+	if e.persistRun != nil {
+		if runCtxErr := ctx.Err(); runCtxErr == nil {
+			e.persistRun(ctx, run)
+		}
+	}
 	e.publishEvent(domevent.PipelineRunStarted{
 		PipelineID: p.ID, RunID: run.ID, Timestamp: time.Now(),
 	})
+
+	// Persist after start (status running, 0 steps)
+	if e.persistRun != nil {
+		if runCtxErr := ctx.Err(); runCtxErr == nil {
+			e.persistRun(ctx, run)
+		}
+	}
 
 	batches := p.ExecutionOrder()
 
@@ -156,6 +171,13 @@ func (e *PipelineExecutor) Execute(ctx context.Context, p *pipeline.Pipeline, ru
 		if !hasHardFailure && run.Status == pipeline.RunFailed {
 			run.Status = pipeline.RunRunning
 			run.FinishedAt = nil // reset premature FinishedAt
+		}
+
+		// Persist after each batch (with accumulated step results)
+		if e.persistRun != nil {
+			if runCtxErr := ctx.Err(); runCtxErr == nil {
+				e.persistRun(ctx, run)
+			}
 		}
 	}
 
@@ -473,6 +495,10 @@ func validateHTTPTarget(rawURL string) error {
 		}
 	}
 	return nil
+}
+
+func (e *PipelineExecutor) SetRunPersister(persister func(ctx context.Context, run *pipeline.Run) error) {
+	e.persistRun = persister
 }
 
 func (e *PipelineExecutor) publishEvent(evt domevent.Event) {

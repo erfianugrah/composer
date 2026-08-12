@@ -300,6 +300,13 @@ func main() {
 		// on domain events (stack.deployed, stack.stopped, etc.). This enables
 		// post-deploy hooks without the webhook race — see PIPELINE_EVENT_TRIGGER_PLAN.md.
 		pipelineSvc.SubscribeBus(bus)
+		// Mark any pipeline runs that were left 'running' after an unclean shutdown
+		n, err := runRepo.FailInterrupted(ctx)
+		if err != nil {
+			logger.Warn("failed to reap interrupted pipeline runs", zap.Error(err))
+		} else if n > 0 {
+			logger.Info("reaped interrupted pipeline runs", zap.Int64("count", n))
+		}
 	}
 
 	// --- Cron Scheduler (for pipeline schedule triggers) ---

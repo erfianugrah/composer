@@ -46,6 +46,8 @@ func (r *mockPipelineRepo) List(_ context.Context) ([]*pipeline.Pipeline, error)
 	return out, nil
 }
 func (r *mockPipelineRepo) Update(_ context.Context, p *pipeline.Pipeline) error { return nil }
+func (r *mockPipelineRepo) UpdateActive(_ context.Context, run *pipeline.Run) error { return nil }
+func (r *mockPipelineRepo) FailInterrupted(_ context.Context) (int64, error) { return 0, nil }
 func (r *mockPipelineRepo) Delete(_ context.Context, _ string) error             { return nil }
 
 // mockRunRepo tracks Update calls to verify persist behavior.
@@ -59,7 +61,7 @@ type mockRunRepo struct {
 }
 
 func newMockRunRepo() *mockRunRepo {
-	return &mockRunRepo{runs: make(map[string]*pipeline.Run)}
+	return &mockRunRepo{runs: make(map[string]*pipeline.Run), updateCh: make(chan struct{}, 8)}
 }
 
 func (r *mockRunRepo) Create(_ context.Context, run *pipeline.Run) error {
@@ -96,6 +98,14 @@ func (r *mockRunRepo) Update(_ context.Context, run *pipeline.Run) error {
 		}
 	}
 	return nil
+}
+
+func (r *mockRunRepo) UpdateActive(_ context.Context, run *pipeline.Run) error {
+	return r.Update(context.Background(), run)
+}
+
+func (r *mockRunRepo) FailInterrupted(_ context.Context) (int64, error) {
+	return 0, nil
 }
 
 // waitForUpdate blocks until at least one Update call occurs or timeout.

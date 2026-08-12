@@ -32,13 +32,21 @@ func NewPipelineService(
 	executor *PipelineExecutor,
 ) *PipelineService {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &PipelineService{
+	s := &PipelineService{
 		pipelines: pipelines,
 		runs:      runs,
 		executor:  executor,
 		cancel:    cancel,
 		runCtx:    ctx,
 	}
+	s.executor.SetRunPersister(func(ctx context.Context, run *pipeline.Run) error {
+		err := s.runs.UpdateActive(ctx, run)
+		if err != nil && s.logger != nil {
+			s.logger.Warn("failed to persist pipeline run incrementally", zap.String("run_id", run.ID), zap.Error(err))
+		}
+		return err
+	})
+	return s
 }
 
 // Stop cancels all in-flight pipeline runs and waits for them to finish.

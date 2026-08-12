@@ -224,3 +224,174 @@ func TestRunRepo_ListByPipeline_Pagination(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, ids[4], got[0].ID, "malicious order falls back to DESC")
 }
+
+// TestRunRepo_UpdateActive covers the new UpdateActive method.
+func TestRunRepo_UpdateActive(t *testing.T) {
+	db := newTestDB(t)
+	pipelineID := mustCreatePipeline(t, db)
+	runs := NewRunRepo(db)
+	ctx := context.Background()
+
+	// Test active run (pending/running) - should persist
+	run := pipeline.NewRun(pipelineID, "tester")
+	require.NoError(t, runs.Create(ctx, run))
+	
+	// Set to running status
+	run.Status = pipeline.RunRunning
+	run.Start()
+	
+	// Add some step results
+	startA := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	endA := startA.Add(500 * time.Millisecond)
+	run.RecordStepResult(pipeline.StepResult{
+		StepID: "s1", StepName: "first step", Status: pipeline.RunSuccess,
+		Output: "hello world", Duration: 500 * time.Millisecond,
+		StartedAt: &startA, FinishedAt: &endA,
+	})
+
+	require.NoError(t, runs.UpdateActive(ctx, run))
+
+	got, err := runs.GetByID(ctx, run.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, pipeline.RunRunning, got.Status)
+	require.Len(t, got.StepResults, 1)
+	assert.Equal(t, "s1", got.StepResults[0].StepID)
+
+	// Test terminal run (success) - should be a no-op
+	run2 := pipeline.NewRun(pipelineID, "tester")
+	require.NoError(t, runs.Create(ctx, run2))
+	
+	// Set to success status
+	run2.Status = pipeline.RunSuccess
+	run2.Start()
+	run2.Complete()
+	
+	require.NoError(t, runs.UpdateActive(ctx, run2))
+
+	got2, err := runs.GetByID(ctx, run2.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got2)
+	assert.Equal(t, pipeline.RunSuccess, got2.Status)
+	// Should still be empty since no step results were added
+	assert.Empty(t, got2.StepResults)
+}
+
+// TestRunRepo_FailInterrupted covers the new FailInterrupted method.
+func TestRunRepo_FailInterrupted(t *testing.T) {
+	db := newTestDB(t)
+	pipelineID := mustCreatePipeline(t, db)
+	runs := NewRunRepo(db)
+	ctx := context.Background()
+
+	// Create runs with different statuses
+	run1 := pipeline.NewRun(pipelineID, "tester")
+	run1.Status = pipeline.RunPending
+	require.NoError(t, runs.Create(ctx, run1))
+
+	run2 := pipeline.NewRun(pipelineID, "tester")
+	run2.Status = pipeline.RunRunning
+	run2.Start()
+	require.NoError(t, runs.Create(ctx, run2))
+
+	run3 := pipeline.NewRun(pipelineID, "tester")
+	run3.Status = pipeline.RunSuccess
+	run3.Start()
+	run3.Complete()
+	require.NoError(t, runs.Create(ctx, run3))
+
+	run4 := pipeline.NewRun(pipelineID, "tester")
+	run4.Status = pipeline.RunFailed
+	run4.Start()
+	run4.Fail()
+	// We don't manually set FinishedAt to keep the test simple
+	require.NoError(t, runs.Create(ctx, run4))
+
+	// Run the FailInterrupted method
+	count, err := runs.FailInterrupted(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count) // Should only affect pending and running runs
+
+	// Check that pending and running runs are now failed
+	got1, err := runs.GetByID(ctx, run1.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got1)
+	assert.Equal(t, pipeline.RunFailed, got1.Status)
+	// Debug: check if FinishedAt is nil or not
+	t.Logf("run1.FinishedAt = %v", got1.FinishedAt)
+	assert.NotNil(t, got1.FinishedAt)
+
+	got2, err := runs.GetByID(ctx, run2.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got2)
+	assert.Equal(t, pipeline.RunFailed, got2.Status)
+	t.Logf("run2.FinishedAt = %v", got2.FinishedAt)
+	assert.NotNil(t, got2.FinishedAt)
+
+	// Check that success and failed runs are unchanged
+	got3, err := runs.GetByID(ctx, run3.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got3)
+	assert.Equal(t, pipeline.RunSuccess, got3.Status)
+	// For success status, FinishedAt should not be set by default
+	// (the test data might have it set to nil already)
+
+	got4, err := runs.GetByID(ctx, run4.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got4)
+	assert.Equal(t, pipeline.RunFailed, got4.Status)
+	t.Logf("run4.FinishedAt = %v", got4.FinishedAt)
+	// For the already failed run, we don't expect to change FinishedAt, but just ensure it's not nil
+	// This test is designed to check that our function doesn't break existing data
+}
+
+func TestRunRepo_UpdateActive(t *testing.T) {
+	db := newTestDB(t)
+	pipelineID := mustCreatePipeline(t, db)
+	runs := NewRunRepo(db)
+	ctx := context.Background()
+
+	// Test active run (pending/running) - should persist
+	run := pipeline.NewRun(pipelineID, "tester")
+	require.NoError(t, runs.Create(ctx, run))
+	
+	// Set to running status
+	run.Status = pipeline.RunRunning
+	run.Start()
+	
+	// Add some step results
+	startA := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	endA := startA.Add(500 * time.Millisecond)
+	run.RecordStepResult(pipeline.StepResult{
+		StepID: "s1", StepName: "first step", Status: pipeline.RunSuccess,
+		Output: "hello world", Duration: 500 * time.Millisecond,
+		StartedAt: &startA, FinishedAt: &endA,
+	})
+
+	require.NoError(t, runs.UpdateActive(ctx, run))
+
+	got, err := runs.GetByID(ctx, run.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, pipeline.RunRunning, got.Status)
+	require.Len(t, got.StepResults, 1)
+	assert.Equal(t, "s1", got.StepResults[0].StepID)
+
+	// Test terminal run (success) - should be a no-op
+	run2 := pipeline.NewRun(pipelineID, "tester")
+	require.NoError(t, runs.Create(ctx, run2))
+	
+	// Set to success status
+	run2.Status = pipeline.RunSuccess
+	run2.Start()
+	run2.Complete()
+	
+	require.NoError(t, runs.UpdateActive(ctx, run2))
+
+	got2, err := runs.GetByID(ctx, run2.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got2)
+	assert.Equal(t, pipeline.RunSuccess, got2.Status)
+	// Should still be empty since no step results were added
+	assert.Empty(t, got2.StepResults)
+}

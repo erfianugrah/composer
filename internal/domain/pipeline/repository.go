@@ -8,6 +8,8 @@ type PipelineRepository interface {
 	GetByID(ctx context.Context, id string) (*Pipeline, error)
 	List(ctx context.Context) ([]*Pipeline, error)
 	Update(ctx context.Context, p *Pipeline) error
+	UpdateActive(ctx context.Context, run *Run) error
+	FailInterrupted(ctx context.Context) (int64, error)
 	Delete(ctx context.Context, id string) error
 }
 
@@ -30,4 +32,6 @@ type RunRepository interface {
 	GetByID(ctx context.Context, id string) (*Run, error)
 	ListByPipeline(ctx context.Context, pipelineID string, opts ListRunsOptions) ([]*Run, error)
 	Update(ctx context.Context, run *Run) error
+	UpdateActive(ctx context.Context, run *Run) error
+	FailInterrupted(ctx context.Context) (int64, error)
 }
