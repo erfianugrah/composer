@@ -45,8 +45,10 @@ func (r *mockPipelineRepo) List(_ context.Context) ([]*pipeline.Pipeline, error)
 	}
 	return out, nil
 }
-func (r *mockPipelineRepo) Update(_ context.Context, p *pipeline.Pipeline) error { return nil }
-func (r *mockPipelineRepo) Delete(_ context.Context, _ string) error             { return nil }
+func (r *mockPipelineRepo) Update(_ context.Context, p *pipeline.Pipeline) error    { return nil }
+func (r *mockPipelineRepo) UpdateActive(_ context.Context, run *pipeline.Run) error { return nil }
+func (r *mockPipelineRepo) FailInterrupted(_ context.Context) (int64, error)        { return 0, nil }
+func (r *mockPipelineRepo) Delete(_ context.Context, _ string) error                { return nil }
 
 // mockRunRepo tracks Update calls to verify persist behavior.
 type mockRunRepo struct {
@@ -59,7 +61,7 @@ type mockRunRepo struct {
 }
 
 func newMockRunRepo() *mockRunRepo {
-	return &mockRunRepo{runs: make(map[string]*pipeline.Run)}
+	return &mockRunRepo{runs: make(map[string]*pipeline.Run), updateCh: make(chan struct{}, 8)}
 }
 
 func (r *mockRunRepo) Create(_ context.Context, run *pipeline.Run) error {
@@ -98,6 +100,14 @@ func (r *mockRunRepo) Update(_ context.Context, run *pipeline.Run) error {
 	return nil
 }
 
+func (r *mockRunRepo) UpdateActive(_ context.Context, run *pipeline.Run) error {
+	return r.Update(context.Background(), run)
+}
+
+func (r *mockRunRepo) FailInterrupted(_ context.Context) (int64, error) {
+	return 0, nil
+}
+
 // waitForUpdate blocks until at least one Update call occurs or timeout.
 func (r *mockRunRepo) waitForUpdate(t *testing.T, timeout time.Duration) {
 	t.Helper()
@@ -129,14 +139,11 @@ func TestPipelineService_Run_PersistsOnCompletion(t *testing.T) {
 	require.NoError(t, err)
 	err = pipelineRepo.Create(context.Background(), p)
 	require.NoError(t, err)
-
-	// Run it
 	run, err := svc.Run(context.Background(), p.ID, "test")
 	require.NoError(t, err)
-
-	// Wait for executor goroutine to call Update (persist result).
 	runRepo.waitForUpdate(t, 5*time.Second)
-
+	runRepo.waitForUpdate(t, 5*time.Second)
+	assert.GreaterOrEqual(t, runRepo.updates.Load(), int32(2), "executor should persist completed run")
 	// Executor goroutine should have persisted (context NOT cancelled)
 	assert.GreaterOrEqual(t, runRepo.updates.Load(), int32(1), "executor should persist completed run")
 

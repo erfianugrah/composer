@@ -2,7 +2,6 @@ package app_test
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +15,108 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/stack"
 	"github.com/erfianugrah/composer/internal/infra/eventbus"
 )
+
+// TestPipelineExecutor_IncrementalPersist tests that the incremental persistence hook works correctly
+func TestPipelineExecutor_IncrementalPersist(t *testing.T) {
+	bus := eventbus.NewMemoryBus(16)
+	defer bus.Close()
+
+	// Create a recording persister to track calls. Each call snapshots the
+	// run so later executor mutations don't rewrite earlier observations.
+	var persistedRuns []*pipeline.Run
+	var mu sync.Mutex
+	persister := func(ctx context.Context, run *pipeline.Run) error {
+		snapshot := *run
+		snapshot.StepResults = append([]pipeline.StepResult(nil), run.StepResults...)
+		mu.Lock()
+		persistedRuns = append(persistedRuns, &snapshot)
+		mu.Unlock()
+		return nil
+	}
+
+	executor := app.NewPipelineExecutor(nil, nil, bus, nil, nil, "", app.NewStackLocks(), nil)
+
+	// Create a simple 2-step pipeline. Step 1 sleeps briefly so mid-run
+	// state (running with partial step results) is genuinely observable.
+	p, _ := pipeline.NewPipeline("test", "Incremental persistence test", "user1")
+	p.AddStep(pipeline.Step{
+		ID:     "step1",
+		Name:   "Step 1",
+		Type:   pipeline.StepShellCommand,
+		Config: map[string]any{"command": "sleep 0.3; echo step1"},
+	})
+	p.AddStep(pipeline.Step{
+		ID:        "step2",
+		Name:      "Step 2",
+		Type:      pipeline.StepShellCommand,
+		Config:    map[string]any{"command": "echo step2"},
+		DependsOn: []string{"step1"},
+	})
+
+	run := pipeline.NewRun(p.ID, "test")
+
+	// Run Execute in a goroutine so we can observe mid-run state
+	var result *pipeline.Run
+	done := make(chan struct{})
+	go func() {
+		result = executor.Execute(context.Background(), p, run, persister)
+		close(done)
+	}()
+
+	// Wait for the second call to the persister (after first batch).
+	// This ensures we are in the middle of the execution. The whole run
+	// takes ~0.5s, so a 5s hard deadline is generous; fail explicitly
+	// rather than hanging when the persist hook stops firing.
+	deadline := time.After(5 * time.Second)
+	for {
+		mu.Lock()
+		count := len(persistedRuns)
+		mu.Unlock()
+		if count >= 2 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for incremental persists; got %d after 5s", count)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Wait for completion
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Execute did not finish within 5s")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Verify that we got 3 calls:
+	// 1. After start (0 steps)
+	// 2. After first batch (1 step)
+	// 3. After second batch (2 steps, terminal state)
+	assert.Len(t, persistedRuns, 3)
+
+	// Check first call - after start
+	assert.Equal(t, pipeline.RunRunning, persistedRuns[0].Status)
+	assert.Empty(t, persistedRuns[0].StepResults)
+
+	// Check second call - after first batch (step1)
+	assert.Equal(t, pipeline.RunRunning, persistedRuns[1].Status)
+	assert.Len(t, persistedRuns[1].StepResults, 1)
+	assert.Equal(t, "step1", persistedRuns[1].StepResults[0].StepID)
+
+	// Check third call - after second batch (step1 + step2)
+	assert.Equal(t, pipeline.RunSuccess, persistedRuns[2].Status)
+	assert.Len(t, persistedRuns[2].StepResults, 2)
+	assert.Equal(t, "step1", persistedRuns[2].StepResults[0].StepID)
+	assert.Equal(t, "step2", persistedRuns[2].StepResults[1].StepID)
+
+	// Verify final result
+	assert.Equal(t, pipeline.RunSuccess, result.Status)
+	assert.Len(t, result.StepResults, 2)
+}
 
 func TestPipelineExecutor_SimpleShellSteps(t *testing.T) {
 	bus := eventbus.NewMemoryBus(16)
@@ -35,7 +136,7 @@ func TestPipelineExecutor_SimpleShellSteps(t *testing.T) {
 	})
 
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(context.Background(), p, run)
+	result := executor.Execute(context.Background(), p, run, nil)
 
 	assert.Equal(t, pipeline.RunSuccess, result.Status)
 	require.Len(t, result.StepResults, 2)
@@ -68,7 +169,7 @@ func TestPipelineExecutor_ParallelSteps(t *testing.T) {
 
 	start := time.Now()
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(context.Background(), p, run)
+	result := executor.Execute(context.Background(), p, run, nil)
 	elapsed := time.Since(start)
 
 	assert.Equal(t, pipeline.RunSuccess, result.Status)
@@ -96,7 +197,7 @@ func TestPipelineExecutor_StepFailure(t *testing.T) {
 	})
 
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(context.Background(), p, run)
+	result := executor.Execute(context.Background(), p, run, nil)
 
 	assert.Equal(t, pipeline.RunFailed, result.Status)
 	// Only the first step should have run
@@ -123,7 +224,7 @@ func TestPipelineExecutor_ContinueOnError(t *testing.T) {
 	})
 
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(context.Background(), p, run)
+	result := executor.Execute(context.Background(), p, run, nil)
 
 	// The run should complete (not fail) because continue_on_error is set
 	assert.Equal(t, pipeline.RunSuccess, result.Status)
@@ -149,7 +250,7 @@ func TestPipelineExecutor_ContextCancellation(t *testing.T) {
 	defer cancel()
 
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(ctx, p, run)
+	result := executor.Execute(ctx, p, run, nil)
 
 	// Should fail due to context timeout, not hang for 30s
 	assert.NotEqual(t, pipeline.RunSuccess, result.Status)
@@ -175,7 +276,7 @@ func TestPipelineExecutor_ShellCommand_OutputCap(t *testing.T) {
 	}))
 
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(context.Background(), p, run)
+	result := executor.Execute(context.Background(), p, run, nil)
 
 	require.Equal(t, pipeline.RunSuccess, result.Status)
 	require.Len(t, result.StepResults, 1)
@@ -202,7 +303,7 @@ func TestPipelineExecutor_DockerExec_NilClient(t *testing.T) {
 	}))
 
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(context.Background(), p, run)
+	result := executor.Execute(context.Background(), p, run, nil)
 
 	assert.Equal(t, pipeline.RunFailed, result.Status)
 	require.Len(t, result.StepResults, 1)
@@ -225,16 +326,14 @@ func TestPipelineExecutor_DockerExec_MissingContainer(t *testing.T) {
 	}))
 
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(context.Background(), p, run)
+	result := executor.Execute(context.Background(), p, run, nil)
 
 	assert.Equal(t, pipeline.RunFailed, result.Status)
 	require.Len(t, result.StepResults, 1)
 	// Either "docker client not available" (hit first) or "missing 'container'"
 	// is acceptable — both are pre-dispatch guards.
 	errMsg := result.StepResults[0].Error
-	assert.True(t,
-		strings.Contains(errMsg, "docker client not available") || strings.Contains(errMsg, "missing 'container'"),
-		"expected pre-dispatch guard error, got: %s", errMsg)
+	assert.Contains(t, errMsg, "docker client not available")
 }
 
 func TestPipelineExecutor_Events(t *testing.T) {
@@ -259,7 +358,7 @@ func TestPipelineExecutor_Events(t *testing.T) {
 	})
 
 	run := pipeline.NewRun(p.ID, "test")
-	executor.Execute(context.Background(), p, run)
+	executor.Execute(context.Background(), p, run, nil)
 
 	time.Sleep(50 * time.Millisecond) // let events propagate
 
@@ -307,7 +406,7 @@ func TestPipelineExecutor_ComposeStep_HostPinnedNoFactory(t *testing.T) {
 	}))
 
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(context.Background(), p, run)
+	result := executor.Execute(context.Background(), p, run, nil)
 
 	require.Equal(t, pipeline.RunFailed, result.Status)
 	require.Len(t, result.StepResults, 1)
@@ -329,7 +428,7 @@ func TestPipelineExecutor_DockerExec_HostNameNoFactory(t *testing.T) {
 	}))
 
 	run := pipeline.NewRun(p.ID, "test")
-	result := executor.Execute(context.Background(), p, run)
+	result := executor.Execute(context.Background(), p, run, nil)
 
 	require.Equal(t, pipeline.RunFailed, result.Status)
 	require.Len(t, result.StepResults, 1)

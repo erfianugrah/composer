@@ -128,12 +128,17 @@ func (s *PipelineService) Run(ctx context.Context, pipelineID, triggeredBy strin
 		defer s.runCancels.Delete(run.ID)
 		defer runCancel()
 
-		result := s.executor.Execute(runCtx, p, run)
+		result := s.executor.Execute(runCtx, p, run, func(ctx context.Context, r *pipeline.Run) error {
+			if err := s.runs.UpdateActive(ctx, r); err != nil && s.logger != nil {
+				s.logger.Warn("failed to persist pipeline run incrementally", zap.String("run_id", r.ID), zap.Error(err))
+			}
+			return err
+		})
 		// Only persist if the run wasn't cancelled externally.
 		// CancelRun handles persistence for cancelled runs to avoid last-write-wins race.
 		if runCtx.Err() == nil {
 			if err := s.runs.Update(context.Background(), result); err != nil && s.logger != nil {
-				s.logger.Warn("failed to update pipeline run", zap.String("run_id", run.ID), zap.Error(err))
+				s.logger.Warn("failed to update pipeline run", zap.String("run_id", result.ID), zap.Error(err))
 			}
 		}
 	}()

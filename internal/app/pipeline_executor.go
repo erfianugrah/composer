@@ -32,7 +32,7 @@ type PipelineExecutor struct {
 	stacks    stack.StackRepository     // resolve stack name → path
 	gitCfgs   stack.GitConfigRepository // per-stack SOPS age key
 	stacksDir string                    // global age key fallback
-	locks     *StackLocks               // shared with StackService — prevents concurrent compose ops
+	locks     *StackLocks               // shared with StackService - prevents concurrent compose ops
 }
 
 // NewPipelineExecutor constructs the executor.
@@ -63,20 +63,26 @@ func NewPipelineExecutor(
 }
 
 // Execute runs a pipeline and returns the completed run.
-func (e *PipelineExecutor) Execute(ctx context.Context, p *pipeline.Pipeline, run *pipeline.Run) *pipeline.Run {
+func (e *PipelineExecutor) Execute(ctx context.Context, p *pipeline.Pipeline, run *pipeline.Run, persist func(context.Context, *pipeline.Run) error) *pipeline.Run {
 	if err := p.Validate(); err != nil {
 		run.Fail()
 		return run
 	}
 
 	run.Start()
+
+	// Persist after start (status running, 0 steps)
+	if persist != nil {
+		if runCtxErr := ctx.Err(); runCtxErr == nil {
+			persist(ctx, run)
+		}
+	}
 	e.publishEvent(domevent.PipelineRunStarted{
 		PipelineID: p.ID, RunID: run.ID, Timestamp: time.Now(),
 	})
 
 	batches := p.ExecutionOrder()
-
-	for _, batch := range batches {
+	for i, batch := range batches {
 		if run.Status != pipeline.RunRunning {
 			break // cancelled or failed
 		}
@@ -157,8 +163,23 @@ func (e *PipelineExecutor) Execute(ctx context.Context, p *pipeline.Pipeline, ru
 			run.Status = pipeline.RunRunning
 			run.FinishedAt = nil // reset premature FinishedAt
 		}
+
+		// On the final batch, complete the run before persisting so the
+		// terminal state lands in the same write (avoids a running write
+		// immediately followed by a success write).
+		if i == len(batches)-1 && run.Status == pipeline.RunRunning {
+			run.Complete()
+		}
+
+		// Persist after each batch (with accumulated step results)
+		if persist != nil {
+			if runCtxErr := ctx.Err(); runCtxErr == nil {
+				persist(ctx, run)
+			}
+		}
 	}
 
+	// Backstop for pipelines with no execution batches.
 	if run.Status == pipeline.RunRunning {
 		run.Complete()
 	}
