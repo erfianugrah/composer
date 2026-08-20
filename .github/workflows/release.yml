@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   packages: write
+  security-events: write  # trivy SARIF upload
 
 env:
   REGISTRY: ghcr.io
@@ -178,6 +179,24 @@ jobs:
 
       - name: Inspect image
         run: docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+      # Post-push gate: fail the release if the published image has fixable
+      # CRITICAL/HIGH vulns. (Multi-arch digest flow makes pre-push gating
+      # impractical here; the scan runs on the merged manifest.)
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: sarif
+          output: trivy.sarif
+
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy.sarif
 
   # ── Notify composer instances to self-upgrade ─────────────────
   # Opt-in: set repo variable COMPOSER_UPGRADE_WEBHOOK_URL to a
