@@ -191,6 +191,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           format: table
+          trivyignores: .trivyignore
 
       - name: Trivy scan (SARIF)
         uses: aquasecurity/trivy-action@v0.36.0
@@ -201,6 +202,7 @@ jobs:
           exit-code: '0'
           format: sarif
           output: trivy.sarif
+          trivyignores: .trivyignore
 
       - uses: github/codeql-action/upload-sarif@v4
         if: always()

@@ -1,0 +1,59 @@
+# Bundled-binary findings (sops, docker-cli, buildx, compose) whose module deps
+# we don't control from this repo - they ship prebuilt in the image. Clear on
+# their own as upstream rebuilds. All expiring; re-triage at expiry.
+# exp:2026-11-20
+
+# stdlib CVEs inside bundled Go binaries (cleared when docker:29-cli / sops bump their toolchain)
+CVE-2026-33810
+CVE-2026-33811
+CVE-2026-33814
+CVE-2026-33818
+CVE-2026-39821
+CVE-2026-46600
+CVE-2026-56853
+CVE-2026-56858
+CVE-2026-56859
+CVE-2026-56860
+CVE-2026-56862
+CVE-2026-56864
+CVE-2026-56865
+CVE-2026-27136
+CVE-2026-27145
+CVE-2026-42499
+CVE-2026-42504
+CVE-2026-42508
+CVE-2026-46595
+CVE-2026-46597
+CVE-2026-25681
+
+# sops module deps (bump SOPS_VERSION in deploy/Dockerfile to clear; last check 3.12.2)
+CVE-2026-39820
+CVE-2026-39822
+CVE-2026-39828
+CVE-2026-39829
+CVE-2026-39830
+CVE-2026-39831
+CVE-2026-39832
+CVE-2026-39835
+CVE-2026-39836
+CVE-2026-39883
+CVE-2026-29181
+CVE-2026-34986
+CVE-2026-32280
+CVE-2026-32281
+CVE-2026-32283
+CVE-2026-33186
+CVE-2026-56852
+GHSA-hrxh-6v49-42gf
+
+# bundled docker-cli/buildx/compose module deps (clear on docker:29-cli refresh)
+CVE-2026-17106
+# docker/docker authz fix is for the daemon-side plugin path; buildx/compose are
+# CLI plugins that don't run the authz path. NOTE: .trivyignore is CVE-ID-scoped
+# (not per-target), so this ALSO silences CVE-2026-34040 in composerd itself until
+# the moby/moby v2 migration lands - tracked in docs/plans/. Acceptable interim:
+# composer talks to the daemon socket, it does not serve the daemon API.
+CVE-2026-34040
+
+# composerd's OWN github.com/docker/docker (CVE-2026-34040) is NOT ignored -
+# that one is ours to migrate to moby/moby v2 modules (see docs/plans).
