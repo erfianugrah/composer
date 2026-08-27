@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"time"
 
@@ -1228,10 +1229,15 @@ func (s *StackService) Containers(ctx context.Context, stackName string) ([]domc
 	return cl.ListContainers(ctx, stackName)
 }
 
+// hostListTimeout bounds a single per-host container listing. A dead or
+// blackholed host must not stall the fan-out past this.
+const hostListTimeout = 3 * time.Second
+
 // listAllContainers fans out to every host referenced by known stacks and
-// merges per-host ListContainers("") results. Returns partial results even
-// when a host fails -- the caller gets what it can and the failing host's
-// containers are simply absent.
+// merges per-host ListContainers("") results. The local daemon and every
+// remote host are listed concurrently, each under its own hostListTimeout.
+// Returns partial results even when a host fails -- the caller gets what it
+// can and the failing host's containers are simply absent.
 func (s *StackService) listAllContainers(ctx context.Context) ([]domcontainer.Container, error) {
 	stacks, err := s.stacks.List(ctx)
 	if err != nil {
@@ -1249,39 +1255,61 @@ func (s *StackService) listAllContainers(ctx context.Context) ([]domcontainer.Co
 		}
 	}
 
-	var all []domcontainer.Container
+	var (
+		mu  sync.Mutex
+		all []domcontainer.Container
+		wg  sync.WaitGroup
+	)
+	appendResult := func(results []domcontainer.Container) {
+		mu.Lock()
+		all = append(all, results...)
+		mu.Unlock()
+	}
 
 	// Local daemon.
-	if hasLocal {
-		if s.docker != nil {
-			localResult, localErr := s.docker.ListContainers(ctx, "")
+	if hasLocal && s.docker != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			listCtx, cancel := context.WithTimeout(ctx, hostListTimeout)
+			defer cancel()
+			localResult, localErr := s.docker.ListContainers(listCtx, "")
 			if localErr != nil {
 				s.log.Warn("listAllContainers: local daemon failed", zap.Error(localErr))
 			} else {
-				all = append(all, localResult...)
+				appendResult(localResult)
 			}
-		}
+		}()
 	}
 
-	// Remote hosts.
+	// Remote hosts. The ClientFor call runs inside the goroutine under the
+	// per-host timeout: client construction does a 10s Info probe on first
+	// use for a new host, so it must not run before the timeout starts.
 	if s.factory != nil {
 		for hostID := range hostIDs {
-			cl, err := s.factory.ClientFor(ctx, &hostID)
-			if err != nil {
-				s.log.Warn("listAllContainers: resolving client for docker host",
-					zap.Int64("host_id", hostID), zap.Error(err))
-				continue
-			}
-			remoteResult, remoteErr := cl.ListContainers(ctx, "")
-			if remoteErr != nil {
-				s.log.Warn("listAllContainers: listing containers on host",
-					zap.Int64("host_id", hostID), zap.Error(remoteErr))
-				continue
-			}
-			all = append(all, remoteResult...)
+			wg.Add(1)
+			go func(hostID int64) {
+				defer wg.Done()
+				hostCtx, cancel := context.WithTimeout(ctx, hostListTimeout)
+				defer cancel()
+				cl, err := s.factory.ClientFor(hostCtx, &hostID)
+				if err != nil {
+					s.log.Warn("listAllContainers: resolving client for docker host",
+						zap.Int64("host_id", hostID), zap.Error(err))
+					return
+				}
+				remoteResult, remoteErr := cl.ListContainers(hostCtx, "")
+				if remoteErr != nil {
+					s.log.Warn("listAllContainers: listing containers on host",
+						zap.Int64("host_id", hostID), zap.Error(remoteErr))
+					return
+				}
+				appendResult(remoteResult)
+			}(hostID)
 		}
 	}
 
+	wg.Wait()
 	return all, nil
 }
 

@@ -293,9 +293,21 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 
 	out := &dto.StackListOutput{}
 	out.Body.Stacks = make([]dto.StackSummary, 0, len(stacks))
+	// Resolve host names in one query instead of a GetByID per stack.
+	hostNames := make(map[int64]string)
+	if h.hostRepo != nil {
+		if hosts, err := h.hostRepo.List(ctx); err == nil {
+			for _, hst := range hosts {
+				hostNames[hst.ID] = hst.Name
+			}
+		}
+	}
 	for _, s := range stacks {
 		b := byStack[s.Name]
-		hostName := resolveHostName(ctx, h.hostRepo, s.HostID)
+		hostName := ""
+		if s.HostID != nil {
+			hostName = hostNames[*s.HostID]
+		}
 		out.Body.Stacks = append(out.Body.Stacks, dto.StackSummary{
 			Name:           s.Name,
 			Source:         string(s.Source),
@@ -369,7 +381,9 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 	out.Body.Dockerfiles = scanDockerfiles(st.Path)
 
 	// Populate containers from Docker
-	containers, err := h.stacks.Containers(ctx, st.Name)
+	listCtx, cancel := context.WithTimeout(ctx, containerListTimeout)
+	containers, err := h.stacks.Containers(listCtx, st.Name)
+	cancel()
 	if err == nil {
 		out.Body.Containers = make([]dto.ContainerOutput, 0, len(containers))
 		for _, c := range containers {

@@ -9,6 +9,11 @@ import (
 	"filippo.io/age"
 )
 
+// ageKeyFile is the data-dir key file written by an explicit UI save (the
+// UpdateAgeKey / GenerateAgeKey handlers). Present and non-empty, the file
+// wins over env vars: it is the newest expression of key intent.
+const ageKeyFile = "age.key"
+
 // GenerateAgeKey creates a new age X25519 identity (private key) and returns
 // the private key string and public key (recipient) string.
 func GenerateAgeKey() (privateKey, publicKey string, err error) {
@@ -20,58 +25,61 @@ func GenerateAgeKey() (privateKey, publicKey string, err error) {
 }
 
 // LoadGlobalAgeKey resolves the global age private key from (in priority order):
-// 1. COMPOSER_SOPS_AGE_KEY env var (inline private key)
-// 2. SOPS_AGE_KEY env var (standard SOPS convention)
-// 3. SOPS_AGE_KEYS env var (multi-line format with comments, user convention)
-// 4. COMPOSER_SOPS_AGE_KEY_FILE env var (path to key file)
-// 5. SOPS_AGE_KEY_FILE env var (standard SOPS convention)
-// 6. COMPOSER_DATA_DIR/age.key
+// 1. COMPOSER_DATA_DIR/age.key (non-empty) -- the key saved via the UI. It wins
+//    over env vars: the file was written by an explicit user action (save or
+//    generate) and is the newest expression of key intent.
+// 2. COMPOSER_SOPS_AGE_KEY env var (inline private key)
+// 3. SOPS_AGE_KEY env var (standard SOPS convention)
+// 4. SOPS_AGE_KEYS env var (multi-line format with comments, user convention)
+// 5. COMPOSER_SOPS_AGE_KEY_FILE env var (path to key file)
+// 6. SOPS_AGE_KEY_FILE env var (standard SOPS convention)
 // 7. ~/.config/sops/age/keys.txt (standard SOPS location)
 //
 // Returns the private key string or empty string if none found.
 // Never auto-generates -- the user must provide their key or explicitly generate one.
 func LoadGlobalAgeKey(dataDir string) string {
-	// 1. Composer-specific env
-	if key := os.Getenv("COMPOSER_SOPS_AGE_KEY"); key != "" {
-		return extractPrivateKey(key)
-	}
-
-	// 2. Standard SOPS env
-	if key := os.Getenv("SOPS_AGE_KEY"); key != "" {
-		return extractPrivateKey(key)
-	}
-
-	// 3. Multi-line SOPS_AGE_KEYS (user convention -- contains comments + key)
-	if keys := os.Getenv("SOPS_AGE_KEYS"); keys != "" {
-		// Unescape literal \n sequences (common in env vars from .env files / docker)
-		keys = strings.ReplaceAll(keys, `\n`, "\n")
-		return extractPrivateKey(keys)
-	}
-
-	// 4. Composer key file env
-	if keyFile := os.Getenv("COMPOSER_SOPS_AGE_KEY_FILE"); keyFile != "" {
-		if data, err := os.ReadFile(keyFile); err == nil {
-			return extractPrivateKey(string(data))
-		}
-	}
-
-	// 5. Standard SOPS key file env
-	if keyFile := os.Getenv("SOPS_AGE_KEY_FILE"); keyFile != "" {
-		if data, err := os.ReadFile(keyFile); err == nil {
-			return extractPrivateKey(string(data))
-		}
-	}
-
-	// 6. Composer data dir
+	// 1. Data-dir key file (explicit UI save) wins over env vars
 	if dataDir == "" {
 		dataDir = os.Getenv("COMPOSER_DATA_DIR")
 	}
 	if dataDir == "" {
 		dataDir = "/opt/composer"
 	}
-	composerKeyFile := filepath.Join(dataDir, "age.key")
-	if data, err := os.ReadFile(composerKeyFile); err == nil {
-		return extractPrivateKey(string(data))
+	if data, err := os.ReadFile(filepath.Join(dataDir, ageKeyFile)); err == nil {
+		if key := extractPrivateKey(string(data)); key != "" {
+			return key
+		}
+	}
+
+	// 2. Composer-specific env
+	if key := os.Getenv("COMPOSER_SOPS_AGE_KEY"); key != "" {
+		return extractPrivateKey(key)
+	}
+
+	// 3. Standard SOPS env
+	if key := os.Getenv("SOPS_AGE_KEY"); key != "" {
+		return extractPrivateKey(key)
+	}
+
+	// 4. Multi-line SOPS_AGE_KEYS (user convention -- contains comments + key)
+	if keys := os.Getenv("SOPS_AGE_KEYS"); keys != "" {
+		// Unescape literal \n sequences (common in env vars from .env files / docker)
+		keys = strings.ReplaceAll(keys, `\n`, "\n")
+		return extractPrivateKey(keys)
+	}
+
+	// 5. Composer key file env
+	if keyFile := os.Getenv("COMPOSER_SOPS_AGE_KEY_FILE"); keyFile != "" {
+		if data, err := os.ReadFile(keyFile); err == nil {
+			return extractPrivateKey(string(data))
+		}
+	}
+
+	// 6. Standard SOPS key file env
+	if keyFile := os.Getenv("SOPS_AGE_KEY_FILE"); keyFile != "" {
+		if data, err := os.ReadFile(keyFile); err == nil {
+			return extractPrivateKey(string(data))
+		}
 	}
 
 	// 7. Standard SOPS location
@@ -95,7 +103,7 @@ func SaveAgeKey(dataDir, privateKey, publicKey string) error {
 	if dataDir == "" {
 		dataDir = "/opt/composer"
 	}
-	keyFile := filepath.Join(dataDir, "age.key")
+	keyFile := filepath.Join(dataDir, ageKeyFile)
 	os.MkdirAll(dataDir, 0700)
 
 	content := fmt.Sprintf("# created by Composer -- age private key for SOPS\n# public key: %s\n%s\n", publicKey, privateKey)

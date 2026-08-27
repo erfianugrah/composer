@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -16,6 +17,10 @@ import (
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/infra/docker"
 )
+
+// containerListTimeout bounds live docker list calls so an unreachable host
+// cannot hang the request until the kernel TCP timeout.
+const containerListTimeout = 3 * time.Second
 
 // ContainerHandler registers container management endpoints.
 type ContainerHandler struct {
@@ -113,7 +118,9 @@ func (h *ContainerHandler) List(ctx context.Context, input *struct {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 
-	containers, err := cli.ListContainers(ctx, "")
+	listCtx, cancel := context.WithTimeout(ctx, containerListTimeout)
+	defer cancel()
+	containers, err := cli.ListContainers(listCtx, "")
 	if err != nil {
 		return nil, serverError(ctx, err)
 	}
