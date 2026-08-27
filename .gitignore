@@ -41,3 +41,4 @@ Thumbs.db
 # that wires them together, and it is worth more than it looks.
 .pi/*
 !.pi/harness.json
+.pi/
