@@ -23,13 +23,14 @@ import (
 
 // StackHandler registers stack management API endpoints.
 type StackHandler struct {
-	stacks   *app.StackService
-	jobs     *app.JobManager
-	hostRepo host.Repository
+	stacks    *app.StackService
+	jobs      *app.JobManager
+	hostRepo  host.Repository
+	refresher *app.StatusRefresher
 }
 
-func NewStackHandler(stacks *app.StackService, jobs *app.JobManager, hostRepo host.Repository) *StackHandler {
-	return &StackHandler{stacks: stacks, jobs: jobs, hostRepo: hostRepo}
+func NewStackHandler(stacks *app.StackService, jobs *app.JobManager, hostRepo host.Repository, refresher *app.StatusRefresher) *StackHandler {
+	return &StackHandler{stacks: stacks, jobs: jobs, hostRepo: hostRepo, refresher: refresher}
 }
 
 // composeOp is the signature shared by Deploy, BuildAndDeploy, Stop, Restart, Pull.
@@ -273,22 +274,12 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 		return nil, serverError(ctx, err)
 	}
 
-	// Fetch every container once and bucket by stack name (compose project label).
-	// Previously this loop made N individual Docker API calls — now it's one.
-	type counts struct{ total, running int }
-	byStack := map[string]counts{}
-	if all, err := h.stacks.Containers(ctx, ""); err == nil {
-		for _, c := range all {
-			if c.StackName == "" {
-				continue
-			}
-			b := byStack[c.StackName]
-			b.total++
-			if c.IsRunning() {
-				b.running++
-			}
-			byStack[c.StackName] = b
-		}
+	// Container counts and per-host reachability come from the background
+	// StatusRefresher snapshot -- this endpoint never talks to a daemon.
+	var byStack map[string]app.StackStatus
+	var hostReachable map[int64]bool
+	if h.refresher != nil {
+		byStack, hostReachable = h.refresher.Snapshot()
 	}
 
 	out := &dto.StackListOutput{}
@@ -303,6 +294,16 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 		}
 	}
 	for _, s := range stacks {
+		hostKey := int64(0)
+		if s.HostID != nil {
+			hostKey = *s.HostID
+		}
+		reachable := byStack != nil && hostReachable[hostKey]
+		status := string(s.Status)
+		if !reachable {
+			// Host unreachable (or no refresher wired): stored status is stale.
+			status = string(stack.StatusUnknown)
+		}
 		b := byStack[s.Name]
 		hostName := ""
 		if s.HostID != nil {
@@ -311,10 +312,11 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 		out.Body.Stacks = append(out.Body.Stacks, dto.StackSummary{
 			Name:           s.Name,
 			Source:         string(s.Source),
-			Status:         string(s.Status),
+			Status:         status,
 			Host:           hostName,
-			ContainerCount: b.total,
-			RunningCount:   b.running,
+			ContainerCount: b.Total,
+			RunningCount:   b.Running,
+			Reachable:      reachable,
 			CreatedAt:      s.CreatedAt,
 			UpdatedAt:      s.UpdatedAt,
 		})

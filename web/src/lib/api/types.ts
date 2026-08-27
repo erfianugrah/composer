@@ -3322,6 +3322,8 @@ export interface components {
             host?: string;
             /** @description Stack name */
             name: string;
+            /** @description False when the stack's docker host is unreachable; its status is then stale and reported as 'unknown' */
+            reachable: boolean;
             /**
              * Format: int64
              * @description Number of running containers

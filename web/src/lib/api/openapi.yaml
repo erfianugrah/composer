@@ -2780,6 +2780,9 @@ components:
         name:
           description: Stack name
           type: string
+        reachable:
+          description: False when the stack's docker host is unreachable; its status is then stale and reported as 'unknown'
+          type: boolean
         running_count:
           description: Number of running containers
           format: int64
@@ -2807,6 +2810,7 @@ components:
         - name
         - source
         - status
+        - reachable
         - container_count
         - running_count
         - created_at

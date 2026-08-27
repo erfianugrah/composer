@@ -1233,41 +1233,52 @@ func (s *StackService) Containers(ctx context.Context, stackName string) ([]domc
 // blackholed host must not stall the fan-out past this.
 const hostListTimeout = 3 * time.Second
 
-// listAllContainers fans out to every host referenced by known stacks and
-// merges per-host ListContainers("") results. The local daemon and every
-// remote host are listed concurrently, each under its own hostListTimeout.
-// Returns partial results even when a host fails -- the caller gets what it
-// can and the failing host's containers are simply absent.
-func (s *StackService) listAllContainers(ctx context.Context) ([]domcontainer.Container, error) {
+// HostContainers is the per-host result of a container listing fan-out.
+// HostID 0 is the local/default daemon. Stacks lists the known stacks
+// pinned to that host, filled even for failed hosts (the stack-to-host map
+// comes from the DB, not the daemon).
+type HostContainers struct {
+	HostID     int64
+	Stacks     []string
+	Containers []domcontainer.Container
+	Reachable  bool
+}
+
+// ListContainersByHost fans out one ListContainers("") call per distinct
+// host referenced by known stacks and returns per-host results with
+// reachability. The local daemon and every remote host are listed
+// concurrently, each under its own hostListTimeout. A failing host still
+// yields a result with Reachable=false, so callers can distinguish "host
+// down" from "host has no containers".
+func (s *StackService) ListContainersByHost(ctx context.Context) ([]HostContainers, error) {
 	stacks, err := s.stacks.List(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Gather distinct host IDs.
-	hostIDs := make(map[int64]bool)
-	hasLocal := false
+	// Group known stacks by host (nil HostID tiles into the local host 0).
+	hostStacks := make(map[int64][]string)
 	for _, st := range stacks {
 		if st.HostID == nil {
-			hasLocal = true
+			hostStacks[0] = append(hostStacks[0], st.Name)
 		} else {
-			hostIDs[*st.HostID] = true
+			hostStacks[*st.HostID] = append(hostStacks[*st.HostID], st.Name)
 		}
 	}
 
 	var (
-		mu  sync.Mutex
-		all []domcontainer.Container
-		wg  sync.WaitGroup
+		mu      sync.Mutex
+		results []HostContainers
+		wg      sync.WaitGroup
 	)
-	appendResult := func(results []domcontainer.Container) {
+	appendResult := func(hr HostContainers) {
 		mu.Lock()
-		all = append(all, results...)
+		results = append(results, hr)
 		mu.Unlock()
 	}
 
 	// Local daemon.
-	if hasLocal && s.docker != nil {
+	if len(hostStacks[0]) > 0 && s.docker != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -1276,8 +1287,9 @@ func (s *StackService) listAllContainers(ctx context.Context) ([]domcontainer.Co
 			localResult, localErr := s.docker.ListContainers(listCtx, "")
 			if localErr != nil {
 				s.log.Warn("listAllContainers: local daemon failed", zap.Error(localErr))
+				appendResult(HostContainers{HostID: 0, Stacks: hostStacks[0], Reachable: false})
 			} else {
-				appendResult(localResult)
+				appendResult(HostContainers{HostID: 0, Stacks: hostStacks[0], Containers: localResult, Reachable: true})
 			}
 		}()
 	}
@@ -1286,9 +1298,12 @@ func (s *StackService) listAllContainers(ctx context.Context) ([]domcontainer.Co
 	// per-host timeout: client construction does a 10s Info probe on first
 	// use for a new host, so it must not run before the timeout starts.
 	if s.factory != nil {
-		for hostID := range hostIDs {
+		for hostID, names := range hostStacks {
+			if hostID == 0 {
+				continue
+			}
 			wg.Add(1)
-			go func(hostID int64) {
+			go func(hostID int64, names []string) {
 				defer wg.Done()
 				hostCtx, cancel := context.WithTimeout(ctx, hostListTimeout)
 				defer cancel()
@@ -1296,20 +1311,36 @@ func (s *StackService) listAllContainers(ctx context.Context) ([]domcontainer.Co
 				if err != nil {
 					s.log.Warn("listAllContainers: resolving client for docker host",
 						zap.Int64("host_id", hostID), zap.Error(err))
+					appendResult(HostContainers{HostID: hostID, Stacks: names, Reachable: false})
 					return
 				}
 				remoteResult, remoteErr := cl.ListContainers(hostCtx, "")
 				if remoteErr != nil {
 					s.log.Warn("listAllContainers: listing containers on host",
 						zap.Int64("host_id", hostID), zap.Error(remoteErr))
+					appendResult(HostContainers{HostID: hostID, Stacks: names, Reachable: false})
 					return
 				}
-				appendResult(remoteResult)
-			}(hostID)
+				appendResult(HostContainers{HostID: hostID, Stacks: names, Containers: remoteResult, Reachable: true})
+			}(hostID, names)
 		}
 	}
 
 	wg.Wait()
+	return results, nil
+}
+
+// listAllContainers merges the per-host fan-out into one container list.
+// Failing hosts simply contribute nothing.
+func (s *StackService) listAllContainers(ctx context.Context) ([]domcontainer.Container, error) {
+	hosts, err := s.ListContainersByHost(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var all []domcontainer.Container
+	for _, h := range hosts {
+		all = append(all, h.Containers...)
+	}
 	return all, nil
 }
 

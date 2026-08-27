@@ -59,6 +59,7 @@ type StackSummary struct {
 	Source         string    `json:"source" enum:"local,git" doc:"Where the stack's compose lives"`
 	Status         string    `json:"status" enum:"running,stopped,partial,error,syncing,unknown" doc:"Current stack status derived from container states"`
 	Host           string    `json:"host,omitempty" doc:"Docker host name (omitted when 'local')"`
+	Reachable      bool      `json:"reachable" doc:"False when the stack's docker host is unreachable; its status is then stale and reported as 'unknown'"`
 	ContainerCount int       `json:"container_count" doc:"Number of containers in this stack"`
 	RunningCount   int       `json:"running_count" doc:"Number of running containers"`
 	CreatedAt      time.Time `json:"created_at"`

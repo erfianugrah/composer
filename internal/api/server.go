@@ -31,6 +31,7 @@ type Server struct {
 type Deps struct {
 	AuthService     *app.AuthService
 	StackService    *app.StackService      // nil if Docker not available
+	StatusRefresher *app.StatusRefresher   // nil if Docker not available; backs GET /stacks live counts
 	GitService      *app.GitService        // nil disables git operations
 	PipelineService *app.PipelineService   // nil disables pipeline operations
 	RegistryService *app.RegistryService   // nil disables registry credential endpoints

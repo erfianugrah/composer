@@ -153,7 +153,7 @@ func RegisterHumaHandlers(api huma.API, deps Deps, registerAll bool) {
 		handler.NewHostHandler(deps.HostService).Register(api)
 	})
 	register(deps.StackService != nil, func() {
-		handler.NewStackHandler(deps.StackService, deps.Jobs, deps.HostRepo).Register(api)
+		handler.NewStackHandler(deps.StackService, deps.Jobs, deps.HostRepo, deps.StatusRefresher).Register(api)
 	})
 	register(deps.DockerClient != nil, func() {
 		handler.NewContainerHandler(deps.DockerClient, deps.DockerFactory).Register(api)

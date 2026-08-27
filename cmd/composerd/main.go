@@ -286,6 +286,14 @@ func main() {
 		gitSvc.SetRegistryRepo(registryRepo)
 	}
 
+	// --- Status refresher (background snapshot of container counts + host
+	// reachability so GET /api/v1/stacks never hits a daemon on the request
+	// path). Nil when docker is unavailable; the handler tolerates that. ---
+	var statusRefresher *app.StatusRefresher
+	if stackSvc != nil {
+		statusRefresher = app.NewStatusRefresher(stackSvc, logger)
+	}
+
 	// --- Pipeline Service ---
 	pipelineRepo := store.NewPipelineRepo(db.SQL)
 	runRepo := store.NewRunRepo(db.SQL)
@@ -339,6 +347,7 @@ func main() {
 	srv := api.NewServer(api.Deps{
 		AuthService:     authSvc,
 		StackService:    stackSvc,
+		StatusRefresher: statusRefresher,
 		GitService:      gitSvc,
 		PipelineService: pipelineSvc,
 		RegistryService: registrySvc,
@@ -375,6 +384,12 @@ func main() {
 
 	// Cancellable context for background goroutines
 	appCtx, appCancel := context.WithCancel(ctx)
+
+	// --- Background: status refresher (boot refresh, then every interval) ---
+	if statusRefresher != nil {
+		go statusRefresher.Start(appCtx)
+		logger.Info("status refresher started")
+	}
 
 	// Wire runtime host listener: hosts created via the API get a docker
 	// event listener immediately without requiring a restart.
