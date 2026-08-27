@@ -130,6 +130,7 @@ func (h *ContainerHandler) List(ctx context.Context, input *struct {
 	for _, c := range containers {
 		out.Body.Containers = append(out.Body.Containers, dto.ContainerOutput{
 			ID: c.ID, Name: c.Name, ServiceName: c.ServiceName,
+			StackName: c.StackName,
 			Image: c.Image, ImageID: c.ImageID,
 			Host: input.Host, Status: string(c.Status), Health: string(c.Health),
 		})
@@ -158,6 +159,7 @@ func (h *ContainerHandler) Get(ctx context.Context, input *struct {
 	out := &dto.ContainerDetailOutput{}
 	out.Body = dto.ContainerOutput{
 		ID: c.ID, Name: c.Name, ServiceName: c.ServiceName,
+		StackName: c.StackName,
 		Image: c.Image, ImageID: c.ImageID,
 		Status: string(c.Status), Health: string(c.Health),
 	}

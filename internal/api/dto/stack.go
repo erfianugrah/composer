@@ -120,6 +120,7 @@ type ContainerOutput struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
 	ServiceName     string `json:"service_name"`
+	StackName       string `json:"stack_name" doc:"Compose project name (stack) this container belongs to; empty for non-compose containers"`
 	Image           string `json:"image"`
 	ImageID         string `json:"image_id,omitempty" doc:"Resolved local image digest (sha256:...). Changes when a mutable tag like :latest is repulled, so a stable mismatch between two containers on the same tag means at least one of them was recreated from a newer image."`
 	Host            string `json:"host,omitempty" doc:"Docker host name (empty = default/local)"`

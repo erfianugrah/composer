@@ -393,6 +393,7 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 				ID:              c.ID,
 				Name:            c.Name,
 				ServiceName:     c.ServiceName,
+				StackName:       c.StackName,
 				Image:           c.Image,
 				ImageID:         c.ImageID,
 				Status:          string(c.Status),

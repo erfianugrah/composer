@@ -506,6 +506,10 @@
           "service_name": {
             "type": "string"
           },
+          "stack_name": {
+            "description": "Compose project name (stack) this container belongs to; empty for non-compose containers",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "created",
@@ -523,6 +527,7 @@
           "id",
           "name",
           "service_name",
+          "stack_name",
           "image",
           "status",
           "health"

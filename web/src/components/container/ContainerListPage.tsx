@@ -27,6 +27,7 @@ interface ContainerInfo {
   id: string;
   name: string;
   service_name: string;
+  stack_name: string;
   image: string;
   status: string;
   health: string;
@@ -34,10 +35,11 @@ interface ContainerInfo {
 
 
 type StatusFilter = "all" | "running" | "stopped";
-type SortKey = "name" | "status" | "image";
+type SortKey = "name" | "stack" | "status" | "image";
 
 const accessors = {
   name: (c: ContainerInfo) => c.name.toLowerCase(),
+  stack: (c: ContainerInfo) => c.stack_name.toLowerCase(),
   status: (c: ContainerInfo) => c.status,
   image: (c: ContainerInfo) => c.image.toLowerCase(),
 } satisfies Record<SortKey, (c: ContainerInfo) => string>;
@@ -101,7 +103,7 @@ export function ContainerListPage() {
     if (statusFilter === "stopped" && c.status === "running") return false;
     if (filter) {
       const q = filter.toLowerCase();
-      if (!c.name.toLowerCase().includes(q) && !c.image.toLowerCase().includes(q)) return false;
+      if (!c.name.toLowerCase().includes(q) && !c.stack_name.toLowerCase().includes(q) && !c.image.toLowerCase().includes(q)) return false;
     }
     return true;
   });
@@ -191,6 +193,7 @@ export function ContainerListPage() {
                 <TR>
                   <SelectAllTH rows={sorted} selection={sel} testId="select-all-containers" />
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
+                  <SortHeader active={sortKey === "stack"} direction={direction} onSort={() => toggle("stack")}>Stack</SortHeader>
                   <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
                   <SortHeader active={sortKey === "image"} direction={direction} onSort={() => toggle("image")}>Image</SortHeader>
                   <TH className={cn("text-right", hideOnNarrow)}>CPU / Mem</TH>
@@ -215,6 +218,7 @@ export function ContainerListPage() {
                           />
                         </TD>
                         <TD className="font-medium truncate max-w-[260px]" title={c.name}>{c.name}</TD>
+                        <TD className="font-data truncate max-w-[160px]" title={c.stack_name}>{c.stack_name || "-"}</TD>
                         <TD>
                           <div className="flex items-center gap-1">
                             {(() => {
@@ -280,7 +284,7 @@ export function ContainerListPage() {
                       </TR>
                       {expanded && (
                         <tr className="bg-cp-950/50">
-                          <td colSpan={7} className="px-3 py-3 border-b border-border/40">{/* colSpan stays 7: hidden cells still occupy the column count */}
+                          <td colSpan={8} className="px-3 py-3 border-b border-border/40">{/* colSpan stays 8: hidden cells still occupy the column count */}
                             <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded" />}>
                               <LogViewer containerId={c.id} host={selectedHost || undefined} tail="50" maxLines={200} />
                             </Suspense>

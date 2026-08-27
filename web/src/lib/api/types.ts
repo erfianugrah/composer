@@ -2134,6 +2134,8 @@ export interface components {
             name: string;
             restart_policy?: string;
             service_name: string;
+            /** @description Compose project name (stack) this container belongs to; empty for non-compose containers */
+            stack_name: string;
             /** @enum {string} */
             status: "created" | "running" | "paused" | "restarting" | "removing" | "exited" | "dead";
         };
