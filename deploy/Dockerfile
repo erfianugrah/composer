@@ -31,8 +31,10 @@ RUN apk add --no-cache curl && \
 FROM alpine:3.24
 
 # git + SSH for git-backed stacks, certs for HTTPS, su-exec for privilege drop,
-# shadow for usermod/groupmod (PUID/PGID support)
-RUN apk add --no-cache git openssh-client ca-certificates tzdata su-exec shadow
+# shadow for usermod/groupmod (PUID/PGID support). apk upgrade first so base-image
+# patch-level CVEs (e.g. libcrypto3) resolve before the post-push trivy gate.
+RUN apk upgrade --no-cache && \
+    apk add --no-cache git openssh-client ca-certificates tzdata su-exec shadow
 
 # Bundle docker CLI + compose + buildx from official Docker image
 COPY --from=docker-bins /usr/local/bin/docker /usr/local/bin/docker
