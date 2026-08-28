@@ -465,6 +465,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/hosts/{id}/certs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get docker host certificate metadata
+         * @description Returns fingerprint + expiry only. Key material is never returned.
+         */
+        get: operations["getHostCerts"];
+        /**
+         * Store docker host mTLS certificates
+         * @description Replaces the host's stored mTLS triple. The triple is validated (PEM parse, key matches cert, cert chains to CA) before storage and stored encrypted. 422 on invalid material.
+         */
+        put: operations["putHostCerts"];
+        post?: never;
+        /**
+         * Delete docker host certificates
+         * @description Removes the stored certs and the materialized on-disk cert dir, and evicts the cached host client.
+         */
+        delete: operations["deleteHostCerts"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/hosts/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test a docker host connection
+         * @description Builds a throwaway docker client (DB certs > cert_dir > plain) and pings the daemon with a 3s timeout. Never touches the factory cache. Returns ok=false with the error when the daemon is unreachable; key material is never returned.
+         */
+        post: operations["testHost"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/images": {
         parameters: {
             query?: never;
@@ -2446,12 +2494,16 @@ export interface components {
         };
         DockerHostOutput: {
             cert_dir?: string;
+            /** @description Stored client cert expiry (RFC3339); empty when no certs */
+            cert_not_after?: string;
             created_at: string;
             endpoint: string;
+            /** @description true when mTLS certs are stored for this host */
+            has_certs: boolean;
             /** Format: int64 */
             id: number;
             name: string;
-            /** @description true when cert_dir is set */
+            /** @description true when mTLS material is configured (cert_dir or stored certs) */
             tls: boolean;
             updated_at: string;
         };
@@ -2666,6 +2718,36 @@ export interface components {
             status: "healthy";
             /** @description Composer semver */
             version: string;
+        };
+        HostCertsBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/HostCertsBody.json
+             */
+            readonly $schema?: string;
+            /** @description CA certificate PEM (the root the client cert chains to) */
+            ca_cert: string;
+            /** @description Client certificate PEM */
+            cert: string;
+            /** @description Client private key PEM (PKCS#1, PKCS#8, or EC) */
+            key: string;
+        };
+        HostCertsOutput: {
+            /** @description sha256 hex of the client cert DER */
+            fingerprint?: string;
+            has_certs: boolean;
+            /** @description Client cert expiry (RFC3339) */
+            not_after?: string;
+        };
+        HostCertsOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/HostCertsOutputBody.json
+             */
+            readonly $schema?: string;
+            certs: components["schemas"]["HostCertsOutput"];
         };
         HostOutputBody: {
             /**
@@ -3417,6 +3499,22 @@ export interface components {
             icon: string;
             id: string;
             name: string;
+        };
+        TestHostOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/TestHostOutputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Empty on success; connection/ping failure detail otherwise */
+            error?: string;
+            /**
+             * Format: int64
+             * @description Ping round-trip in milliseconds (0 on failure)
+             */
+            latency_ms: number;
+            ok: boolean;
         };
         TriggerDTO: {
             /** @description Trigger config (shape varies by type). Event triggers take {event: 'stack.deployed', stack?: 'name'}. */
@@ -5329,6 +5427,276 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getHostCerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostCertsOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    putHostCerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HostCertsBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostCertsOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    deleteHostCerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    testHost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestHostOutputBody"];
+                };
             };
             /** @description Unauthorized */
             401: {

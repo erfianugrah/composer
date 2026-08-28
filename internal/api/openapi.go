@@ -9,6 +9,7 @@ import (
 	composer "github.com/erfianugrah/composer"
 	"github.com/erfianugrah/composer/internal/api/dto"
 	"github.com/erfianugrah/composer/internal/api/handler"
+	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/app/selfupgrade"
 )
 
@@ -150,7 +151,16 @@ func RegisterHumaHandlers(api huma.API, deps Deps, registerAll bool) {
 		handler.NewRegistryHandler(deps.RegistryService).Register(api)
 	})
 	register(deps.HostService != nil, func() {
-		handler.NewHostHandler(deps.HostService).Register(api)
+		// The factory implements app.HostCacheInvalidator; pass a true-nil
+		// interface when it is absent so cert mutations don't call into a nil
+		// receiver (typed-nil interface would be non-nil and panic).
+		var hostInvalidator app.HostCacheInvalidator
+		if deps.DockerFactory != nil {
+			hostInvalidator = deps.DockerFactory
+		}
+		hh := handler.NewHostHandler(deps.HostService)
+		hh.SetCerts(deps.HostCertsRepo, hostInvalidator, deps.DataDir)
+		hh.Register(api)
 	})
 	register(deps.StackService != nil, func() {
 		handler.NewStackHandler(deps.StackService, deps.Jobs, deps.HostRepo, deps.StatusRefresher).Register(api)

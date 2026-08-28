@@ -9,16 +9,34 @@ import (
 	"go.uber.org/zap"
 )
 
+// HostCacheInvalidator evicts per-host cached docker clients when a host's
+// config or stored certs change. Implemented by docker.Factory.
+type HostCacheInvalidator interface {
+	Invalidate(hostID int64)
+}
+
 // HostService orchestrates docker host CRUD and name-to-ID resolution.
 type HostService struct {
-	repo          host.Repository
-	log           *zap.Logger
-	OnHostCreated func(ctx context.Context, hostID int64, hostName string) // optional; called after Create persists. Wire docker.NewEventListener in main.
+	repo             host.Repository
+	log              *zap.Logger
+	cacheInvalidator HostCacheInvalidator
+	OnHostCreated    func(ctx context.Context, hostID int64, hostName string) // optional; called after Create persists. Wire docker.NewEventListener in main.
 }
 
 // NewHostService creates a HostService.
 func NewHostService(repo host.Repository, log *zap.Logger) *HostService {
 	return &HostService{repo: repo, log: log}
+}
+
+// SetCacheInvalidator wires an optional cache invalidator (e.g.
+// docker.Factory). When set, successful Update/Delete evict the host's cached
+// client and compose so the next use rebuilds against the new config.
+func (s *HostService) SetCacheInvalidator(inv HostCacheInvalidator) { s.cacheInvalidator = inv }
+
+func (s *HostService) invalidate(id int64) {
+	if s.cacheInvalidator != nil {
+		s.cacheInvalidator.Invalidate(id)
+	}
 }
 
 // List returns all registered docker hosts.
@@ -53,7 +71,11 @@ func (s *HostService) Update(ctx context.Context, h *host.Host) error {
 		return err
 	}
 	h.UpdatedAt = time.Now().UTC()
-	return s.repo.Update(ctx, h)
+	if err := s.repo.Update(ctx, h); err != nil {
+		return err
+	}
+	s.invalidate(h.ID)
+	return nil
 }
 
 // Delete removes a host by ID after verifying no stacks still reference it.
@@ -65,7 +87,11 @@ func (s *HostService) Delete(ctx context.Context, id int64) error {
 	if n > 0 {
 		return fmt.Errorf("host still has %d stack(s) assigned; reassign them first", n)
 	}
-	return s.repo.Delete(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+	s.invalidate(id)
+	return nil
 }
 
 // ResolveHostID maps an API-facing host name to a docker_hosts.id.

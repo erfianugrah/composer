@@ -35,6 +35,16 @@ func goMigrations(dbType DBType) []*goose.Migration {
 				return execAll(ctx, tx, dockerHostsDown())
 			}},
 		),
+		// 009: docker_host_certs (per-host mTLS material, encrypted at rest).
+		goose.NewGoMigration(
+			9,
+			&goose.GoFunc{RunTx: func(ctx context.Context, tx *sql.Tx) error {
+				return execAll(ctx, tx, dockerHostCertsUp())
+			}},
+			&goose.GoFunc{RunTx: func(ctx context.Context, tx *sql.Tx) error {
+				return execAll(ctx, tx, dockerHostCertsDown())
+			}},
+		),
 	}
 }
 
@@ -111,5 +121,30 @@ func dockerHostsDown() []string {
 		`DROP INDEX IF EXISTS idx_stacks_host_id`,
 		`ALTER TABLE stacks DROP COLUMN host_id`,
 		`DROP TABLE IF EXISTS docker_hosts`,
+	}
+}
+
+func dockerHostCertsUp() []string {
+	// One row per host. All three PEMs are AES-256-GCM encrypted via
+	// crypto.Encrypt ("enc:" prefixed); plaintext never touches the table.
+	// cert_fingerprint is the sha256 hex of the client cert DER; cert_not_after
+	// is RFC3339. PK is host_id so upserts are a single-statement conflict on
+	// the primary key (portable SQLite/Postgres).
+	return []string{
+		`CREATE TABLE IF NOT EXISTS docker_host_certs (
+		    host_id          INTEGER PRIMARY KEY REFERENCES docker_hosts(id) ON DELETE CASCADE,
+		    ca_cert_enc      TEXT NOT NULL DEFAULT '',
+		    cert_enc         TEXT NOT NULL DEFAULT '',
+		    key_enc          TEXT NOT NULL DEFAULT '',
+		    cert_fingerprint TEXT NOT NULL DEFAULT '',
+		    cert_not_after   TEXT NOT NULL DEFAULT '',
+		    updated_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+	}
+}
+
+func dockerHostCertsDown() []string {
+	return []string{
+		`DROP TABLE IF EXISTS docker_host_certs`,
 	}
 }

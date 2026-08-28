@@ -127,6 +127,7 @@ func main() {
 	stackRepo := store.NewStackRepo(db.SQL)
 	gitConfigRepo := store.NewGitConfigRepo(db.SQL)
 	hostRepo := store.NewHostRepo(db.SQL)
+	hostCertsRepo := store.NewHostCertsRepo(db.SQL)
 
 	// --- Docker (optional -- graceful degradation) ---
 	var dockerClient *docker.Client
@@ -148,7 +149,16 @@ func main() {
 	hostSvc := app.NewHostService(hostRepo, logger)
 	var factory *docker.Factory
 	if dockerClient != nil {
+		// DB-stored certs (hostCertsRepo) materialize under cfg.DataDir and win
+		// over each host's static cert_dir.
 		factory = docker.NewFactory(dockerClient, compose, hostRepo, logger)
+		// DB-stored certs (hostCertsRepo) materialize under cfg.DataDir and win
+		// over each host's static cert_dir.
+		factory.SetCerts(hostCertsRepo, cfg.DataDir)
+		// Host edits (endpoint/cert_dir) and deletes must evict the cached
+		// per-host client/compose, otherwise edits never take effect until
+		// restart. Guarded: factory is nil when docker is unavailable.
+		hostSvc.SetCacheInvalidator(factory)
 	}
 
 	// --- Valkey Cache (optional) ---
@@ -353,6 +363,7 @@ func main() {
 		RegistryService: registrySvc,
 		HostService:     hostSvc,
 		HostRepo:        hostRepo,
+		HostCertsRepo:   hostCertsRepo,
 		DockerFactory:   factory,
 		UserRepo:        userRepo,
 		SessionRepo:     sessionRepo,

@@ -1019,17 +1019,23 @@ components:
       properties:
         cert_dir:
           type: string
+        cert_not_after:
+          description: Stored client cert expiry (RFC3339); empty when no certs
+          type: string
         created_at:
           type: string
         endpoint:
           type: string
+        has_certs:
+          description: true when mTLS certs are stored for this host
+          type: boolean
         id:
           format: int64
           type: integer
         name:
           type: string
         tls:
-          description: true when cert_dir is set
+          description: true when mTLS material is configured (cert_dir or stored certs)
           type: boolean
         updated_at:
           type: string
@@ -1038,6 +1044,7 @@ components:
         - name
         - endpoint
         - tls
+        - has_certs
         - created_at
         - updated_at
       type: object
@@ -1427,6 +1434,62 @@ components:
       required:
         - status
         - version
+      type: object
+    HostCertsBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/HostCertsBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ca_cert:
+          description: CA certificate PEM (the root the client cert chains to)
+          minLength: 1
+          type: string
+        cert:
+          description: Client certificate PEM
+          minLength: 1
+          type: string
+        key:
+          description: Client private key PEM (PKCS#1, PKCS#8, or EC)
+          minLength: 1
+          type: string
+      required:
+        - ca_cert
+        - cert
+        - key
+      type: object
+    HostCertsOutput:
+      additionalProperties: false
+      properties:
+        fingerprint:
+          description: sha256 hex of the client cert DER
+          type: string
+        has_certs:
+          type: boolean
+        not_after:
+          description: Client cert expiry (RFC3339)
+          type: string
+      required:
+        - has_certs
+      type: object
+    HostCertsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/HostCertsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        certs:
+          $ref: "#/components/schemas/HostCertsOutput"
+      required:
+        - certs
       type: object
     HostOutputBody:
       additionalProperties: false
@@ -2980,6 +3043,29 @@ components:
         - description
         - category
         - icon
+      type: object
+    TestHostOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/TestHostOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        error:
+          description: Empty on success; connection/ping failure detail otherwise
+          type: string
+        latency_ms:
+          description: Ping round-trip in milliseconds (0 on failure)
+          format: int64
+          type: integer
+        ok:
+          type: boolean
+      required:
+        - ok
+        - latency_ms
       type: object
     TriggerDTO:
       additionalProperties: false
@@ -4893,6 +4979,210 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
       summary: Update a docker host
+      tags:
+        - hosts
+  /api/v1/hosts/{id}/certs:
+    delete:
+      description: Removes the stored certs and the materialized on-disk cert dir, and evicts the cached host client.
+      operationId: deleteHostCerts
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Delete docker host certificates
+      tags:
+        - hosts
+    get:
+      description: Returns fingerprint + expiry only. Key material is never returned.
+      operationId: getHostCerts
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostCertsOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Get docker host certificate metadata
+      tags:
+        - hosts
+    put:
+      description: Replaces the host's stored mTLS triple. The triple is validated (PEM parse, key matches cert, cert chains to CA) before storage and stored encrypted. 422 on invalid material.
+      operationId: putHostCerts
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostCertsBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostCertsOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Store docker host mTLS certificates
+      tags:
+        - hosts
+  /api/v1/hosts/{id}/test:
+    post:
+      description: Builds a throwaway docker client (DB certs > cert_dir > plain) and pings the daemon with a 3s timeout. Never touches the factory cache. Returns ok=false with the error when the daemon is unreachable; key material is never returned.
+      operationId: testHost
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestHostOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Test a docker host connection
       tags:
         - hosts
   /api/v1/images:
