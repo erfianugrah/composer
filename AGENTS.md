@@ -100,3 +100,17 @@ docs/runbooks/docker-host-mtls-rotation.md. The docker client/compose cache
 (`internal/infra/docker.Factory`) is invalidated by `HostService.Update` /
 `Delete` via `SetCacheInvalidator` - touching the factory for a new reason
 must keep that wiring.
+
+## Encryption key rotation
+
+The at-rest key (`COMPOSER_ENCRYPTION_KEY` env / `$COMPOSER_DATA_DIR/encryption.key`)
+encrypts every stored secret with AES-256-GCM (`enc:` prefix). Precedence since
+v0.26.0: key file > env > auto-generated (the key file is the UI-settable key,
+so it wins - mirrors the SOPS age-key rule). Rotation is safe and UI/API-driven:
+`POST /api/v1/system/config/encryption-key/rotate` (admin) re-encrypts every
+`enc:` value across all encrypted stores (registry creds,
+`stack_git_configs.credentials`, webhook secrets, `docker_host_certs`, SSH
+deploy keys, git token) in ONE transaction with rollback, then swaps the crypto
+singleton only after commit. The new key is returned once in the response and
+never logged. A half-rotated DB is the brick scenario this design exists to
+prevent - never rotate by hand-editing the key file without the re-encrypt.
