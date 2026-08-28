@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import { Fragment, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,8 @@ import { apiFetch } from "@/lib/api/errors";
 import { useAction } from "@/lib/use-action";
 import { actionKey, bulkContainerLabels, containerActionLabels, transitionalStatusFor } from "@/lib/container-actions";
 import { useSort } from "@/lib/use-sort";
-import { useSelection, rangeIds } from "@/lib/use-selection";
+import { useSelection } from "@/lib/use-selection";
+import { RangeSelectCheckbox } from "@/components/ui/range-select-checkbox";
 import { useBusy, runBulk } from "@/lib/use-busy";
 import { useSWRFetch } from "@/lib/use-swr-fetch";
 import { BulkBar } from "@/components/ui/bulk-bar";
@@ -114,7 +115,6 @@ export function ContainerListPage() {
   const sortedIds = sorted.map((c) => c.id);
   // Captures the shift flag from the click event (change events carry no
   // modifier state); consumed by the change that follows it.
-  const pendingRange = useRef<string[] | null>(null);
   const sel = useSelection<ContainerInfo>((c) => c.id, { persistKey: "containers" });
   useEffect(() => { sel.prune(containers); }, [containers, sel.prune]);
   const { busy, run } = useBusy();
@@ -214,22 +214,12 @@ export function ContainerListPage() {
                     <Fragment key={c.id}>
                       <TR data-testid={`container-row-${c.id}`} className={sel.isSelected(c.id) ? "bg-cp-purple/5" : ""}>
                         <TD className="w-8" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={sel.isSelected(c.id)}
-                            onClick={(e) => {
-                              if (!e.shiftKey || !sel.lastToggledId) return;
-                              pendingRange.current = rangeIds(sortedIds, sel.lastToggledId, c.id);
-                            }}
-                            onChange={() => {
-                              const range = pendingRange.current;
-                              pendingRange.current = null;
-                              if (range) { sel.toggleRange(range, c.id); return; }
-                              sel.toggle(c.id);
-                            }}
-                            aria-label={`Select ${c.name}`}
-                            className="rounded"
-                            data-testid={`select-container-${c.id}`}
+                          <RangeSelectCheckbox
+                            sel={sel}
+                            order={sortedIds}
+                            id={c.id}
+                            ariaLabel={`Select ${c.name}`}
+                            testId={`select-container-${c.id}`}
                           />
                         </TD>
                         <TD className="font-medium truncate max-w-[260px]" title={c.name}>{c.name}</TD>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, THead, TBody, TR, TH, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
+import { Table, THead, TBody, TR, TD, SortHeader, SelectAllTH, hideOnNarrow } from "@/components/ui/data-table";
+import { RangeSelectCheckbox } from "@/components/ui/range-select-checkbox";
 import { FilterInput } from "@/components/ui/filter-input";
 import { cn } from "@/lib/utils";
 import { useSort } from "@/lib/use-sort";
@@ -30,11 +31,12 @@ interface StackSummary {
 
 
 type StatusFilter = "all" | "running" | "stopped" | "partial";
-type SortKey = "name" | "status" | "containers" | "source" | "updated";
+type SortKey = "name" | "status" | "host" | "containers" | "source" | "updated";
 
 const accessors = {
   name: (s: StackSummary) => s.name.toLowerCase(),
   status: (s: StackSummary) => s.status,
+  host: (s: StackSummary) => (s.host || "local").toLowerCase(),
   containers: (s: StackSummary) => s.container_count,
   source: (s: StackSummary) => s.source,
   updated: (s: StackSummary) => s.updated_at || "",
@@ -81,6 +83,7 @@ export function DashboardOverview() {
   });
 
   const { sorted, sortKey, direction, toggle } = useSort<StackSummary, SortKey>(filtered, accessors, "name", "asc", { urlParam: "sort" });
+  const sortedNames = sorted.map((s) => s.name);
   const sel = useSelection<StackSummary>((s) => s.name, { persistKey: "stacks" });
   // Drop any persisted selections whose row no longer exists.
   useEffect(() => { sel.prune(stacks); }, [stacks, sel.prune]);
@@ -198,7 +201,7 @@ export function DashboardOverview() {
                   <SelectAllTH rows={sorted} selection={sel} testId="select-all-stacks" />
                   <SortHeader active={sortKey === "name"} direction={direction} onSort={() => toggle("name")}>Name</SortHeader>
                   <SortHeader active={sortKey === "status"} direction={direction} onSort={() => toggle("status")}>Status</SortHeader>
-                  <TH className={cn("text-right", hideOnNarrow)}>Host</TH>
+                  <SortHeader active={sortKey === "host"} direction={direction} onSort={() => toggle("host")} className={cn("text-right", hideOnNarrow)}>Host</SortHeader>
                   <SortHeader active={sortKey === "containers"} direction={direction} onSort={() => toggle("containers")} className={cn("text-right", hideOnNarrow)}>Containers</SortHeader>
                   <SortHeader active={sortKey === "source"} direction={direction} onSort={() => toggle("source")} className={hideOnNarrow}>Source</SortHeader>
                   <SortHeader active={sortKey === "updated"} direction={direction} onSort={() => toggle("updated")} className={hideOnNarrow}>Updated</SortHeader>
@@ -213,13 +216,12 @@ export function DashboardOverview() {
                     {...navigableRow(`/stacks/${encodeURIComponent(stack.name)}`)}
                   >
                     <TD className="w-8" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={sel.isSelected(stack.name)}
-                        onChange={() => sel.toggle(stack.name)}
-                        aria-label={`Select ${stack.name}`}
-                        className="rounded"
-                        data-testid={`select-stack-${stack.name}`}
+                      <RangeSelectCheckbox
+                        sel={sel}
+                        order={sortedNames}
+                        id={stack.name}
+                        ariaLabel={`Select ${stack.name}`}
+                        testId={`select-stack-${stack.name}`}
                       />
                     </TD>
                     <TD className="font-medium">
