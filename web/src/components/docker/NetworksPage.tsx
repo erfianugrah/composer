@@ -44,6 +44,7 @@ export function NetworksPage() {
   const [error, setError] = useState("");
   const [inspecting, setInspecting] = useState<string | null>(null);
   const [inspectData, setInspectData] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
   const [filter, setFilter] = useState(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("q") || "";
@@ -117,6 +118,37 @@ export function NetworksPage() {
           {error && <p className="text-sm text-cp-red mt-2">{error}</p>}
         </CardContent>
       </Card>
+      <div className="flex flex-col items-end gap-2">
+        <ConfirmButton
+          size="sm"
+          message="Remove all unused networks? This cannot be undone."
+          onConfirm={async () => {
+            const { data, error } = await act.run<{ job_id?: string; space_reclaimed?: string }>(
+              "prune-networks",
+              () => apiFetch(
+                `/api/v1/networks/prune?async=true${selectedHost ? `&host=${encodeURIComponent(selectedHost)}` : ""}`, { method: "POST" },
+              ),
+              {
+                running: "Pruning",
+                dispatched: "Network prune started",
+                success: "Pruned unused networks",
+                failure: "Network prune failed",
+              },
+              { after: fetch_ },
+            );
+            if (data?.job_id) setNotice(`Prune started -- see Jobs drawer (${data.job_id})`);
+            else if (data?.space_reclaimed) setNotice(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
+          }}
+        >
+          Prune Unused Networks
+        </ConfirmButton>
+        {notice && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="prune-result">
+            <span>{notice}</span>
+            <button className="underline" onClick={() => setNotice("")}>dismiss</button>
+          </div>
+        )}
+      </div>
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">

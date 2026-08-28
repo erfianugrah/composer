@@ -80,6 +80,9 @@ export function SystemConfig() {
   const [gitTokenInput, setGitTokenInput] = useState("");
   const [gitTokenMsg, setGitTokenMsg] = useState("");
 
+  // System prune
+  const [pruneMsg, setPruneMsg] = useState("");
+
   useEffect(() => {
     async function load() {
       const { data, error: err } = await apiFetch<ConfigData>("/api/v1/system/config");
@@ -168,6 +171,22 @@ export function SystemConfig() {
       setRotateMsg("Rotated. Save the key below - it is shown once.");
       setRotateKeyInput("");
     }
+  }
+
+  async function handleSystemPrune() {
+    setPruneMsg("");
+    const { data, error } = await act.run<{ job_id?: string; space_reclaimed?: string }>(
+      "system-prune",
+      () => apiFetch(`/api/v1/docker/prune?async=true`, { method: "POST" }),
+      {
+        running: "Pruning",
+        dispatched: "System prune started",
+        success: "Pruned unused Docker resources",
+        failure: "System prune failed",
+      },
+    );
+    if (data?.job_id) setPruneMsg(`Prune started -- see Jobs drawer (${data.job_id})`);
+    else if (data?.space_reclaimed) setPruneMsg(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
   }
 
   if (loading) return <Card><CardContent><p className="text-sm text-muted-foreground p-4">Loading config...</p></CardContent></Card>;
@@ -360,6 +379,32 @@ export function SystemConfig() {
                 <code className="bg-cp-950 px-1 rounded break-all">{newEncKey}</code>
                 <CopyButton text={newEncKey} />
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Maintenance */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Maintenance</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">System prune removes ALL unused containers, networks, images, and build cache.</p>
+            <ConfirmButton
+              size="sm"
+              message="Remove ALL unused containers, networks, images, and build cache? This cannot be undone."
+              onConfirm={handleSystemPrune}
+              disabled={act.pending("system-prune")}
+            >
+              System Prune
+            </ConfirmButton>
+          </div>
+          {pruneMsg && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="prune-result">
+              <span>{pruneMsg}</span>
+              <button className="underline" onClick={() => setPruneMsg("")}>dismiss</button>
             </div>
           )}
         </CardContent>

@@ -168,7 +168,32 @@ export function ImagesPage() {
         </CardContent>
       </Card>
       <div className="space-y-2">
-        <PruneDropdown onPrune={fetch_} onResult={setNotice} selectedHost={selectedHost} act={act} />
+        <div className="flex items-center justify-end gap-2">
+          <PruneDropdown onPrune={fetch_} onResult={setNotice} selectedHost={selectedHost} act={act} />
+          <ConfirmButton
+            size="sm"
+            message="Remove all build cache? Next builds will be slower."
+            onConfirm={async () => {
+              const { data, error } = await act.run<{ job_id?: string; space_reclaimed?: string }>(
+                "prune-builder-cache",
+                () => apiFetch(
+                  `/api/v1/builder/prune?async=true${selectedHost ? `&host=${encodeURIComponent(selectedHost)}` : ""}`, { method: "POST" },
+                ),
+                {
+                  running: "Pruning",
+                  dispatched: "Build cache prune started",
+                  success: "Pruned build cache",
+                  failure: "Build cache prune failed",
+                },
+                { after: fetch_ },
+              );
+              if (data?.job_id) setNotice(`Prune started -- see Jobs drawer (${data.job_id})`);
+              else if (data?.space_reclaimed) setNotice(`Pruned. Space reclaimed: ${data.space_reclaimed}`);
+            }}
+          >
+            Prune Build Cache
+          </ConfirmButton>
+        </div>
         {notice && (
           <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground" data-testid="prune-result">
             <span>{notice}</span>
