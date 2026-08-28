@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	domcontainer "github.com/erfianugrah/composer/internal/domain/container"
 	"github.com/erfianugrah/composer/internal/domain/stack"
 )
 
@@ -384,7 +385,67 @@ func TestClearCredentialField_NilCreds(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDeriveStackStatus_NoContainers(t *testing.T) {
-	assert.Equal(t, stack.StatusStopped, deriveStackStatus(nil))
+	assert.Equal(t, stack.StatusStopped, deriveStackStatus(nil, nil))
+}
+
+// A declared one-shot service (restart: "no" in the compose file) that has
+// completed must not drag a fully-up stack into "partial" (memledger case:
+// 5 running services + exited migrate/ui-build runners).
+func TestDeriveStackStatus_CompletedDeclaredOneShot(t *testing.T) {
+	oneShots := map[string]bool{"migrate": true, "ui-build": true}
+	containers := []domcontainer.Container{
+		{ServiceName: "postgres", Status: domcontainer.StatusRunning},
+		{ServiceName: "postgrest", Status: domcontainer.StatusRunning},
+		{ServiceName: "embedder", Status: domcontainer.StatusRunning},
+		{ServiceName: "backup", Status: domcontainer.StatusRunning},
+		{ServiceName: "exporter", Status: domcontainer.StatusRunning},
+		{ServiceName: "migrate", Status: domcontainer.StatusExited, ExitCode: 0},
+		{ServiceName: "ui-build", Status: domcontainer.StatusExited, ExitCode: 0},
+	}
+	assert.Equal(t, stack.StatusRunning, deriveStackStatus(containers, oneShots))
+}
+
+// An exited container whose service is NOT declared one-shot is a stopped
+// service: partial stays (vaultwarden main container down).
+func TestDeriveStackStatus_StoppedServiceStillPartial(t *testing.T) {
+	oneShots := map[string]bool{"migrate": true}
+	containers := []domcontainer.Container{
+		{ServiceName: "vaultwarden", Status: domcontainer.StatusExited, ExitCode: 0},
+		{ServiceName: "postgres", Status: domcontainer.StatusRunning},
+		{ServiceName: "migrate", Status: domcontainer.StatusExited, ExitCode: 0},
+	}
+	assert.Equal(t, stack.StatusPartial, deriveStackStatus(containers, oneShots))
+}
+
+func TestComposeOneShotServices(t *testing.T) {
+	yamlBody := `
+services:
+  postgres:
+    restart: unless-stopped
+    image: pg
+  migrate:
+    restart: "no"
+    image: alpine
+  seed:
+    restart: on-failure
+    image: alpine
+  retry:
+    restart:
+      on-failure: 3
+    image: alpine
+  plain:
+    image: nginx
+`
+	got := composeOneShotServices(yamlBody)
+	assert.True(t, got["migrate"], "restart: \"no\" is a declared one-shot")
+	assert.True(t, got["seed"], "restart: on-failure is a declared one-shot")
+	assert.True(t, got["retry"], "on-failure map form is a declared one-shot")
+	assert.False(t, got["postgres"], "unless-stopped is a service")
+	assert.False(t, got["plain"], "unspecified restart stays a service (compose default is no)")
+
+	assert.Nil(t, composeOneShotServices(""), "empty body -> nil")
+	assert.Nil(t, composeOneShotServices("not: [valid\n  yaml: :"), "parse error -> nil")
+	assert.Nil(t, composeOneShotServices("services:\n  a:\n    image: x\n"), "no one-shots -> nil")
 }
 
 // ---------------------------------------------------------------------------

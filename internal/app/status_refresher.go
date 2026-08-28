@@ -74,6 +74,7 @@ func (r *StatusRefresher) Refresh(ctx context.Context) {
 		r.log.Warn("status refresh failed", zap.Error(err))
 		return
 	}
+	oneShotsByStack := r.svc.OneShotServicesByStack(ctx)
 
 	r.mu.RLock()
 	prev := r.byStack
@@ -101,7 +102,7 @@ func (r *StatusRefresher) Refresh(ctx context.Context) {
 	// Derive the lifecycle status from the full container set (needs one-off
 	// awareness, which bare counts lose).
 	for name, b := range byStack {
-		b.Status = string(deriveStackStatus(byStackContainers[name]))
+		b.Status = string(deriveStackStatus(byStackContainers[name], oneShotsByStack[name]))
 		byStack[name] = b
 	}
 	// Carry over stale counts for stacks whose host failed this round.

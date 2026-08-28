@@ -20,6 +20,7 @@ import (
 	"github.com/erfianugrah/composer/internal/infra/docker"
 	infreg "github.com/erfianugrah/composer/internal/infra/registry"
 	"github.com/erfianugrah/composer/internal/infra/sops"
+	"gopkg.in/yaml.v3"
 )
 
 // StackService orchestrates stack management operations.
@@ -232,27 +233,7 @@ func (s *StackService) Get(ctx context.Context, name string) (*stack.Stack, erro
 	}
 
 	// Read compose content -- try git config's compose path first, then common names
-	var composeContent string
-	if st.Source == stack.SourceGit {
-		cfg, err := s.gitCfgs.GetByStackName(ctx, name)
-		if err == nil && cfg != nil {
-			st.GitConfig = cfg
-			// Use the git config's compose path
-			gitComposePath := filepath.Join(st.Path, cfg.ComposePath)
-			if data, err := os.ReadFile(gitComposePath); err == nil {
-				composeContent = string(data)
-			}
-		}
-	}
-	if composeContent == "" {
-		// Fallback: try common compose file names
-		for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
-			if data, err := os.ReadFile(filepath.Join(st.Path, name)); err == nil {
-				composeContent = string(data)
-				break
-			}
-		}
-	}
+	composeContent := s.composeContentFor(ctx, st)
 	st.ComposeContent = composeContent
 
 	if st.Source == stack.SourceGit && st.GitConfig == nil {
@@ -270,7 +251,7 @@ func (s *StackService) Get(ctx context.Context, name string) (*stack.Stack, erro
 		if cErr != nil {
 			st.Status = stack.StatusUnknown
 		} else {
-			st.Status = deriveStackStatus(containers)
+			st.Status = deriveStackStatus(containers, composeOneShotServices(composeContent))
 		}
 	}
 
@@ -1354,7 +1335,7 @@ func (s *StackService) ExecCompose(ctx context.Context, name string, args []stri
 	return cw.Exec(ctx, st.Path, args)
 }
 
-func deriveStackStatus(containers []domcontainer.Container) stack.Status {
+func deriveStackStatus(containers []domcontainer.Container, oneShots map[string]bool) stack.Status {
 	if len(containers) == 0 {
 		return stack.StatusStopped
 	}
@@ -1364,11 +1345,15 @@ func deriveStackStatus(containers []domcontainer.Container) stack.Status {
 	for _, c := range containers {
 		if c.IsRunning() {
 			running++
-		} else if c.Status == domcontainer.StatusExited && c.IsOneOff() {
+		} else if c.Status == domcontainer.StatusExited && (c.IsOneOff() || oneShots[c.ServiceName]) {
 			// One-off tasks (init containers, migration runners, restore jobs)
 			// don't contribute to the long-running service count regardless of
 			// exit code — a failed restore doesn't make the stack "partial".
 			oneOff++
+			// Declared one-shot services (restart: "no" / "on-failure" in the
+			// compose file) count too: the container list API carries no restart
+			// policy, so the compose file is the only signal separating a
+			// completed job (memledger-migrate) from a stopped service.
 		}
 	}
 
@@ -1387,4 +1372,92 @@ func deriveStackStatus(containers []domcontainer.Container) stack.Status {
 	default:
 		return stack.StatusPartial
 	}
+}
+
+// composeContentFor resolves a stack's compose file body: the git config's
+// compose path first (when the stack is git-backed), then the common file
+// names in the stack dir. Sets st.GitConfig when it supplies the path.
+// Returns "" when nothing readable exists.
+func (s *StackService) composeContentFor(ctx context.Context, st *stack.Stack) string {
+	if st.Source == stack.SourceGit && st.GitConfig == nil {
+		cfg, err := s.gitCfgs.GetByStackName(ctx, st.Name)
+		if err == nil && cfg != nil {
+			st.GitConfig = cfg
+		}
+	}
+	if st.Source == stack.SourceGit && st.GitConfig != nil && st.GitConfig.ComposePath != "" {
+		if data, err := os.ReadFile(filepath.Join(st.Path, st.GitConfig.ComposePath)); err == nil {
+			return string(data)
+		}
+	}
+	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
+		if data, err := os.ReadFile(filepath.Join(st.Path, name)); err == nil {
+			return string(data)
+		}
+	}
+	return ""
+}
+
+// OneShotServicesByStack returns, per stack name, the set of service names
+// declared with restart: "no" / "on-failure" - jobs that complete (migrations,
+// seeds, builds) rather than stay up. The StatusRefresher uses it to keep
+// completed one-shot services from dragging a fully-up stack into "partial".
+// Compose files are re-read per call (refresh cadence is seconds, files are
+// small); a stack whose file is missing or unparseable maps to nil.
+func (s *StackService) OneShotServicesByStack(ctx context.Context) map[string]map[string]bool {
+	stacks, err := s.stacks.List(ctx)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]map[string]bool, len(stacks))
+	for _, st := range stacks {
+		out[st.Name] = composeOneShotServices(s.composeContentFor(ctx, st))
+	}
+	return out
+}
+
+// composeOneShotServices parses a compose file body and returns the set of
+// service names declared with restart: "no" or "on-failure" (scalar form, or
+// the {on-failure: N} map form). Unspecified restart is NOT one-shot: compose
+// defaults it to "no", so a long-running service without an explicit policy
+// must still count as a service. A parse failure returns nil (caller falls
+// back to the label-based one-off rule).
+func composeOneShotServices(composeContent string) map[string]bool {
+	if composeContent == "" {
+		return nil
+	}
+	var doc struct {
+		Services map[string]struct {
+			Restart yaml.Node `yaml:"restart"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(composeContent), &doc); err != nil {
+		return nil
+	}
+	var out map[string]bool
+	for svc, spec := range doc.Services {
+		oneShot := false
+		switch spec.Restart.Kind {
+		case yaml.ScalarNode:
+			var s string
+			if err := spec.Restart.Decode(&s); err == nil && (s == "no" || s == "on-failure") {
+				oneShot = true
+			}
+		case yaml.MappingNode:
+			// Map form only exists for on-failure: {policy: <cond>, attempts: N}.
+			var m map[string]any
+			if err := spec.Restart.Decode(&m); err == nil {
+				if _, ok := m["on-failure"]; ok {
+					oneShot = true
+				}
+			}
+		}
+		if oneShot {
+			if out == nil {
+				out = make(map[string]bool)
+			}
+			out[svc] = true
+		}
+	}
+	return out
 }
