@@ -1,4 +1,4 @@
 package composer
 
 // Version is the current release version. Updated at release time.
-const Version = "0.25.3"
+const Version = "0.26.0"
