@@ -157,7 +157,7 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 	s.locks.Lock(name)
 	defer s.locks.Unlock(name)
 	s.log.Info("auto-deploying cloned stack", zap.String("stack", name))
-	if sops.IsAvailable() {
+	if sopsAvailable() {
 		var perStackAgeKey string
 		if gitCfg.Credentials != nil {
 			perStackAgeKey = gitCfg.Credentials.AgeKey
@@ -165,14 +165,19 @@ func (s *GitService) CreateGitStack(ctx context.Context, name string, gitCfg *st
 		ageKey := sops.ResolveAgeKey(perStackAgeKey, s.stacksDir)
 		envFile := gitCfg.ResolveEnvPath(stackPath)
 		composePath := filepath.Join(stackPath, gitCfg.ComposePath)
-		sops.DecryptEnvFile(envFile, ageKey)
-		sops.DecryptComposeSecrets(composePath, ageKey)
 		// Re-encrypt on ANY return path (success OR deploy failure), so secrets
 		// are never left decrypted at rest when docker compose up fails.
 		defer func() {
 			sops.ReEncryptEnvFile(envFile)
 			sops.ReEncryptComposeSecrets(composePath)
 		}()
+		if err := decryptSopsFiles(s.log, name, envFile, ageKey, composePath); err != nil {
+			// A deploy here would run compose against ciphertext: abort the
+			// whole create and roll back the persisted stack.
+			s.stacks.Delete(ctx, name)
+			os.RemoveAll(stackPath)
+			return nil, fmt.Errorf("decrypting SOPS secrets: %w", err)
+		}
 	}
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
@@ -282,20 +287,25 @@ func (s *GitService) SyncAndRedeploy(ctx context.Context, name string) (action s
 
 	// Decrypt SOPS-encrypted secrets after sync, before deploy.
 	// Re-encrypt after deploy so secrets are never left decrypted at rest.
-	if sops.IsAvailable() {
+	if sopsAvailable() {
 		var perStackAgeKey string
 		if cfg != nil && cfg.Credentials != nil {
 			perStackAgeKey = cfg.Credentials.AgeKey
 		}
 		ageKey := sops.ResolveAgeKey(perStackAgeKey, s.stacksDir)
 		envFile := cfg.ResolveEnvPath(st.Path)
-		sops.DecryptEnvFile(envFile, ageKey)
 		composePath := filepath.Join(st.Path, cfg.ComposePath)
-		sops.DecryptComposeSecrets(composePath, ageKey)
+		// Re-encrypt on ANY return path (success OR failure), so secrets are
+		// never left decrypted at rest if the redeploy below fails.
 		defer func() {
 			sops.ReEncryptEnvFile(envFile)
 			sops.ReEncryptComposeSecrets(composePath)
 		}()
+		if err := decryptSopsFiles(s.log, name, envFile, ageKey, composePath); err != nil {
+			s.log.Error("redeploy aborted", zap.String("stack", name), zap.Error(err))
+			s.publishEvent(domevent.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
+			return "error", err
+		}
 	}
 
 	// Pull latest images before deploying — ensures mutable tags like :latest

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -455,4 +456,102 @@ func TestList_StatusUnknown_WhenHostUnreachable(t *testing.T) {
 			assert.Equal(t, stack.StatusUnknown, st.Status, "host-pinned stack without reachable host must be StatusUnknown")
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// SOPS decrypt failure propagation
+// ---------------------------------------------------------------------------
+
+// withSopsFakes swaps the sops function seams for deterministic outcomes and
+// restores the real bindings when the test finishes.
+func withSopsFakes(t *testing.T, available bool, envDecrypted bool, envErr error, compDecrypted bool, compErr error) {
+	t.Helper()
+	oldAvail, oldEnv, oldComp := sopsAvailable, sopsDecryptEnv, sopsDecryptComp
+	t.Cleanup(func() { sopsAvailable, sopsDecryptEnv, sopsDecryptComp = oldAvail, oldEnv, oldComp })
+	sopsAvailable = func() bool { return available }
+	sopsDecryptEnv = func(_, _ string) (bool, error) { return envDecrypted, envErr }
+	sopsDecryptComp = func(_, _ string) (bool, error) { return compDecrypted, compErr }
+}
+
+func TestDecryptSopsSecrets_SopsFailureReturnsError(t *testing.T) {
+	withSopsFakes(t, true, false, errors.New("age: key not found"), false, nil)
+
+	repo := newMockStackRepo()
+	gitCfgs := newMockGitConfigRepo()
+	stackPath := t.TempDir()
+	st, err := stack.NewStackWithHost("sops-fail", stackPath, stack.SourceLocal, nil)
+	require.NoError(t, err)
+	require.NoError(t, repo.Create(context.Background(), st))
+	gitCfgs.configs["sops-fail"] = &stack.GitSource{Credentials: &stack.GitCredentials{AgeKey: "AGE-SECRET-KEY-TEST"}}
+
+	svc := NewStackService(repo, gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks(), nil, nil)
+
+	err = svc.decryptSopsSecrets(context.Background(), "sops-fail", stackPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "decrypting .env")
+}
+
+func TestDecryptSopsSecrets_NoOpPathsStayNil(t *testing.T) {
+	repo := newMockStackRepo()
+	gitCfgs := newMockGitConfigRepo()
+	stackPath := t.TempDir()
+	st, err := stack.NewStackWithHost("sops-noop", stackPath, stack.SourceLocal, nil)
+	require.NoError(t, err)
+	require.NoError(t, repo.Create(context.Background(), st))
+	svc := NewStackService(repo, gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks(), nil, nil)
+
+	// sops binary absent: no decrypt is ever attempted.
+	withSopsFakes(t, false, false, nil, false, nil)
+	assert.NoError(t, svc.decryptSopsSecrets(context.Background(), "sops-noop", stackPath))
+
+	// no age key: non-fatal skip.
+	withSopsFakes(t, true, false, nil, false, nil)
+	assert.NoError(t, svc.decryptSopsSecrets(context.Background(), "sops-noop", stackPath))
+
+	// age key present but files are not SOPS-encrypted: nothing to decrypt.
+	gitCfgs.configs["sops-noop"] = &stack.GitSource{Credentials: &stack.GitCredentials{AgeKey: "AGE-SECRET-KEY-TEST"}}
+	withSopsFakes(t, true, false, nil, false, nil)
+	assert.NoError(t, svc.decryptSopsSecrets(context.Background(), "sops-noop", stackPath))
+}
+
+func TestDeploy_SopsDecryptFailureAborts(t *testing.T) {
+	withSopsFakes(t, true, false, errors.New("age: key not found"), false, nil)
+
+	repo := newMockStackRepo()
+	gitCfgs := newMockGitConfigRepo()
+	stackPath := t.TempDir()
+	require.NoError(t, os.MkdirAll(stackPath, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(stackPath, "compose.yaml"), []byte("services: {}\n"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(stackPath, ".env"), []byte("DB_PASSWORD=ENC[AES256_GCM,data=x]\n"), 0600))
+	st, err := stack.NewStackWithHost("deploy-abort", stackPath, stack.SourceLocal, nil)
+	require.NoError(t, err)
+	require.NoError(t, repo.Create(context.Background(), st))
+	gitCfgs.configs["deploy-abort"] = &stack.GitSource{Credentials: &stack.GitCredentials{AgeKey: "AGE-SECRET-KEY-TEST"}}
+
+	svc := NewStackService(repo, gitCfgs, nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks(), nil, nil)
+
+	result, err := svc.Deploy(context.Background(), "deploy-abort")
+	require.Error(t, err)
+	assert.Nil(t, result, "deploy must abort before touching docker")
+	assert.Contains(t, err.Error(), "decrypting .env")
+}
+
+func TestCreate_SopsDecryptFailureRollsBack(t *testing.T) {
+	withSopsFakes(t, true, false, errors.New("age: key not found"), false, nil)
+
+	repo := newMockStackRepo()
+	gitCfgs := newMockGitConfigRepo()
+	stacksDir := t.TempDir()
+	gitCfgs.configs["create-abort"] = &stack.GitSource{Credentials: &stack.GitCredentials{AgeKey: "AGE-SECRET-KEY-TEST"}}
+
+	svc := NewStackService(repo, gitCfgs, nil, nil, nil, nil, stacksDir, t.TempDir(), NewStackLocks(), nil, nil)
+
+	st, err := svc.Create(context.Background(), "create-abort", "services: {}\n", nil)
+	require.Error(t, err)
+	assert.Nil(t, st)
+
+	got, _ := repo.GetByName(context.Background(), "create-abort")
+	assert.Nil(t, got, "stack row must be rolled back on decrypt failure")
+	_, statErr := os.Stat(filepath.Join(stacksDir, "create-abort"))
+	assert.Error(t, statErr, "stack directory must be rolled back on decrypt failure")
 }

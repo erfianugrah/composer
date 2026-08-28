@@ -196,10 +196,16 @@ func (s *StackService) Create(ctx context.Context, name, composeContent string, 
 	// Auto-deploy after create
 	s.log.Info("auto-deploying new stack", zap.String("stack", name))
 	cf := s.resolveComposeFile(ctx, name)
-	s.decryptSopsSecrets(ctx, name, st.Path)
 	// Re-encrypt on ANY return path (success OR deploy failure) so secrets are
 	// never left decrypted at rest. No-op when nothing was decrypted.
 	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
+	if err := s.decryptSopsSecrets(ctx, name, st.Path); err != nil {
+		// A deploy here would run compose against ciphertext: abort the whole
+		// create and roll back the persisted row.
+		os.RemoveAll(stackPath)
+		s.stacks.Delete(ctx, name)
+		return nil, fmt.Errorf("decrypting SOPS secrets: %w", err)
+	}
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 	composeWrapper, cErr := s.composeFor(ctx, st)
@@ -379,8 +385,14 @@ func (s *StackService) Deploy(ctx context.Context, name string) (*docker.Compose
 
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("deploying stack", zap.String("stack", name), zap.String("path", st.Path), zap.String("compose_file", cf))
-	s.decryptSopsSecrets(ctx, name, st.Path)
+	// Re-encrypt before the failure return too, so a partial decrypt is not
+	// left plaintext at rest.
 	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
+	if err := s.decryptSopsSecrets(ctx, name, st.Path); err != nil {
+		s.log.Error("deploy aborted", zap.String("stack", name), zap.Error(err))
+		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
+		return nil, err
+	}
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 
@@ -417,8 +429,14 @@ func (s *StackService) BuildAndDeploy(ctx context.Context, name string) (*docker
 
 	cf := s.resolveComposeFile(ctx, name)
 	s.log.Info("build+deploy stack", zap.String("stack", name), zap.String("path", st.Path), zap.String("compose_file", cf))
-	s.decryptSopsSecrets(ctx, name, st.Path)
+	// Re-encrypt before the failure return too, so a partial decrypt is not
+	// left plaintext at rest.
 	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
+	if err := s.decryptSopsSecrets(ctx, name, st.Path); err != nil {
+		s.log.Error("build+deploy aborted", zap.String("stack", name), zap.Error(err))
+		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
+		return nil, err
+	}
 	deployCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 
@@ -516,8 +534,12 @@ func (s *StackService) Pull(ctx context.Context, name string) (*docker.ComposeRe
 	// Decrypt SOPS-managed .env/compose before pull so ${VAR} image-tag
 	// references (e.g. image: repo:${TAG}) interpolate to plaintext instead of
 	// the literal ENC[...] ciphertext. Re-encrypt on exit. Mirrors Deploy.
-	s.decryptSopsSecrets(ctx, name, st.Path)
 	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
+	if err := s.decryptSopsSecrets(ctx, name, st.Path); err != nil {
+		s.log.Error("pull aborted", zap.String("stack", name), zap.Error(err))
+		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
+		return nil, err
+	}
 	pullCtx, regCleanup := s.withRegistryAuth(ctx, name)
 	defer regCleanup()
 	cw, cErr := s.composeFor(ctx, st)
@@ -960,37 +982,63 @@ func (s *StackService) resolveAgeKey(ctx context.Context, stackName string) stri
 	return sops.ResolveAgeKey(perStackAgeKey, s.dataDir)
 }
 
+// SOPS function seams: production binds the real sops CLI wrappers, unit
+// tests swap them to force deterministic decrypt outcomes.
+var (
+	sopsAvailable   = sops.IsAvailable
+	sopsDecryptEnv  = sops.DecryptEnvFile
+	sopsDecryptComp = sops.DecryptComposeSecrets
+)
+
+// decryptSopsFiles decrypts a SOPS-encrypted .env and one or more compose
+// files with the given age key, saving .sops backups so the caller can
+// re-encrypt after the compose operation. A genuine decrypt failure (wrong
+// key, corrupt ciphertext) is returned so the caller aborts instead of
+// running docker compose against ciphertext. No sops binary, no age key,
+// and files without a SOPS payload stay non-fatal (nil).
+func decryptSopsFiles(log *zap.Logger, stackName, envFile, ageKey string, composePaths ...string) error {
+	if !sopsAvailable() {
+		return nil
+	}
+	if ageKey == "" {
+		log.Debug("no age key available for SOPS decryption", zap.String("stack", stackName))
+		return nil
+	}
+	if decrypted, err := sopsDecryptEnv(envFile, ageKey); err != nil {
+		log.Error("sops: failed to decrypt .env", zap.String("stack", stackName), zap.String("path", envFile), zap.Error(err))
+		return fmt.Errorf("decrypting .env for stack %s: %w", stackName, err)
+	} else if decrypted {
+		log.Info("sops: decrypted .env", zap.String("stack", stackName), zap.String("path", envFile))
+	}
+	for _, composePath := range composePaths {
+		if _, err := os.Stat(composePath); err != nil {
+			continue
+		}
+		if decrypted, err := sopsDecryptComp(composePath, ageKey); err != nil {
+			log.Error("sops: failed to decrypt compose", zap.String("stack", stackName), zap.String("file", filepath.Base(composePath)), zap.Error(err))
+			return fmt.Errorf("decrypting compose for stack %s: %w", stackName, err)
+		} else if decrypted {
+			log.Info("sops: decrypted compose", zap.String("stack", stackName), zap.String("file", filepath.Base(composePath)))
+		}
+	}
+	return nil
+}
+
 // decryptSopsSecrets decrypts SOPS-encrypted .env and compose files in the stack
 // directory before docker compose operations. Saves encrypted originals as .sops
 // backups so reEncryptSopsSecrets can restore them after deploy.
-// No-op if sops binary is not installed or files are not SOPS-encrypted.
-func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackPath string) {
-	if !sops.IsAvailable() {
-		return
-	}
+// A genuine decrypt failure is returned so the caller aborts instead of
+// running compose against ciphertext; no sops binary, no age key, or files
+// without a SOPS payload stay non-fatal (nil).
+// Every caller must check the returned error in one of these forms:
+// err := s.decryptSopsSecrets|err = s.decryptSopsSecrets|if err := s.decryptSopsSecrets
+func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackPath string) error {
 	ageKey := s.resolveAgeKey(ctx, stackName)
-	if ageKey == "" {
-		s.log.Debug("no age key available for SOPS decryption", zap.String("stack", stackName))
-		return
-	}
-
-	envFile := s.resolveEnvFile(ctx, stackName, stackPath)
-	if decrypted, err := sops.DecryptEnvFile(envFile, ageKey); err != nil {
-		s.log.Error("sops: failed to decrypt .env", zap.String("stack", stackName), zap.String("path", envFile), zap.Error(err))
-	} else if decrypted {
-		s.log.Info("sops: decrypted .env", zap.String("stack", stackName), zap.String("path", envFile))
-	}
-
+	var composePaths []string
 	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
-		composePath := filepath.Join(stackPath, name)
-		if _, err := os.Stat(composePath); err == nil {
-			if decrypted, err := sops.DecryptComposeSecrets(composePath, ageKey); err != nil {
-				s.log.Error("sops: failed to decrypt compose", zap.String("stack", stackName), zap.String("file", name), zap.Error(err))
-			} else if decrypted {
-				s.log.Info("sops: decrypted compose", zap.String("stack", stackName), zap.String("file", name))
-			}
-		}
+		composePaths = append(composePaths, filepath.Join(stackPath, name))
 	}
+	return decryptSopsFiles(s.log, stackName, s.resolveEnvFile(ctx, stackName, stackPath), ageKey, composePaths...)
 }
 
 // reEncryptSopsSecretsCtx restores SOPS-encrypted .env / compose files. The
@@ -1071,7 +1119,14 @@ func (s *StackService) PrepareAction(ctx context.Context, name string) (*ActionC
 	}
 
 	cf := s.resolveComposeFile(ctx, name)
-	s.decryptSopsSecrets(ctx, name, st.Path)
+	if err := s.decryptSopsSecrets(ctx, name, st.Path); err != nil {
+		// No ActionContext is returned, so its Cleanup never runs: re-encrypt
+		// the partial decrypt here and release the lock like the other error
+		// paths.
+		s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
+		s.locks.Unlock(name)
+		return nil, err
+	}
 
 	// Materialise a DOCKER_CONFIG with the resolved global + per-stack creds.
 	// withRegistryAuth returns ctx + cleanup; we don't need the ctx (the WS
