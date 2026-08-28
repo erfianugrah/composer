@@ -59,11 +59,14 @@ export interface SWRState<T> {
 export function useSWRFetch<T>(url: string | null, options: { pollMs?: number } = {}): SWRState<T> {
   const { pollMs } = options;
   const cacheKey = url ? `swr:${url}` : null;
-  const [data, setData] = useState<T | null>(() => (cacheKey ? readCache<T>(cacheKey)?.data ?? null : null));
+  // Start null on both server and client so hydration matches; the cached
+  // value (if any) is applied in the mount effect below.
+  const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(() => !data);
-  const [stale, setStale] = useState(() => data !== null);
+  const [loading, setLoading] = useState(true);
+  const [stale, setStale] = useState(false);
   const mounted = useRef(true);
+  const cacheRestored = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -89,11 +92,21 @@ export function useSWRFetch<T>(url: string | null, options: { pollMs?: number } 
     });
   };
 
-  // Initial + url-change fetch.
+  // Initial + url-change fetch. Apply any cached value first (post-mount, so
+  // hydration stayed clean), then revalidate in the background.
   useEffect(() => {
     if (!url) return;
+    if (!cacheRestored.current && cacheKey) {
+      cacheRestored.current = true;
+      const cached = readCache<T>(cacheKey)?.data ?? null;
+      if (cached !== null) {
+        setData(cached);
+        setStale(true);
+        setLoading(false);
+      }
+    }
     // If we have nothing cached, we're truly loading.
-    if (!data) setLoading(true);
+    setLoading((prev) => (cacheRestored.current ? prev : true));
     fetchNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);

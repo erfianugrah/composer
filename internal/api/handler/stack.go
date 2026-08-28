@@ -299,12 +299,17 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 			hostKey = *s.HostID
 		}
 		reachable := byStack != nil && hostReachable[hostKey]
+		b := byStack[s.Name]
 		status := string(s.Status)
-		if !reachable {
+		switch {
+		case !reachable:
 			// Host unreachable (or no refresher wired): stored status is stale.
 			status = string(stack.StatusUnknown)
+		case b.Status != "":
+			// Host reachable: trust the refresher's derived status over the
+			// stored one (the stored value is only written by compose actions).
+			status = b.Status
 		}
-		b := byStack[s.Name]
 		hostName := ""
 		if s.HostID != nil {
 			hostName = hostNames[*s.HostID]

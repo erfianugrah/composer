@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	domcontainer "github.com/erfianugrah/composer/internal/domain/container"
+
 	"go.uber.org/zap"
 )
 
@@ -15,10 +17,12 @@ import (
 const defaultStatusRefreshInterval = 15 * time.Second
 
 // StackStatus is the snapshot entry for one compose project: container
-// counts plus whether the project's docker host answered the last listing.
+// counts, the derived lifecycle status, and whether the project's docker
+// host answered the last listing.
 type StackStatus struct {
 	Total     int
 	Running   int
+	Status    string // derived via deriveStackStatus; empty until a refresh sees containers
 	Reachable bool
 }
 
@@ -76,6 +80,7 @@ func (r *StatusRefresher) Refresh(ctx context.Context) {
 	r.mu.RUnlock()
 
 	byStack := make(map[string]StackStatus, len(prev))
+	byStackContainers := make(map[string][]domcontainer.Container)
 	hostOK := make(map[int64]bool)
 	for _, h := range hosts {
 		hostOK[h.HostID] = h.Reachable
@@ -90,7 +95,14 @@ func (r *StatusRefresher) Refresh(ctx context.Context) {
 			}
 			b.Reachable = h.Reachable
 			byStack[c.StackName] = b
+			byStackContainers[c.StackName] = append(byStackContainers[c.StackName], c)
 		}
+	}
+	// Derive the lifecycle status from the full container set (needs one-off
+	// awareness, which bare counts lose).
+	for name, b := range byStack {
+		b.Status = string(deriveStackStatus(byStackContainers[name]))
+		byStack[name] = b
 	}
 	// Carry over stale counts for stacks whose host failed this round.
 	for name, st := range prev {

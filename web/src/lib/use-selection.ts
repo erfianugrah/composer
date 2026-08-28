@@ -24,18 +24,24 @@ export interface UseSelectionOptions {
 export function useSelection<T>(idOf: (row: T) => string, options: UseSelectionOptions = {}) {
   const { persistKey } = options;
 
-  const [selected, setSelected] = useState<Set<string>>(() => {
-    if (!persistKey || typeof window === "undefined") return new Set();
+  // Initialize empty on BOTH server and client first render so hydration
+  // matches; the persisted selection is restored in an effect after mount.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current || !persistKey || typeof window === "undefined") return;
+    restored.current = true;
     try {
       const raw = window.sessionStorage.getItem(`selection:${persistKey}`);
-      if (!raw) return new Set();
+      if (!raw) return;
       const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return new Set();
-      return new Set(parsed.filter((s): s is string => typeof s === "string"));
+      if (Array.isArray(parsed)) {
+        setSelected(new Set(parsed.filter((s): s is string => typeof s === "string")));
+      }
     } catch {
-      return new Set();
+      // ignore
     }
-  });
+  }, [persistKey]);
 
   // Mirror to storage on every change. Empty selection clears the key.
   // We do this in an effect rather than inside setSelected so the storage
