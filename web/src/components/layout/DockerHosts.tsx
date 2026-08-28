@@ -105,9 +105,8 @@ export function DockerHosts() {
       { quiet: true, inlineError: true },
     );
     if (err) {
-      const msg = `Host saved. Certificate upload failed: ${err}`;
-      setError(msg);
-      return msg;
+      setError(`Host saved. Certificate upload failed: ${err}`);
+      return `Host saved. Certificate upload failed: ${err}`;
     }
     setCerts(emptyCerts);
     return null;
