@@ -274,76 +274,13 @@ func (s *StackService) Get(ctx context.Context, name string) (*stack.Stack, erro
 // List returns all stacks with runtime status.
 // P3: Uses a single Docker API call to list ALL containers, then groups by stack.
 func (s *StackService) List(ctx context.Context) ([]*stack.Stack, error) {
+	// DB rows only. Live container status is maintained by the background
+	// StatusRefresher; deriving it here put a docker fan-out back on the
+	// request path (the dead-host stall this method used to cause).
 	stacks, err := s.stacks.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// Group stacks by host to fan out one ListContainers call per host.
-	// nil HostID tiles into the "local" bucket.
-	hostStacks := make(map[int64][]*stack.Stack)
-	var localStacks []*stack.Stack
-	var unknownHosts []*stack.Stack
-	for _, st := range stacks {
-		if st.HostID == nil {
-			localStacks = append(localStacks, st)
-		} else {
-			hostStacks[*st.HostID] = append(hostStacks[*st.HostID], st)
-		}
-	}
-
-	// Helper: query one client and assign status.
-	queryHost := func(client *docker.Client, candidate []*stack.Stack) {
-		allContainers, err := client.ListContainers(ctx, "")
-		if err != nil {
-			for _, st := range candidate {
-				st.Status = stack.StatusUnknown
-			}
-			return
-		}
-		byStack := make(map[string][]domcontainer.Container)
-		for _, c := range allContainers {
-			if c.StackName != "" {
-				byStack[c.StackName] = append(byStack[c.StackName], c)
-			}
-		}
-		for _, st := range candidate {
-			st.Status = deriveStackStatus(byStack[st.Name])
-		}
-	}
-
-	// Local daemon.
-	if s.docker != nil && len(localStacks) > 0 {
-		queryHost(s.docker, localStacks)
-	} else {
-		for _, st := range localStacks {
-			st.Status = stack.StatusUnknown
-		}
-	}
-
-	// Each remote host.
-	if s.factory != nil {
-		for hostID, hostStacks := range hostStacks {
-			cl, err := s.factory.ClientFor(ctx, &hostID)
-			if err != nil {
-				for _, st := range hostStacks {
-					st.Status = stack.StatusUnknown
-				}
-				unknownHosts = append(unknownHosts, hostStacks...)
-				continue
-			}
-			queryHost(cl, hostStacks)
-		}
-	} else {
-		for _, hostStacks := range hostStacks {
-			for _, st := range hostStacks {
-				st.Status = stack.StatusUnknown
-			}
-			unknownHosts = append(unknownHosts, hostStacks...)
-		}
-	}
-	_ = unknownHosts // stacks already marked StatusUnknown
-
 	return stacks, nil
 }
 
