@@ -45,6 +45,17 @@ function statusBadge(ok: boolean, label: string) {
   );
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button size="xs" variant="outline" onClick={() => {
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }}>{copied ? "Copied!" : "Copy"}</Button>
+  );
+}
+
 export function SystemConfig() {
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,6 +64,11 @@ export function SystemConfig() {
   // Age key form
   const [ageKeyInput, setAgeKeyInput] = useState("");
   const [ageKeyMsg, setAgeKeyMsg] = useState("");
+
+  // Encryption key rotation (new_key is one-time display only, never persisted)
+  const [rotateKeyInput, setRotateKeyInput] = useState("");
+  const [rotateMsg, setRotateMsg] = useState("");
+  const [newEncKey, setNewEncKey] = useState("");
 
   // SSH key form
   const [sshKeyName, setSSHKeyName] = useState("");
@@ -121,6 +137,36 @@ export function SystemConfig() {
       setAgeKeyMsg(err);
     } else if (data) {
       setAgeKeyMsg(`Generated and saved. Public key: ${data.public_key}`);
+    }
+  }
+
+  async function handleRotateKey() {
+    const key = rotateKeyInput.trim();
+    setRotateMsg("");
+    setNewEncKey("");
+    const { data, error: err } = await act.run<{ rotated: boolean; new_key: string }>(
+      "rotate-encryption-key",
+      () => apiFetch("/api/v1/system/config/encryption-key/rotate", {
+        method: "POST",
+        ...(key
+          ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) }
+          : {}),
+      }),
+      { running: "Rotating", success: "Rotated encryption key", failure: "Failed to rotate encryption key" },
+      {
+        after: async () => {
+          const { data: refreshed } = await apiFetch<ConfigData>("/api/v1/system/config");
+          if (refreshed) setConfig(refreshed);
+        },
+        inlineError: true,
+      },
+    );
+    if (err) {
+      setRotateMsg(err);
+    } else if (data) {
+      setNewEncKey(data.new_key);
+      setRotateMsg("Rotated. Save the key below - it is shown once.");
+      setRotateKeyInput("");
     }
   }
 
@@ -270,6 +316,52 @@ export function SystemConfig() {
               </p>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Encryption Key Rotation */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Encryption Key Rotation</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="border-t border-border pt-3 space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Rotate the at-rest encryption key. Every stored secret (registry creds, webhook secrets, host
+              certs, deploy keys) is re-encrypted. Supply your own 64-hex key or leave empty to let the server generate one.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value={rotateKeyInput}
+                onChange={(e) => setRotateKeyInput(e.target.value)}
+                placeholder="64-hex key (optional)"
+                className="flex-1 font-data text-xs"
+              />
+              <ConfirmButton
+                size="sm"
+                message="Rotate the at-rest encryption key? Every stored secret (registry creds, webhook secrets, host certs, deploy keys) is re-encrypted. Back up the new key."
+                onConfirm={handleRotateKey}
+                disabled={act.pending("rotate-encryption-key") || (rotateKeyInput.trim() !== "" && !/^[0-9a-f]{64}$/.test(rotateKeyInput.trim()))}
+              >
+                Rotate
+              </ConfirmButton>
+            </div>
+          </div>
+          {rotateMsg && (
+            <p className={`text-xs ${rotateMsg.startsWith("Rotated") ? "text-cp-green" : "text-cp-red"}`}>
+              {rotateMsg}
+            </p>
+          )}
+          {newEncKey && (
+            <div className="rounded border border-cp-green/30 bg-cp-green/5 p-3 space-y-1">
+              <p className="text-xs text-cp-green font-bold">Save this key now - it is shown once and never retrievable.</p>
+              <div className="flex items-center gap-2 text-xs font-data">
+                <code className="bg-cp-950 px-1 rounded break-all">{newEncKey}</code>
+                <CopyButton text={newEncKey} />
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
