@@ -44,6 +44,7 @@ type Deps struct {
 	WebhookRepo     *store.WebhookRepo     // nil disables webhook receiver
 	AuditRepo       *store.AuditRepo       // nil disables audit logging
 	UpgradeRepo     *store.UpgradeRepo     // nil disables self-upgrade
+	RotateService   *app.RotateService     // nil disables the encryption-key rotate endpoint
 	EventBus        event.Bus              // nil disables SSE events endpoint
 	DockerClient    *docker.Client         // nil disables container/SSE/terminal endpoints
 	Compose         *docker.Compose        // nil disables docker exec

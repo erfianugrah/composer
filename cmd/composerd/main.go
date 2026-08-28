@@ -350,6 +350,9 @@ func main() {
 	webhookRepo := store.NewWebhookRepo(db.SQL)
 	auditRepo := store.NewAuditRepo(db.SQL)
 
+	// --- Encryption key rotation (re-encrypts all stored secrets on rotate) ---
+	rotateSvc := app.NewRotateService(db.SQL, cfg.DataDir, sshDirs, logger)
+
 	// --- Job Manager ---
 	jobManager := app.NewJobManager()
 
@@ -374,6 +377,7 @@ func main() {
 		Compose:         compose,
 		Jobs:            jobManager,
 		UpgradeRepo:     upgradeRepo,
+		RotateService:   rotateSvc,
 		DataDir:         cfg.DataDir,
 	})
 

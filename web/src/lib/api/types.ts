@@ -1563,6 +1563,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/config/encryption-key/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the encryption key
+         * @description Re-encrypts every stored secret (registry creds, git creds, webhook secrets, host certs, SSH deploy keys, git token) from the current key to the new one in one atomic transaction, persists the new key to the key file, and swaps the active key. The new key (64 hex chars) is returned ONCE in the response so the operator can back it up; empty body = server generates one. Never logged. Admin only.
+         */
+        post: operations["rotateEncryptionKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/config/git-token": {
         parameters: {
             query?: never;
@@ -2114,10 +2134,10 @@ export interface components {
             /** @enum {string} */
             database_type: "sqlite" | "postgres";
             /**
-             * @description Source of encryption key
+             * @description Source of encryption key (key file > env > auto-generated)
              * @enum {string}
              */
-            encryption_key: "env" | "file" | "none";
+            encryption_key: "file" | "env" | "generated";
             /** @description First 8 chars of the token */
             git_token_preview?: string;
             /** @description Whether a global git token is configured */
@@ -3241,6 +3261,27 @@ export interface components {
             ssh_source: string;
             /** @description Where token comes from (per-stack, global, none) */
             token_source: string;
+        };
+        RotateEncryptionKeyInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/RotateEncryptionKeyInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description New key as 64 hex chars (32 bytes). Empty = server generates a fresh one. */
+            key?: string;
+        };
+        RotateEncryptionKeyOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/RotateEncryptionKeyOutputBody.json
+             */
+            readonly $schema?: string;
+            /** @description New encryption key, 64 hex chars. Shown once. */
+            new_key: string;
+            rotated: boolean;
         };
         RunListOutputBody: {
             /**
@@ -10424,6 +10465,75 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    rotateEncryptionKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotateEncryptionKeyInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotateEncryptionKeyOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

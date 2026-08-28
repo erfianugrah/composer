@@ -133,7 +133,7 @@ func RegisterHumaHandlers(api huma.API, deps Deps, registerAll bool) {
 	})
 
 	// Always-on handlers (no deps required for registration).
-	register(true, func() { handler.NewSystemHandler(deps.DockerClient, deps.DataDir).Register(api) })
+	register(true, func() { handler.NewSystemHandler(deps.DockerClient, deps.DataDir, deps.RotateService).Register(api) })
 	register(true, func() { handler.NewTemplateHandler().Register(api) })
 	register(true, func() { handler.NewAuthHandler(deps.AuthService).Register(api) })
 	register(true, func() { handler.NewKeyHandler(deps.AuthService).Register(api) })

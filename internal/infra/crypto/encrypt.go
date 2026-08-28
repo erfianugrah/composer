@@ -1,11 +1,8 @@
 package crypto
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -16,6 +13,9 @@ import (
 )
 
 var (
+	// keyMu guards encKey/encKeyErr: rotation swaps the cached key at
+	// runtime (SetKeyForRotation), so the cache cannot be once-only.
+	keyMu      sync.RWMutex
 	encKey     []byte
 	encKeyOnce sync.Once
 	encKeyErr  error
@@ -24,27 +24,35 @@ var (
 // ErrNoKey is returned when no encryption key could be resolved.
 var ErrNoKey = errors.New("no encryption key available")
 
-// deriveKey resolves the encryption key from (in priority order):
-// 1. COMPOSER_ENCRYPTION_KEY env var
-// 2. Persistent key file at COMPOSER_DATA_DIR/encryption.key
-// 3. Auto-generate a new key and save it to the key file
-func deriveKey() ([]byte, error) {
-	// 1. Env var takes priority (explicit override)
-	if raw := os.Getenv("COMPOSER_ENCRYPTION_KEY"); raw != "" {
-		h := sha256.Sum256([]byte(raw))
-		return h[:], nil
-	}
+// encKeyFile is the data-dir key file written by an explicit UI action (the
+// encryption-key rotation endpoint). Present and non-empty, the file wins
+// over env vars: it is the newest expression of key intent.
+const encKeyFile = "encryption.key"
 
-	// 2. Try persistent key file
+// deriveKey resolves the encryption key from (in priority order):
+//  1. COMPOSER_DATA_DIR/encryption.key (non-empty, >= 32 bytes) -- the key
+//     saved via the UI. It wins over env vars: the file was written by an
+//     explicit user action (save or rotate) and is the newest expression of
+//     key intent.
+//  2. COMPOSER_ENCRYPTION_KEY env var
+//  3. Auto-generate a new key and save it to the key file
+func deriveKey() ([]byte, error) {
+	// 1. Data-dir key file (explicit UI save) wins over env vars
 	dataDir := os.Getenv("COMPOSER_DATA_DIR")
 	if dataDir == "" {
 		dataDir = "/opt/composer"
 	}
-	keyFile := filepath.Join(dataDir, "encryption.key")
+	keyFile := filepath.Join(dataDir, encKeyFile)
 
 	if data, err := os.ReadFile(keyFile); err == nil && len(data) >= 32 {
 		// Key file exists and has content -- use it
 		h := sha256.Sum256(data)
+		return h[:], nil
+	}
+
+	// 2. Env var (bootstrap override for installs without a saved key)
+	if raw := os.Getenv("COMPOSER_ENCRYPTION_KEY"); raw != "" {
+		h := sha256.Sum256([]byte(raw))
 		return h[:], nil
 	}
 
@@ -70,10 +78,42 @@ func deriveKey() ([]byte, error) {
 }
 
 func getKey() ([]byte, error) {
+	keyMu.RLock()
+	if encKey != nil || encKeyErr != nil {
+		key, err := encKey, encKeyErr
+		keyMu.RUnlock()
+		return key, err
+	}
+	keyMu.RUnlock()
+
+	keyMu.Lock()
+	defer keyMu.Unlock()
 	encKeyOnce.Do(func() {
 		encKey, encKeyErr = deriveKey()
 	})
 	return encKey, encKeyErr
+}
+
+// CurrentKey returns a copy of the key currently cached in the singleton.
+// Rotation captures this before re-encrypting: it is the key every stored
+// "enc:" value is currently decryptable with.
+func CurrentKey() ([]byte, error) {
+	key, err := getKey()
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), key...), nil
+}
+
+// SetKeyForRotation atomically swaps the singleton key. Called by the
+// app-layer rotation service only AFTER its transaction re-encrypting every
+// stored value under the new key has committed -- never before, so a
+// mid-flight request can never decrypt an unrewritten row with the new key.
+func SetKeyForRotation(key []byte) {
+	keyMu.Lock()
+	encKey = append([]byte(nil), key...)
+	encKeyErr = nil
+	keyMu.Unlock()
 }
 
 // Encrypt encrypts plaintext using AES-256-GCM.
@@ -88,24 +128,7 @@ func Encrypt(plaintext string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encryption key unavailable: %w", err)
 	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", fmt.Errorf("creating cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("creating GCM: %w", err)
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("generating nonce: %w", err)
-	}
-
-	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
-	return "enc:" + base64.StdEncoding.EncodeToString(ciphertext), nil
+	return EncryptWith(key, plaintext)
 }
 
 // EncryptFile reads a plaintext file, encrypts its contents, and writes
@@ -167,32 +190,5 @@ func Decrypt(encoded string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("decryption requires encryption key: %w", err)
 	}
-
-	data, err := base64.StdEncoding.DecodeString(encoded[4:])
-	if err != nil {
-		return "", fmt.Errorf("decoding: %w", err)
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", fmt.Errorf("creating cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("creating GCM: %w", err)
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(data) < nonceSize {
-		return "", errors.New("ciphertext too short")
-	}
-
-	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", fmt.Errorf("decrypting: %w", err)
-	}
-
-	return string(plaintext), nil
+	return DecryptWith(key, encoded)
 }

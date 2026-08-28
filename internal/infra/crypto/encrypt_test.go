@@ -17,6 +17,10 @@ func TestEncryptDecryptWithEnvKey(t *testing.T) {
 	resetKey()
 	os.Setenv("COMPOSER_ENCRYPTION_KEY", "test-secret-key-for-unit-tests")
 	defer os.Unsetenv("COMPOSER_ENCRYPTION_KEY")
+	// Hermetic: deriveKey checks the key file first (it wins over env), so
+	// pin COMPOSER_DATA_DIR to an empty temp dir.
+	os.Setenv("COMPOSER_DATA_DIR", t.TempDir())
+	defer os.Unsetenv("COMPOSER_DATA_DIR")
 
 	plaintext := `{"token":"ghp_abc123","username":"deploy"}`
 

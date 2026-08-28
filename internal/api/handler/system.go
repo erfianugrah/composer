@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	composer "github.com/erfianugrah/composer"
 	"github.com/erfianugrah/composer/internal/api/dto"
 	authmw "github.com/erfianugrah/composer/internal/api/middleware"
+	"github.com/erfianugrah/composer/internal/app"
 	"github.com/erfianugrah/composer/internal/domain/auth"
 	"github.com/erfianugrah/composer/internal/infra/crypto"
 	"github.com/erfianugrah/composer/internal/infra/docker"
@@ -26,12 +28,13 @@ var startTime = time.Now()
 
 // SystemHandler registers system endpoints.
 type SystemHandler struct {
-	docker  *docker.Client
-	dataDir string
+	docker    *docker.Client
+	dataDir   string
+	rotateSvc *app.RotateService
 }
 
-func NewSystemHandler(docker *docker.Client, dataDir string) *SystemHandler {
-	return &SystemHandler{docker: docker, dataDir: dataDir}
+func NewSystemHandler(docker *docker.Client, dataDir string, rotateSvc *app.RotateService) *SystemHandler {
+	return &SystemHandler{docker: docker, dataDir: dataDir, rotateSvc: rotateSvc}
 }
 
 func (h *SystemHandler) Register(api huma.API) {
@@ -98,6 +101,15 @@ func (h *SystemHandler) Register(api huma.API) {
 	}, h.UpdateGitToken)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "rotateEncryptionKey", Method: http.MethodPost,
+		Path:        "/api/v1/system/config/encryption-key/rotate",
+		Summary:     "Rotate the encryption key",
+		Description: "Re-encrypts every stored secret (registry creds, git creds, webhook secrets, host certs, SSH deploy keys, git token) from the current key to the new one in one atomic transaction, persists the new key to the key file, and swaps the active key. The new key (64 hex chars) is returned ONCE in the response so the operator can back it up; empty body = server generates one. Never logged. Admin only.",
+		Tags:        []string{"system"},
+		Errors:      errsAdminMutation,
+	}, h.RotateEncryptionKey)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "addSSHKey", Method: http.MethodPost,
 		Path:        "/api/v1/system/config/ssh-keys",
 		Summary:     "Add an SSH key by pasting content",
@@ -162,10 +174,10 @@ func (h *SystemHandler) Config(ctx context.Context, input *struct{}) (*dto.Confi
 		out.Body.SSHKeys = []dto.SSHKeyInfo{}
 	}
 
-	// Encryption key source
-	if os.Getenv("COMPOSER_ENCRYPTION_KEY") != "" {
-		out.Body.EncryptionKey = "env"
-	} else {
+	// Encryption key source -- mirrors deriveKey precedence: key file > env
+	// var > auto-generated (the file wins because it is the newest explicit
+	// expression of key intent).
+	{
 		dataDir := h.dataDir
 		if dataDir == "" {
 			dataDir = "/opt/composer"
@@ -173,8 +185,10 @@ func (h *SystemHandler) Config(ctx context.Context, input *struct{}) (*dto.Confi
 		keyFile := filepath.Join(dataDir, "encryption.key")
 		if _, err := os.Stat(keyFile); err == nil {
 			out.Body.EncryptionKey = "file"
+		} else if os.Getenv("COMPOSER_ENCRYPTION_KEY") != "" {
+			out.Body.EncryptionKey = "env"
 		} else {
-			out.Body.EncryptionKey = "none"
+			out.Body.EncryptionKey = "generated"
 		}
 	}
 
@@ -389,6 +403,31 @@ func (h *SystemHandler) UpdateGitToken(ctx context.Context, input *dto.UpdateGit
 	if len(token) > 8 {
 		out.Body.Preview = token[:8] + "..."
 	}
+	return out, nil
+}
+
+// RotateEncryptionKey rotates the master encryption key (admin only).
+// The new key is returned exactly once in the response body; key material
+// never appears in logs or error messages.
+func (h *SystemHandler) RotateEncryptionKey(ctx context.Context, input *dto.RotateEncryptionKeyInput) (*dto.RotateEncryptionKeyOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleAdmin); err != nil {
+		return nil, err
+	}
+	if h.rotateSvc == nil {
+		return nil, huma.Error503ServiceUnavailable("encryption key rotation unavailable")
+	}
+
+	newKey, err := h.rotateSvc.RotateEncryptionKey(ctx, strings.TrimSpace(input.Body.Key))
+	if err != nil {
+		if errors.Is(err, crypto.ErrInvalidKey) {
+			return nil, huma.Error422UnprocessableEntity("invalid encryption key: must be 64 hex characters (32 bytes)")
+		}
+		return nil, serverError(ctx, err)
+	}
+
+	out := &dto.RotateEncryptionKeyOutput{}
+	out.Body.Rotated = true
+	out.Body.NewKey = newKey
 	return out, nil
 }
 

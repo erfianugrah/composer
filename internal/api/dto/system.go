@@ -64,7 +64,7 @@ type SSHKeyInfo struct {
 type ConfigOutput struct {
 	Body struct {
 		SSHKeys         []SSHKeyInfo `json:"ssh_keys" doc:"SSH keys detected on the system"`
-		EncryptionKey   string       `json:"encryption_key" enum:"env,file,none" doc:"Source of encryption key"`
+		EncryptionKey   string       `json:"encryption_key" enum:"file,env,generated" doc:"Source of encryption key (key file > env > auto-generated)"`
 		SopsAvailable   bool         `json:"sops_available" doc:"Whether sops binary is in PATH"`
 		AgeKeyLoaded    bool         `json:"age_key_loaded" doc:"Whether a global age key was found"`
 		AgeKeySource    string       `json:"age_key_source" doc:"Where the age key was loaded from"`
@@ -137,5 +137,23 @@ type GitTokenOutput struct {
 	Body struct {
 		Configured bool   `json:"configured"`
 		Preview    string `json:"preview,omitempty" doc:"First 8 chars of token for identification"`
+	}
+}
+
+// RotateEncryptionKeyInput is the request body for
+// POST /api/v1/system/config/encryption-key/rotate.
+type RotateEncryptionKeyInput struct {
+	Body struct {
+		Key string `json:"key,omitempty" maxLength:"64" doc:"New key as 64 hex chars (32 bytes). Empty = server generates a fresh one."`
+	}
+}
+
+// RotateEncryptionKeyOutput is the response for an encryption key rotation.
+// NewKey is returned exactly once so the operator can back it up; it is not
+// retrievable from any later endpoint.
+type RotateEncryptionKeyOutput struct {
+	Body struct {
+		Rotated bool   `json:"rotated"`
+		NewKey  string `json:"new_key" doc:"New encryption key, 64 hex chars. Shown once."`
 	}
 }

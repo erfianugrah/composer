@@ -232,11 +232,11 @@ components:
             - postgres
           type: string
         encryption_key:
-          description: Source of encryption key
+          description: Source of encryption key (key file > env > auto-generated)
           enum:
-            - env
             - file
-            - none
+            - env
+            - generated
           type: string
         git_token_preview:
           description: First 8 chars of the token
@@ -2489,6 +2489,40 @@ components:
         - ssh_source
         - token_source
         - age_source
+      type: object
+    RotateEncryptionKeyInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/RotateEncryptionKeyInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        key:
+          description: New key as 64 hex chars (32 bytes). Empty = server generates a fresh one.
+          maxLength: 64
+          type: string
+      type: object
+    RotateEncryptionKeyOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/RotateEncryptionKeyOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        new_key:
+          description: New encryption key, 64 hex chars. Shown once.
+          type: string
+        rotated:
+          type: boolean
+      required:
+        - rotated
+        - new_key
       type: object
     RunListOutputBody:
       additionalProperties: false
@@ -9064,6 +9098,56 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
       summary: Generate a new age key pair and save
+      tags:
+        - system
+  /api/v1/system/config/encryption-key/rotate:
+    post:
+      description: Re-encrypts every stored secret (registry creds, git creds, webhook secrets, host certs, SSH deploy keys, git token) from the current key to the new one in one atomic transaction, persists the new key to the key file, and swaps the active key. The new key (64 hex chars) is returned ONCE in the response so the operator can back it up; empty body = server generates one. Never logged. Admin only.
+      operationId: rotateEncryptionKey
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RotateEncryptionKeyInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RotateEncryptionKeyOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Rotate the encryption key
       tags:
         - system
   /api/v1/system/config/git-token:
