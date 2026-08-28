@@ -114,12 +114,24 @@ The tool accepts `--dry-run` to preview, writes to a `.tmp` sibling and renames 
 
 ### Key Resolution
 
-Key resolution (in priority order):
-1. `COMPOSER_ENCRYPTION_KEY` env var (explicit override, SHA-256 derived)
-2. `COMPOSER_DATA_DIR/encryption.key` file (auto-generated on first run)
+Key resolution (in priority order, since v0.26.0):
+1. `COMPOSER_DATA_DIR/encryption.key` file (UI-rotatable; checked first so a
+   UI rotation takes effect immediately)
+2. `COMPOSER_ENCRYPTION_KEY` env var (fallback; SHA-256 derived)
 3. If neither exists, a 32-byte random key is generated, saved to the key file, and used
 
 The key file is created with `0600` permissions (owner-read only). Back it up -- losing it means encrypted credentials and SSH keys can't be decrypted.
+
+#### Rotation
+
+Rotate via Settings -> System -> Encryption Key Rotation, or
+`POST /api/v1/system/config/encryption-key/rotate` (admin). It re-encrypts
+every `enc:` value across all encrypted stores (registry credentials,
+`stack_git_configs.credentials`, webhook secrets, `docker_host_certs`, SSH
+deploy keys, git token) in ONE transaction with rollback, then swaps the
+crypto singleton after commit. The endpoint returns the new key once in the
+response - back it up; it is never logged. Never rotate by hand-editing the
+key file without the re-encrypt; a half-rotated DB is the brick scenario.
 
 ### SOPS/age Encrypted Secrets
 

@@ -333,6 +333,7 @@ Jobs are created when compose operations run with `?async=true` or when webhooks
 | `GET` | `/api/v1/system/config` | Admin | Global config status (SSH keys, SOPS, encryption) |
 | `PUT` | `/api/v1/system/config/age-key` | Admin | Set or update global age key for SOPS |
 | `POST` | `/api/v1/system/config/age-key/generate` | Admin | Generate new age key pair |
+| `POST` | `/api/v1/system/config/encryption-key/rotate` | Admin | Rotate at-rest encryption key (re-encrypts all `enc:` values); returns new key once |
 | `GET` | `/api/v1/system/config/git-token` | Admin | Get global git token status |
 | `PUT` | `/api/v1/system/config/git-token` | Admin | Set or remove global git access token |
 | `POST` | `/api/v1/system/config/ssh-keys` | Admin | Add SSH key by pasting content |

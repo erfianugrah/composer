@@ -23,7 +23,7 @@ All configuration is via `COMPOSER_*` environment variables. No config files, no
 | `COMPOSER_GOOGLE_CLIENT_SECRET` | (empty) | Google OAuth client secret |
 | `COMPOSER_OAUTH_CALLBACK_URL` | `http://localhost:8080` | Base URL for OAuth callbacks |
 | `COMPOSER_SESSION_SECRET` | (auto) | Secret key for OAuth session store |
-| `COMPOSER_ENCRYPTION_KEY` | (empty) | Encryption key for secrets at rest (git credentials, webhook secrets). Auto-generated on first run and saved to `COMPOSER_DATA_DIR/encryption.key`. Set explicitly to override. |
+| `COMPOSER_ENCRYPTION_KEY` | (empty) | Encryption key for secrets at rest (git credentials, webhook secrets, host certs). **Fallback only** since v0.26.0 - `COMPOSER_DATA_DIR/encryption.key` is checked first so UI rotation takes effect. Auto-generated on first run if both absent. Rotate via `POST /api/v1/system/config/encryption-key/rotate` (admin). |
 | `COMPOSER_TRUSTED_PROXIES` | (empty) | Set to any value to trust `X-Real-IP`/`X-Forwarded-For` headers (required when behind a reverse proxy like Caddy/nginx). Empty = use raw `RemoteAddr` |
 | `COMPOSER_SOPS_AGE_KEY` | (empty) | Age private key (`AGE-SECRET-KEY-...`) for decrypting SOPS-encrypted `.env` and compose files. Also checks `SOPS_AGE_KEY`, `SOPS_AGE_KEYS`, key files, and `~/.config/sops/age/keys.txt` |
 | `COMPOSER_REGISTRY_AUTHS` | (empty) | Bootstrap Docker registry credentials at startup. JSON array of `{registry,username,secret,email?,stack_name?}`. Empty `stack_name` = global (applied to every stack). Idempotent: existing rows preserved unless `COMPOSER_REGISTRY_AUTHS_OVERWRITE=true`. Use the UI / `/api/v1/registries` for ongoing changes. |
