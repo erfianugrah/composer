@@ -177,6 +177,7 @@ export function SystemConfig() {
     setPruneMsg("");
     const { data, error } = await act.run<{ job_id?: string; space_reclaimed?: string }>(
       "system-prune",
+      // host-exempt: SystemConfig has no docker-host selector; prunes the default (local) daemon.
       () => apiFetch(`/api/v1/docker/prune?async=true`, { method: "POST" }),
       {
         running: "Pruning",
