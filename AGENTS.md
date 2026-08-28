@@ -68,3 +68,35 @@ Lint the spec with `make generate-lint` (uses `web/redocly.yaml`).
 
 DDD with bounded contexts: `cmd/composerd` (entrypoint), `internal/{domain,app,api,infra}` layers.
 SQLite primary (modernc.org/sqlite), Postgres optional. Valkey optional. SOPS/age encryption.
+
+## Live status vs request path
+
+Docker daemons are never contacted synchronously on a read endpoint. A
+background `StatusRefresher` (internal/app/status_refresher.go, 15s tick,
+`COMPOSER_STATUS_REFRESH_MS` override) fans out to every configured host
+concurrently under a 3s per-host timeout and snapshots per-stack container
+counts + derived lifecycle status + per-host reachability in memory. Read
+handlers (`stacks.List`, `containers.List`) serve DB rows + that snapshot
+only; a host that stops answering shows its stacks as `unknown`/stale instead
+of stalling the response. Rules that follow from this:
+
+- Never add a docker call to a GET handler's request path - put the data in
+  the refresher snapshot instead.
+- The stored `stacks.status` column is written by compose actions only; for
+  display always prefer the refresher's derived status when the host is
+  reachable.
+- `StackHandler.Get` may call docker (single stack, bounded) but wraps the
+  call in `containerListTimeout` (3s).
+
+## Docker host mTLS
+
+Remote docker endpoints register under Settings -> Docker Hosts. Client
+certificates are uploadable there (or via `PUT /api/v1/hosts/{id}/certs`):
+PEMs are AES-256-GCM encrypted in `docker_host_certs` (migration 009) and
+materialized to `<dataDir>/certs/<host_id>/` when a client is built. DB certs
+win over the legacy `cert_dir`. `POST /api/v1/hosts/{id}/test` builds a
+throwaway client and pings with a 3s timeout; rotation order is in
+docs/runbooks/docker-host-mtls-rotation.md. The docker client/compose cache
+(`internal/infra/docker.Factory`) is invalidated by `HostService.Update` /
+`Delete` via `SetCacheInvalidator` - touching the factory for a new reason
+must keep that wiring.
