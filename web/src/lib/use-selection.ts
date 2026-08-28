@@ -27,6 +27,9 @@ export function useSelection<T>(idOf: (row: T) => string, options: UseSelectionO
   // Initialize empty on BOTH server and client first render so hydration
   // matches; the persisted selection is restored in an effect after mount.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Anchor row for shift+click range selection (see toggleRange). Set by the
+  // most recent individual toggle or range pick.
+  const [lastToggledId, setLastToggledId] = useState<string | null>(null);
   const restored = useRef(false);
   useEffect(() => {
     if (restored.current || !persistKey || typeof window === "undefined") return;
@@ -79,10 +82,27 @@ export function useSelection<T>(idOf: (row: T) => string, options: UseSelectionO
   const prune = useCallback((rows: T[]) => pruneRef.current(rows), []);
 
   const toggle = useCallback((id: string) => {
+    setLastToggledId(id);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Select or deselect a group of ids as a unit (shift+click range).
+   * All selected together -> all removed; otherwise all added. `anchorId`
+   * (normally the clicked row) becomes the new range anchor.
+   */
+  const toggleRange = useCallback((ids: string[], anchorId?: string) => {
+    if (ids.length === 0) return;
+    setLastToggledId(anchorId ?? ids[ids.length - 1]);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (ids.every((id) => prev.has(id))) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
       return next;
     });
   }, []);
@@ -117,5 +137,18 @@ export function useSelection<T>(idOf: (row: T) => string, options: UseSelectionO
     return rows.some((r) => selected.has(idOf(r))) && !allSelected(rows);
   }
 
-  return { selected, size: selected.size, toggle, toggleAll, clear, isSelected, allSelected, someSelected, prune };
+  return { selected, size: selected.size, lastToggledId, toggle, toggleRange, toggleAll, clear, isSelected, allSelected, someSelected, prune };
+}
+
+/**
+ * Inclusive id range in rendered order between `from` and `to`. Returns
+ * null when either id is not in `order` (e.g. the anchor row was filtered
+ * out) so the caller can fall back to a plain single-row toggle.
+ */
+export function rangeIds(order: string[], from: string, to: string): string[] | null {
+  const a = order.indexOf(from);
+  const b = order.indexOf(to);
+  if (a === -1 || b === -1) return null;
+  const [lo, hi] = a <= b ? [a, b] : [b, a];
+  return order.slice(lo, hi + 1);
 }
