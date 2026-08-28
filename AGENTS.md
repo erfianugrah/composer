@@ -108,9 +108,13 @@ encrypts every stored secret with AES-256-GCM (`enc:` prefix). Precedence since
 v0.26.0: key file > env > auto-generated (the key file is the UI-settable key,
 so it wins - mirrors the SOPS age-key rule). Rotation is safe and UI/API-driven:
 `POST /api/v1/system/config/encryption-key/rotate` (admin) re-encrypts every
-`enc:` value across all encrypted stores (registry creds,
-`stack_git_configs.credentials`, webhook secrets, `docker_host_certs`, SSH
-deploy keys, git token) in ONE transaction with rollback, then swaps the crypto
-singleton only after commit. The new key is returned once in the response and
-never logged. A half-rotated DB is the brick scenario this design exists to
-prevent - never rotate by hand-editing the key file without the re-encrypt.
+`enc:` DB row across the four encrypted stores (registry creds,
+`stack_git_configs.credentials`, webhook secrets, `docker_host_certs`) in ONE
+transaction with rollback, then writes the new encryption.key file and swaps
+the crypto singleton only after commit. Rotation is DB-only: on-disk key files
+(SSH deploy keys, git token) are plaintext materializations read at runtime
+and are never re-encrypted (v0.26.0 shipped a file-rotation path that
+ciphertexted them in place and broke git sync; removed). The new key is
+returned once in the response and never logged. A half-rotated DB is the brick
+scenario this design exists to prevent - never rotate by hand-editing the key
+file without the re-encrypt.

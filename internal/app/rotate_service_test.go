@@ -40,9 +40,14 @@ func randomKeyHex(t *testing.T) string {
 	return hex.EncodeToString(buf[:])
 }
 
-// seedAllEncryptedStorage populates every encrypted table + file with values
-// encrypted under the CURRENT singleton key (which the test must set to the
-// "old" key before calling this).
+// plainSSHDeployKey is a fake plaintext private-key stand-in seeded into the
+// SSH dir; rotation must leave it byte-identical.
+const plainSSHDeployKey = "FAKE-PLAINTEXT-OPENSSH-PRIVATE-KEY-MATERIALIZATION"
+
+// seedAllEncryptedStorage populates every encrypted DB table (values
+// encrypted under the CURRENT singleton key, which the test must set to the
+// "old" key before calling this) plus the plaintext on-disk files, which
+// rotation must leave untouched.
 func seedAllEncryptedStorage(t *testing.T, db *store.DB, dataDir string, sshDir string) seededSecrets {
 	t.Helper()
 	ctx := context.Background()
@@ -101,18 +106,15 @@ func seedAllEncryptedStorage(t *testing.T, db *store.DB, dataDir string, sshDir 
 	row = db.SQL.QueryRowContext(ctx, `SELECT ca_cert_enc, cert_enc, key_enc FROM docker_host_certs WHERE host_id=$1`, hostID)
 	require.NoError(t, row.Scan(&seeded.caEnc, &seeded.certEnc, &seeded.keyEnc))
 
-	// 5. files: SSH deploy key (enc:), a plaintext file (must pass through),
-	//    a non-key file (must pass through), and the global git token (enc:).
-	sshKeyEnc, err := crypto.EncryptWith(oldKey, "-----BEGIN OPENSSH PRIVATE KEY-----\nssh-material\n-----END OPENSSH PRIVATE KEY-----\n")
-	require.NoError(t, err)
+	// 5. files: plaintext on-disk materializations (SSH deploy key, a
+	//    non-key file, and the global git token). Rotation must leave
+	//    every one of them untouched.
 	require.NoError(t, os.MkdirAll(sshDir, 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(sshDir, "id_deploy"), []byte(sshKeyEnc), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(sshDir, "id_deploy"), []byte(plainSSHDeployKey), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(sshDir, "known_hosts"), []byte("10.0.0.1 ssh-rsa AAAA"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(sshDir, "plain_key"), []byte("plaintext-deploy-key"), 0600))
 
-	tokenEnc, err := crypto.EncryptWith(oldKey, "ghp_gittoken123")
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "git-token"), []byte(tokenEnc), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "git-token"), []byte("ghp_gittoken123"), 0600))
 
 	return seeded
 }
@@ -146,8 +148,8 @@ func assertRotated(t *testing.T, preRaw, postRaw string, newKey, oldKey []byte, 
 }
 
 // TestRotateEncryptionKeyFull verifies rotation correctness end to end:
-// every DB row + file decrypts with the NEW key, fails with the OLD key, the
-// key file is written, and the singleton is swapped.
+// every DB row decrypts with the NEW key and fails with the OLD key, the key
+// file is written, the singleton is swapped, and no on-disk file is touched.
 func TestRotateEncryptionKeyFull(t *testing.T) {
 	ctx := context.Background()
 	dataDir := t.TempDir()
@@ -170,7 +172,7 @@ func TestRotateEncryptionKeyFull(t *testing.T) {
 
 	seeded := seedAllEncryptedStorage(t, db, dataDir, sshDir)
 
-	svc := app.NewRotateService(db.SQL, dataDir, []string{sshDir}, zaptest.NewLogger(t))
+	svc := app.NewRotateService(db.SQL, dataDir, zaptest.NewLogger(t))
 	out, err := svc.RotateEncryptionKey(ctx, newHex)
 	require.NoError(t, err)
 	assert.Equal(t, newHex, out)
@@ -209,29 +211,25 @@ func TestRotateEncryptionKeyFull(t *testing.T) {
 	require.NotNil(t, wh)
 	assert.Equal(t, "hook-secret-1", wh.Secret)
 
-	// --- Files: rotated to the new key ---
+	// --- Files: rotation is DB-only -- on-disk plaintext materializations
+	// --- are NOT re-encrypted; every seeded file stays byte-identical ---
 	sshRaw, err := os.ReadFile(filepath.Join(sshDir, "id_deploy"))
 	require.NoError(t, err)
-	plain, err := crypto.DecryptWith(newKey, string(sshRaw))
-	require.NoError(t, err)
-	assert.Contains(t, plain, "BEGIN OPENSSH PRIVATE KEY")
-	_, err = crypto.DecryptWith(oldKey, string(sshRaw))
-	assert.Error(t, err, "old key must no longer read the SSH deploy key")
-
-	// Plaintext + non-key files untouched
+	assert.Equal(t, plainSSHDeployKey, string(sshRaw),
+		"plaintext SSH deploy key file must be byte-identical after rotation")
 	plainFile, err := os.ReadFile(filepath.Join(sshDir, "plain_key"))
 	require.NoError(t, err)
-	assert.Equal(t, "plaintext-deploy-key", string(plainFile))
+	assert.Equal(t, "plaintext-deploy-key", string(plainFile),
+		"plaintext file in SSH dir must be unmodified by rotation")
 	kh, err := os.ReadFile(filepath.Join(sshDir, "known_hosts"))
 	require.NoError(t, err)
 	assert.Equal(t, "10.0.0.1 ssh-rsa AAAA", string(kh))
 
-	// git token rotated
+	// git token file untouched (plaintext materialization, not re-encrypted)
 	tokenRaw, err := os.ReadFile(filepath.Join(dataDir, "git-token"))
 	require.NoError(t, err)
-	token, err := crypto.DecryptWith(newKey, string(tokenRaw))
-	require.NoError(t, err)
-	assert.Equal(t, "ghp_gittoken123", token)
+	assert.Equal(t, "ghp_gittoken123", string(tokenRaw),
+		"git-token file must be unmodified by rotation")
 }
 
 func keyFromHexMust(t *testing.T, keyHex string) []byte {
@@ -261,7 +259,7 @@ func TestRotateEncryptionKeyGeneratesWhenEmpty(t *testing.T) {
 	crypto.SetKeyForRotation(oldKey)
 	seedAllEncryptedStorage(t, db, dataDir, t.TempDir())
 
-	svc := app.NewRotateService(db.SQL, dataDir, nil, zaptest.NewLogger(t))
+	svc := app.NewRotateService(db.SQL, dataDir, zaptest.NewLogger(t))
 	out, err := svc.RotateEncryptionKey(ctx, "")
 	require.NoError(t, err)
 	assert.Len(t, out, 64)
@@ -303,7 +301,7 @@ func TestRotateEncryptionKeyRollbackOnBadRow(t *testing.T) {
 		`UPDATE webhooks SET secret='enc:AAAA' WHERE id='wh-rotate-1'`)
 	require.NoError(t, err)
 
-	svc := app.NewRotateService(db.SQL, dataDir, []string{sshDir}, zaptest.NewLogger(t))
+	svc := app.NewRotateService(db.SQL, dataDir, zaptest.NewLogger(t))
 	_, err = svc.RotateEncryptionKey(ctx, newHex)
 	require.Error(t, err, "rotation must fail on an undecryptable row")
 
@@ -344,7 +342,7 @@ func TestRotateEncryptionKeyInvalidInput(t *testing.T) {
 	require.NoError(t, err)
 	crypto.SetKeyForRotation(oldKey)
 
-	svc := app.NewRotateService(db.SQL, dataDir, nil, zaptest.NewLogger(t))
+	svc := app.NewRotateService(db.SQL, dataDir, zaptest.NewLogger(t))
 
 	for _, bad := range []string{"not-hex", strings.Repeat("z", 64), "abc", randomKeyHex(t)[:31]} {
 		_, err := svc.RotateEncryptionKey(ctx, bad)
@@ -379,7 +377,7 @@ func TestRotateEncryptionKeyConcurrent(t *testing.T) {
 	crypto.SetKeyForRotation(oldKey)
 	seedAllEncryptedStorage(t, db, dataDir, t.TempDir())
 
-	svc := app.NewRotateService(db.SQL, dataDir, nil, zaptest.NewLogger(t))
+	svc := app.NewRotateService(db.SQL, dataDir, zaptest.NewLogger(t))
 
 	var wg sync.WaitGroup
 	var firstErr, secondErr error

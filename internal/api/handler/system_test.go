@@ -33,7 +33,7 @@ func newRotateTestServer(t *testing.T) (*api.Server, *store.DB) {
 		store.NewSessionRepo(db.SQL),
 		store.NewAPIKeyRepo(db.SQL),
 	)
-	rotateSvc := app.NewRotateService(db.SQL, dataDir, nil, nil)
+	rotateSvc := app.NewRotateService(db.SQL, dataDir, nil)
 
 	srv := api.NewServer(api.Deps{
 		AuthService:   authSvc,
