@@ -232,6 +232,53 @@ func DecryptComposeSecrets(composePath, ageKey string) (decrypted bool, err erro
 	return true, nil
 }
 
+// Encrypt encrypts plaintext data with SOPS using the given age key.
+// Writes to a temp file, encrypts, returns the ciphertext.
+func Encrypt(plaintext []byte, format, ageKey string) ([]byte, error) {
+	if !IsAvailable() {
+		return nil, fmt.Errorf("sops binary not found in PATH")
+	}
+
+	ext := ".env"
+	switch format {
+	case "yaml":
+		ext = ".yaml"
+	case "json":
+		ext = ".json"
+	case "ini":
+		ext = ".ini"
+	}
+
+	tmp, err := os.CreateTemp("", "sops-*"+ext)
+	if err != nil {
+		return nil, fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(plaintext); err != nil {
+		tmp.Close()
+		return nil, fmt.Errorf("writing temp file: %w", err)
+	}
+	tmp.Close()
+
+	args := []string{"--encrypt", "--input-type", format, tmpPath}
+	cmd := exec.Command("sops", args...)
+	if ageKey != "" {
+		cmd.Env = append(os.Environ(), "SOPS_AGE_KEY="+ageKey)
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("sops encrypt failed: %s: %w", strings.TrimSpace(stderr.String()), err)
+	}
+
+	return stdout.Bytes(), nil
+}
+
 // ReEncryptComposeSecrets restores a SOPS-encrypted compose file from its
 // .sops backup. Call after deploy completes.
 func ReEncryptComposeSecrets(composePath string) error {

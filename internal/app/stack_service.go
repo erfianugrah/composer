@@ -1180,6 +1180,28 @@ func (s *StackService) DecryptEnvContent(ctx context.Context, stackName, envPath
 	return string(plaintext)
 }
 
+// EncryptEnvContent encrypts plaintext .env content with the stack's age key.
+// Returns SOPS ciphertext. If sops is unavailable or no age key is resolved,
+// returns the plaintext unchanged (the file will be stored unencrypted).
+func (s *StackService) EncryptEnvContent(ctx context.Context, stackName, plaintext string) (string, error) {
+	if plaintext == "" || !sops.IsAvailable() {
+		return plaintext, nil
+	}
+	// Check if the plaintext is already SOPS-encrypted (double-encrypt guard).
+	if sops.IsSopsEncrypted([]byte(plaintext)) {
+		return plaintext, nil
+	}
+	ageKey := s.resolveAgeKey(ctx, stackName)
+	if ageKey == "" {
+		return plaintext, nil
+	}
+	encrypted, err := sops.Encrypt([]byte(plaintext), "dotenv", ageKey)
+	if err != nil {
+		return plaintext, fmt.Errorf("re-encrypting .env for stack %q: %w", stackName, err)
+	}
+	return string(encrypted), nil
+}
+
 // Containers returns the containers for a stack.
 func (s *StackService) Containers(ctx context.Context, stackName string) ([]domcontainer.Container, error) {
 	// Empty stack name = return all containers across all hosts.

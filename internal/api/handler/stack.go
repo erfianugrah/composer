@@ -828,7 +828,19 @@ func (h *StackHandler) UpdateEnv(ctx context.Context, input *dto.UpdateEnvInput)
 		// Empty env = delete the .env file
 		os.Remove(envPath)
 	} else {
-		if err := os.WriteFile(envPath, []byte(input.Body.Env), 0600); err != nil {
+		content := input.Body.Env
+
+		// If the on-disk file was SOPS-encrypted, re-encrypt the new content
+		// so the UI save path doesn't silently drop encryption.
+		if sopsInfra.IsSopsEncryptedFile(envPath) {
+			encrypted, err := h.stacks.EncryptEnvContent(ctx, input.Name, content)
+			if err != nil {
+				return nil, serverError(ctx, err)
+			}
+			content = encrypted
+		}
+
+		if err := os.WriteFile(envPath, []byte(content), 0600); err != nil {
 			return nil, serverError(ctx, err)
 		}
 	}
