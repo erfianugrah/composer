@@ -262,7 +262,15 @@ func Encrypt(plaintext []byte, format, ageKey string) ([]byte, error) {
 	}
 	tmp.Close()
 
-	args := []string{"--encrypt", "--input-type", format, tmpPath}
+	args := []string{"--encrypt", "--input-type", format}
+	if ageKey != "" {
+		pubKey, err := PublicKey(ageKey)
+		if err != nil {
+			return nil, fmt.Errorf("deriving age public key: %w", err)
+		}
+		args = append(args, "--age", pubKey)
+	}
+	args = append(args, tmpPath)
 	cmd := exec.Command("sops", args...)
 	if ageKey != "" {
 		cmd.Env = append(os.Environ(), "SOPS_AGE_KEY="+ageKey)

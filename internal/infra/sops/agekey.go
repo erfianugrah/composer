@@ -14,6 +14,16 @@ import (
 // wins over env vars: it is the newest expression of key intent.
 const ageKeyFile = "age.key"
 
+// PublicKey derives the age public key (recipient string, e.g. "age1...")
+// from an age private key string ("AGE-SECRET-KEY-1...").
+func PublicKey(privateKey string) (string, error) {
+	id, err := age.ParseX25519Identity(privateKey)
+	if err != nil {
+		return "", fmt.Errorf("parsing age private key: %w", err)
+	}
+	return id.Recipient().String(), nil
+}
+
 // GenerateAgeKey creates a new age X25519 identity (private key) and returns
 // the private key string and public key (recipient) string.
 func GenerateAgeKey() (privateKey, publicKey string, err error) {
