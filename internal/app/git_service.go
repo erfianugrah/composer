@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -238,17 +237,9 @@ func (s *GitService) syncLocked(ctx context.Context, name string) (changed bool,
 
 	changed, newSHA, err = s.gitClient.Pull(st.Path, cfg.ComposePath, cfg.Credentials)
 	if err != nil {
-		errMsg := err.Error()
-		// Conflict / non-FF pulls still surface as errors and warrant the
-		// dirty-state diagnostic. The bare "unstaged changes" path is now
-		// handled inside git.Client.Pull (hard-reset to new HEAD), so it
-		// reaches this branch only when HEAD did not advance.
-		if strings.Contains(errMsg, "worktree contains unstaged changes") ||
-			strings.Contains(errMsg, "uncommitted changes") ||
-			strings.Contains(errMsg, "conflict") {
-			s.gitCfgs.UpdateSyncStatus(ctx, name, stack.GitDirty, cfg.LastCommitSHA)
-			return false, "", fmt.Errorf("sync failed: local changes conflict with remote -- discard local edits or commit them first: %w", err)
-		}
+		// Pull() uses fetch+hard-reset - the only errors are network/auth,
+		// missing remote ref, or reset failure. No dirty-worktree or conflict
+		// paths exist anymore.
 		s.gitCfgs.UpdateSyncStatus(ctx, name, stack.GitSyncErr, cfg.LastCommitSHA)
 		return false, "", fmt.Errorf("pulling: %w", err)
 	}
