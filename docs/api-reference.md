@@ -96,6 +96,7 @@ Compose operations (`up`, `build`, `down`, `restart`, `pull`) accept `?async=tru
 | `POST` | `/api/v1/stacks/{name}/down` | Operator+ | Stop (docker compose down). `?async=true` |
 | `POST` | `/api/v1/stacks/{name}/restart` | Operator+ | Restart all services. `?async=true` |
 | `POST` | `/api/v1/stacks/{name}/pull` | Operator+ | Pull latest images. `?async=true` |
+| `POST` | `/api/v1/stacks/{name}/deploy` | Operator+ | Full GitOps pipeline: git pull -> decrypt -> compose pull -> compose up -d -> re-encrypt. `?async=true` |
 | `POST` | `/api/v1/stacks/{name}/validate` | Operator+ | Validate compose syntax |
 | `POST` | `/api/v1/stacks/{name}/exec` | Operator+ | Run docker compose command (console) |
 | `POST` | `/api/v1/stacks/{name}/convert/git` | Operator+ | Convert local stack to git-backed |
@@ -128,6 +129,7 @@ Git status returns `sync_status` which can be: `synced`, `behind`, `diverged`, `
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
 | `POST` | `/api/v1/stacks/{name}/sync` | Operator+ | Git pull + detect compose changes. Clears `dirty` status on success |
+| `POST` | `/api/v1/stacks/{name}/deploy` | Operator+ | Full pipeline: sync + decrypt + pull + up + re-encrypt. Git-backed only. `?async=true` |
 | `GET` | `/api/v1/stacks/{name}/git/log` | Viewer+ | Commit history (filtered to compose file). `?limit=20` |
 | `GET` | `/api/v1/stacks/{name}/git/status` | Viewer+ | Sync status, branch, last commit, `working_tree_dirty` flag |
 | `POST` | `/api/v1/stacks/{name}/rollback` | Operator+ | Checkout specific git commit |

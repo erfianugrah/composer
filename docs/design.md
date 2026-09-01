@@ -562,6 +562,7 @@ POST   /api/v1/stacks/{name}/up       -- deploy (docker compose up -d)     [done
 POST   /api/v1/stacks/{name}/down     -- stop (docker compose down)        [done]
 POST   /api/v1/stacks/{name}/restart  -- restart all services              [done]
 POST   /api/v1/stacks/{name}/pull     -- pull latest images                [done]
+POST   /api/v1/stacks/{name}/deploy   -- full GitOps pipeline              [done]
 POST   /api/v1/stacks/{name}/validate -- validate compose syntax           [done]
 GET    /api/v1/stacks/{name}/diff     -- pending changes vs running        [done]
 ```
@@ -595,6 +596,7 @@ GET    /api/v1/pipelines/{id}/runs/{runId} -- get run detail with step results
 
 ```
 POST   /api/v1/stacks/{name}/sync        -- git pull + detect changes
+POST   /api/v1/stacks/{name}/deploy      -- full pipeline: sync + pull + up
 POST   /api/v1/stacks/{name}/rollback    -- checkout specific commit
 GET    /api/v1/stacks/{name}/git/log     -- commit history (compose changes)
 GET    /api/v1/stacks/{name}/git/diff    -- diff current vs running
