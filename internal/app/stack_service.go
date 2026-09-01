@@ -450,6 +450,13 @@ func (s *StackService) Stop(ctx context.Context, name string) (*docker.ComposeRe
 	}
 
 	cf := s.resolveComposeFile(ctx, name)
+	// Re-encrypt on ANY return path so secrets are never left plaintext.
+	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
+	if err := s.decryptSopsSecrets(ctx, name, st.Path); err != nil {
+		s.log.Error("stop aborted", zap.String("stack", name), zap.Error(err))
+		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
+		return nil, err
+	}
 	s.log.Info("stopping stack", zap.String("stack", name))
 	cw, cErr := s.composeFor(ctx, st)
 	if cErr != nil {
@@ -481,6 +488,13 @@ func (s *StackService) Restart(ctx context.Context, name string) (*docker.Compos
 	}
 
 	cf := s.resolveComposeFile(ctx, name)
+	// Re-encrypt on ANY return path so secrets are never left plaintext.
+	defer s.reEncryptSopsSecretsCtx(ctx, name, st.Path)
+	if err := s.decryptSopsSecrets(ctx, name, st.Path); err != nil {
+		s.log.Error("restart aborted", zap.String("stack", name), zap.Error(err))
+		s.publishEvent(event.StackError{Name: name, Error: err.Error(), Timestamp: time.Now()})
+		return nil, err
+	}
 	s.log.Info("restarting stack", zap.String("stack", name))
 	cw, cErr := s.composeFor(ctx, st)
 	if cErr != nil {
