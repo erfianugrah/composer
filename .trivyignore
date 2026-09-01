@@ -44,10 +44,12 @@ CVE-2026-32281
 CVE-2026-32283
 CVE-2026-33186
 CVE-2026-56852
+CVE-2026-56854
 GHSA-hrxh-6v49-42gf
 
 # bundled docker-cli/buildx/compose module deps (clear on docker:29-cli refresh)
 CVE-2026-17106
+CVE-2026-56854
 # docker/docker authz fix is for the daemon-side plugin path; buildx/compose are
 # CLI plugins that don't run the authz path. NOTE: .trivyignore is CVE-ID-scoped
 # (not per-target), so this ALSO silences CVE-2026-34040 in composerd itself until
