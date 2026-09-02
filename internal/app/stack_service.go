@@ -1041,12 +1041,10 @@ func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackP
 // non-git stacks.
 func (s *StackService) reEncryptSopsSecretsCtx(ctx context.Context, stackName, stackPath string) {
 	envFile := s.resolveEnvFile(ctx, stackName, stackPath)
-	if err := sops.ReEncryptEnvFile(envFile); err != nil {
+	if restored, err := sops.ReEncryptEnvFile(envFile); err != nil {
 		s.log.Error("sops: failed to re-encrypt .env", zap.String("path", envFile), zap.Error(err))
-	} else {
-		if _, err := os.Stat(envFile + ".sops"); err != nil {
-			s.log.Info("sops: re-encrypted .env", zap.String("path", envFile))
-		}
+	} else if restored {
+		s.log.Info("sops: re-encrypted .env", zap.String("path", envFile))
 	}
 	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"} {
 		sops.ReEncryptComposeSecrets(filepath.Join(stackPath, name))

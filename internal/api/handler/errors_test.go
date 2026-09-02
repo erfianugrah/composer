@@ -3,11 +3,14 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+
+	sopsInfra "github.com/erfianugrah/composer/internal/infra/sops"
 )
 
 func TestServerError_ReturnsGenericMessage(t *testing.T) {
@@ -117,6 +120,17 @@ func TestComposeError_WhitespaceOnlyStderr_FallsBack(t *testing.T) {
 	err := composeError(ctx, errors.New("x"), "  \n\t  \n")
 	assert.Contains(t, err.Error(), "request_id: req_abc")
 	assert.Contains(t, err.Error(), "an internal error occurred")
+}
+
+func TestComposeError_SurfacesSOPSDecryptError(t *testing.T) {
+	// SOPS decrypt failures (wrapped with sops.ErrDecrypt) must reach the UI:
+	// they name the stack, the file, and the age recipients - all non-secret -
+	// so operators can fix a rotated recipient without reading server logs.
+	ctx := context.WithValue(context.Background(), chimiddleware.RequestIDKey, "req_sops")
+	err := composeError(ctx, fmt.Errorf("decrypting .env for stack draw: %w", sopsInfra.ErrDecrypt), "")
+	assert.Contains(t, err.Error(), "decrypting .env for stack draw")
+	assert.NotContains(t, err.Error(), "an internal error occurred")
+	assert.NotContains(t, err.Error(), "request_id")
 }
 
 func TestComposeError_NoRequestID_NoStderr(t *testing.T) {

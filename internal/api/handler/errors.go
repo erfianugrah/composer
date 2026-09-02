@@ -2,11 +2,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+
+	sopsInfra "github.com/erfianugrah/composer/internal/infra/sops"
 )
 
 // serverError returns a generic 500 to the client and logs the actual error
@@ -93,6 +96,12 @@ func composeError(ctx context.Context, err error, stderr string) error {
 
 	if msg := strings.TrimSpace(stderr); msg != "" {
 		return huma.Error500InternalServerError(msg)
+	}
+	// SOPS decrypt failures (wrong age key, rotated recipients) carry no secret
+	// material and are the pre-compose failure operators must be able to read
+	// from the UI - surface them like gitError does instead of a bare request_id.
+	if err != nil && errors.Is(err, sopsInfra.ErrDecrypt) {
+		return huma.Error500InternalServerError(err.Error())
 	}
 	if reqID != "" {
 		return huma.Error500InternalServerError("an internal error occurred (request_id: " + reqID + ")")

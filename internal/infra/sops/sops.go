@@ -5,12 +5,19 @@ package sops
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+// ErrDecrypt wraps SOPS decryption failures (missing key, wrong age
+// recipient, corrupt ciphertext). The wrapped message carries no secret
+// material - only recipients, paths, and sops stderr - so it is safe to
+// surface to operators in API responses.
+var ErrDecrypt = errors.New("sops decryption failed")
 
 // IsAvailable returns true if the sops binary is in PATH.
 func IsAvailable() bool {
@@ -97,7 +104,7 @@ func Decrypt(filePath string, ageKey string) ([]byte, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("sops decrypt failed: %s: %w", strings.TrimSpace(stderr.String()), err)
+		return nil, fmt.Errorf("sops decrypt failed: %s: %w", strings.TrimSpace(stderr.String()), ErrDecrypt)
 	}
 
 	return stdout.Bytes(), nil
@@ -185,21 +192,22 @@ func DecryptEnvFile(envPath, ageKey string) (decrypted bool, err error) {
 
 // ReEncryptEnvFile restores the SOPS-encrypted .env file at envPath from the
 // <envPath>.sops backup created by DecryptEnvFile. Call this after deploy completes
-// so the .env is never left decrypted at rest.
-func ReEncryptEnvFile(envPath string) error {
+// so the .env is never left decrypted at rest. restored is false when no backup
+// exists (the file was never decrypted in this cycle).
+func ReEncryptEnvFile(envPath string) (restored bool, err error) {
 	sopsPath := envPath + ".sops"
 
 	sopsData, err := os.ReadFile(sopsPath)
 	if err != nil {
-		return nil // no .sops backup, nothing to restore (file wasn't SOPS-encrypted)
+		return false, nil // no .sops backup, nothing to restore (file wasn't SOPS-encrypted)
 	}
 
 	if err := os.WriteFile(envPath, sopsData, 0600); err != nil {
-		return fmt.Errorf("restoring encrypted .env: %w", err)
+		return false, fmt.Errorf("restoring encrypted .env: %w", err)
 	}
 
 	os.Remove(sopsPath)
-	return nil
+	return true, nil
 }
 
 // DecryptComposeSecrets decrypts a SOPS-encrypted compose file in-place.
