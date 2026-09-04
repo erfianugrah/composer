@@ -1040,7 +1040,15 @@ func (s *StackService) decryptSopsSecrets(ctx context.Context, stackName, stackP
 // stackName is used to look up GitSource.EnvPath when present; pass "" for
 // non-git stacks.
 func (s *StackService) reEncryptSopsSecretsCtx(ctx context.Context, stackName, stackPath string) {
-	envFile := s.resolveEnvFile(ctx, stackName, stackPath)
+	// The restore must not be gated on the caller's ctx. Every caller reaches
+	// this from a deferred cleanup, by which time the request ctx is
+	// frequently already cancelled (the WS client disconnects right after a
+	// streamed action completes). With a dead ctx, resolveEnvFile's GitSource
+	// lookup fails, envFile falls back to the stack root, and ReEncryptEnvFile
+	// silently no-ops - leaving the decrypted .env plaintext on disk
+	// (2026-09-04 edge-services incident).
+	_ = ctx
+	envFile := s.resolveEnvFile(context.Background(), stackName, stackPath)
 	if restored, err := sops.ReEncryptEnvFile(envFile); err != nil {
 		s.log.Error("sops: failed to re-encrypt .env", zap.String("path", envFile), zap.Error(err))
 	} else if restored {
