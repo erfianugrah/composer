@@ -26,6 +26,10 @@ CVE-2026-46595
 CVE-2026-46597
 CVE-2026-25681
 
+# gRPC-Go embedded in the prebuilt sops / docker-cli binaries (composerd's own
+# copy is pinned to v1.83.1 in go.mod; these two copies clear on their upstream rebuilds)
+CVE-2026-84304
+
 # sops module deps (bump SOPS_VERSION in deploy/Dockerfile to clear; last check 3.12.2)
 CVE-2026-39820
 CVE-2026-39822
