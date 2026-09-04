@@ -999,6 +999,25 @@ func decryptSopsFiles(log *zap.Logger, stackName, envFile, ageKey string, compos
 		log.Debug("no age key available for SOPS decryption", zap.String("stack", stackName))
 		return nil
 	}
+
+	// If the .env is already plaintext (e.g. left behind by a prior
+	// ctx-cancelled re-encrypt, 2026-09-04 edge-services incident),
+	// encrypt it in place so the normal decrypt→backup→restore cycle
+	// can run. Without this, a plaintext .env never creates a .sops
+	// backup, and every subsequent restart or deploy silently leaves
+	// it plaintext.
+	if data, rerr := os.ReadFile(envFile); rerr == nil && !sops.IsSopsEncrypted(data) && len(data) > 0 {
+		log.Warn("sops: .env already plaintext, encrypting in place for the restore cycle", zap.String("path", envFile))
+		cipher, cerr := sops.Encrypt(data, "dotenv", ageKey)
+		if cerr != nil {
+			// Best-effort: if the key is invalid the normal decrypt step
+			// will also fail with the right error. Let it own the error.
+			log.Warn("sops: failed to repair plaintext .env, falling through to decrypt", zap.String("path", envFile), zap.Error(cerr))
+		} else if err := os.WriteFile(envFile, cipher, 0600); err != nil {
+			return fmt.Errorf("repairing plaintext .env write for stack %s: %w", stackName, err)
+		}
+	}
+
 	if decrypted, err := sopsDecryptEnv(envFile, ageKey); err != nil {
 		log.Error("sops: failed to decrypt .env", zap.String("stack", stackName), zap.String("path", envFile), zap.Error(err))
 		return fmt.Errorf("decrypting .env for stack %s: %w", stackName, err)

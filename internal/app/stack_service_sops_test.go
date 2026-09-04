@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/erfianugrah/composer/internal/domain/stack"
+	"github.com/erfianugrah/composer/internal/infra/sops"
 )
 
 // --- test doubles for the SOPS restore lifecycle ---------------------------
@@ -151,6 +152,103 @@ func TestPrepareAction_CleanupRestoresEnvWithCancelledCtx(t *testing.T) {
 	}
 	if !bytes.Equal(got, encrypted) {
 		t.Fatalf("env not restored from .sops backup despite cancelled ctx: got %d bytes", len(got))
+	}
+	if _, err := os.Stat(envPath + ".sops"); !os.IsNotExist(err) {
+		t.Fatal(".sops backup not removed by restore")
+	}
+}
+
+// TestPrepareAction_RepairsPlaintextEnv verifies the repair path: when an
+// age key is available but the .env is already plaintext (e.g. left behind
+// by a prior ctx-cancelled re-encrypt, the 2026-09-04 incident), the decrypt
+// phase encrypts it in place so the normal decrypt-backup-restore cycle can
+// run and the file ends up as ciphertext after the action completes.
+func TestPrepareAction_RepairsPlaintextEnv(t *testing.T) {
+	if !sops.IsAvailable() {
+		t.Skip("sops binary not in PATH")
+	}
+
+	oldAvail, oldDecEnv, oldDecComp := sopsAvailable, sopsDecryptEnv, sopsDecryptComp
+	t.Cleanup(func() {
+		sopsAvailable, sopsDecryptEnv, sopsDecryptComp = oldAvail, oldDecEnv, oldDecComp
+	})
+	sopsAvailable = func() bool { return true }
+	sopsDecryptEnv = func(envPath, ageKey string) (bool, error) {
+		data, err := os.ReadFile(envPath)
+		if err != nil {
+			return false, nil
+		}
+		if !sops.IsSopsEncrypted(data) {
+			return false, nil
+		}
+		if err := os.WriteFile(envPath+".sops", data, 0600); err != nil {
+			return false, err
+		}
+		return true, os.WriteFile(envPath, []byte("PLAINTEXT-VALUE=1"), 0600)
+	}
+	sopsDecryptComp = func(composePath, ageKey string) (bool, error) { return false, nil }
+
+	key, _, err := sops.GenerateAgeKey()
+	if err != nil {
+		t.Fatalf("GenerateAgeKey: %v", err)
+	}
+
+	stackPath := t.TempDir()
+	envRel := filepath.Join("deploy", "edge", ".env")
+	envPath := filepath.Join(stackPath, envRel)
+	if err := os.MkdirAll(filepath.Dir(envPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Start PLAINTEXT -- the exact state left by the old ctx-lifetime bug.
+	if err := os.WriteFile(envPath, []byte("TOKEN=original-value\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := stack.NewStack("edge-services", stackPath, stack.SourceGit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewStackService(
+		&sopsTestStackRepo{byName: map[string]*stack.Stack{"edge-services": st}},
+		&sopsTestGitCfgRepo{byName: map[string]*stack.GitSource{"edge-services": {
+			RepoURL:     "git@example.com:repo.git",
+			Branch:      "main",
+			EnvPath:     envRel,
+			Credentials: &stack.GitCredentials{AgeKey: key},
+		}}},
+		nil, nil, nil, nil, t.TempDir(), t.TempDir(), NewStackLocks(), nil, nil,
+	)
+
+	ac, err := svc.PrepareAction(context.Background(), "edge-services")
+	if err != nil {
+		t.Fatalf("PrepareAction: %v", err)
+	}
+	if ac == nil {
+		t.Fatal("PrepareAction returned nil ActionContext")
+	}
+
+	// Sanity: after the repair + decrypt, the .env is plaintext with a real
+	// SOPS-encrypted .sops backup created during the decrypt step.
+	got, _ := os.ReadFile(envPath)
+	if !bytes.Equal(got, []byte("PLAINTEXT-VALUE=1")) {
+		t.Fatalf("env not decrypted after repair: got %d bytes", len(got))
+	}
+	backup, err := os.ReadFile(envPath + ".sops")
+	if err != nil {
+		t.Fatalf("expected .sops backup after decrypt repair: %v", err)
+	}
+	if !sops.IsSopsEncrypted(backup) {
+		t.Fatal(".sops backup is not SOPS ciphertext")
+	}
+
+	ac.Cleanup()
+
+	got, err = os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("env missing after cleanup: %v", err)
+	}
+	if !sops.IsSopsEncrypted(got) {
+		t.Fatal("env not restored to ciphertext after repair cleanup")
 	}
 	if _, err := os.Stat(envPath + ".sops"); !os.IsNotExist(err) {
 		t.Fatal(".sops backup not removed by restore")
