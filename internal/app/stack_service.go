@@ -1414,7 +1414,7 @@ func deriveStackStatus(containers []domcontainer.Container, oneShots map[string]
 			// Declared one-shot services (restart: "no" / "on-failure" in the
 			// compose file) count too: the container list API carries no restart
 			// policy, so the compose file is the only signal separating a
-			// completed job (memledger-migrate) from a stopped service.
+			// completed job (acme-migrate) from a stopped service.
 		}
 	}
 

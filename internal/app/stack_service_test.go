@@ -389,7 +389,7 @@ func TestDeriveStackStatus_NoContainers(t *testing.T) {
 }
 
 // A declared one-shot service (restart: "no" in the compose file) that has
-// completed must not drag a fully-up stack into "partial" (memledger case:
+// completed must not drag a fully-up stack into "partial" (acme case:
 // 5 running services + exited migrate/ui-build runners).
 func TestDeriveStackStatus_CompletedDeclaredOneShot(t *testing.T) {
 	oneShots := map[string]bool{"migrate": true, "ui-build": true}
