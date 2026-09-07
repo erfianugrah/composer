@@ -91,3 +91,54 @@ func TestStackRepoHostIDRoundTrip(t *testing.T) {
 	require.NotNil(t, got2)
 	assert.Nil(t, got2.HostID)
 }
+
+func TestStackRepoDependsOnRoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewStackRepo(db)
+	ctx := context.Background()
+
+	// A stack created without dependencies reads back as an empty (non-nil)
+	// list: the column default is '[]' and the API always emits an array.
+	base, err := stack.NewStack("servarr", "/tmp/servarr", stack.SourceLocal)
+	require.NoError(t, err)
+	require.NoError(t, repo.Create(ctx, base))
+	got, err := repo.GetByName(ctx, "servarr")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.NotNil(t, got.DependsOn)
+	assert.Empty(t, got.DependsOn)
+
+	// Dependencies survive Create...
+	dep, err := stack.NewStack("sonarr", "/tmp/sonarr", stack.SourceLocal)
+	require.NoError(t, err)
+	dep.DependsOn = []string{"servarr"}
+	require.NoError(t, repo.Create(ctx, dep))
+	got, err = repo.GetByName(ctx, "sonarr")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"servarr"}, got.DependsOn)
+
+	// ...and Update, including order.
+	got.DependsOn = []string{"servarr", "gluetun"}
+	got.UpdatedAt = now()
+	require.NoError(t, repo.Update(ctx, got))
+	got, err = repo.GetByName(ctx, "sonarr")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"servarr", "gluetun"}, got.DependsOn)
+
+	// List carries the column too.
+	list, err := repo.List(ctx)
+	require.NoError(t, err)
+	byName := map[string][]string{}
+	for _, s := range list {
+		byName[s.Name] = s.DependsOn
+	}
+	assert.Equal(t, []string{"servarr", "gluetun"}, byName["sonarr"])
+	assert.Empty(t, byName["servarr"])
+
+	// Clearing writes '[]', not NULL (the column is NOT NULL).
+	got.DependsOn = nil
+	require.NoError(t, repo.Update(ctx, got))
+	var raw string
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT depends_on FROM stacks WHERE name = 'sonarr'`).Scan(&raw))
+	assert.Equal(t, "[]", raw)
+}

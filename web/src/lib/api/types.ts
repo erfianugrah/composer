@@ -1051,6 +1051,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stacks/deploy-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deploy several stacks in dependency order
+         * @description Runs `docker compose up -d` for every listed stack, grouped into waves by each stack's `depends_on` so a stack that owns a shared resource (e.g. an `external: true` network) is up before the stacks that reference it. Only dependencies that are also in the request order the batch; others are ignored, not added. Stacks in one wave deploy concurrently; a stack whose in-batch dependency failed is reported `skipped` and never started. Use `?async=true` (recommended for more than a few stacks) to get a job ID and poll `/api/v1/jobs/{id}` - the job output carries one `ok|failed|skipped <name>[: reason]` line per stack.
+         */
+        post: operations["deployStackBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stacks/git": {
         parameters: {
             query?: never;
@@ -1218,6 +1238,26 @@ export interface paths {
          * @description Removes one per-stack credential override (token, ssh_key, ssh_key_file, age_key, username, password) without affecting other fields. The global credential takes effect for the cleared field.
          */
         delete: operations["clearStackCredentialField"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stacks/{name}/depends-on": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the stacks this stack deploys after
+         * @description Sets the batch-deploy ordering for a stack: every listed stack must deploy successfully before this one when both are in the same `deployStackBatch` request. Each name must be an existing stack on the same docker host; self references and cycles are rejected with 422. Full replace - send `[]` to clear. Has no effect on single-stack deploys.
+         */
+        put: operations["updateStackDependsOn"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2048,6 +2088,31 @@ export interface components {
             readonly $schema?: string;
             entries: components["schemas"]["AuditEntryDTO"][] | null;
         };
+        BatchDeploySummary: {
+            /** Format: int64 */
+            failed: number;
+            /** Format: int64 */
+            ok: number;
+            /** Format: int64 */
+            skipped: number;
+            /** Format: int64 */
+            total: number;
+        };
+        BatchStackResult: {
+            /** @description Failure message, or for skipped stacks the reason (which dependency failed) */
+            error?: string;
+            name: string;
+            /**
+             * @description ok = compose up succeeded; failed = deploy error (or unknown stack); skipped = never started because an in-batch dependency failed or was skipped
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+            /**
+             * Format: int64
+             * @description Zero-based wave the stack was scheduled in (-1 for unknown stacks)
+             */
+            wave: number;
+        };
         BootstrapInputBody: {
             /**
              * Format: uri
@@ -2440,6 +2505,31 @@ export interface components {
             id: string;
             /** @enum {string} */
             status: "received" | "skipped" | "processing" | "success" | "failed";
+        };
+        DeployBatchInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/DeployBatchInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Stack names to deploy. Grouped into waves by each stack's depends_on; only dependencies that are ALSO in this list order the batch - a dependency outside the list is ignored, never auto-added. */
+            stacks: string[] | null;
+        };
+        DeployBatchOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/DeployBatchOutputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Background job ID (present when async=true) */
+            job_id?: string;
+            /** @description Per-stack outcomes sorted by wave then name. Empty when async=true. */
+            results: components["schemas"]["BatchStackResult"][] | null;
+            summary: components["schemas"]["BatchDeploySummary"];
+            /** @description The computed schedule: stacks in the same wave deployed concurrently. Empty when async=true. */
+            waves: (string[] | null)[] | null;
         };
         DiffLine: {
             content: string;
@@ -3376,6 +3466,17 @@ export interface components {
             /** Format: date-time */
             ts: string;
         };
+        StackDependsOnOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/StackDependsOnOutputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Stacks this stack deploys after (validated, de-duplicated, order preserved) */
+            depends_on: string[] | null;
+            name: string;
+        };
         StackDeployed: {
             name: string;
             /** Format: date-time */
@@ -3392,6 +3493,8 @@ export interface components {
             containers: components["schemas"]["ContainerOutput"][] | null;
             /** Format: date-time */
             created_at: string;
+            /** @description Stacks that must deploy before this one in a batch deploy (see PUT /stacks/{name}/depends-on) */
+            depends_on: string[] | null;
             /** @description Dockerfiles found in the stack directory */
             dockerfiles?: components["schemas"]["StackFile"][] | null;
             env_content?: string;
@@ -3443,6 +3546,8 @@ export interface components {
             container_count: number;
             /** Format: date-time */
             created_at: string;
+            /** @description Stacks that must deploy before this one in a batch deploy (see PUT /stacks/{name}/depends-on) */
+            depends_on: string[] | null;
             /** @description Docker host name (omitted when 'local') */
             host?: string;
             /** @description Stack name */
@@ -3642,6 +3747,16 @@ export interface components {
             token?: string;
             /** @description Basic auth username (empty string clears) */
             username?: string;
+        };
+        UpdateStackDependsOnInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example //schemas/UpdateStackDependsOnInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Names of stacks that must deploy successfully before this one when both are in the same batch deploy. Each must be an existing stack on the same docker host; self references and cycles are rejected with 422. Replaces the current list; [] clears it. */
+            depends_on: string[] | null;
         };
         UpdateStackInputBody: {
             /**
@@ -8381,6 +8496,87 @@ export interface operations {
             };
         };
     };
+    deployStackBatch: {
+        parameters: {
+            query?: {
+                /** @description Run as a background job and return a job ID immediately. Recommended: a multi-wave batch easily outlives the 60s response timeout on synchronous calls. Poll /api/v1/jobs/{id}; its output has one line per stack (ok|failed|skipped <name>[: reason]) followed by a summary line. */
+                async?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeployBatchInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeployBatchOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     createGitStack: {
         parameters: {
             query?: never;
@@ -9171,6 +9367,87 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    updateStackDependsOn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Stack name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStackDependsOnInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackDependsOnOutputBody"];
+                };
             };
             /** @description Unauthorized */
             401: {

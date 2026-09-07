@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/erfianugrah/composer/internal/domain/dag"
 )
 
 // Stack is the aggregate root for Docker Compose stack management.
@@ -18,7 +20,13 @@ type Stack struct {
 	GitConfig      *GitSource
 	// HostID selects which docker daemon this stack deploys to.
 	// nil = default host (host.DefaultName). Non-nil = docker_hosts.id.
-	HostID    *int64
+	HostID *int64
+	// DependsOn names stacks that must deploy successfully before this one
+	// when both are in the same batch deploy (typically because the other
+	// stack creates a docker network this one declares `external: true`).
+	// Set via SetDependsOn, which enforces existence, same host, no self
+	// reference and acyclicity. Single-stack deploys ignore it.
+	DependsOn []string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -150,6 +158,94 @@ func (s *Stack) UpdateCompose(content string) {
 func (s *Stack) SetStatus(status Status) {
 	s.Status = status
 	s.UpdatedAt = time.Now().UTC()
+}
+
+// SetDependsOn replaces the stack's deploy-ordering dependencies.
+//
+// all is every known stack (including s itself, which is fine) and is used to
+// check that each name exists, lives on the same docker host as s, and that
+// the new edges do not close a cycle through the existing DependsOn edges of
+// the other stacks. Names are trimmed and de-duplicated; order is preserved.
+func (s *Stack) SetDependsOn(deps []string, all []*Stack) error {
+	byName := make(map[string]*Stack, len(all))
+	for _, o := range all {
+		if o != nil {
+			byName[o.Name] = o
+		}
+	}
+
+	clean := make([]string, 0, len(deps))
+	seen := make(map[string]bool, len(deps))
+	for _, d := range deps {
+		d = strings.TrimSpace(d)
+		if d == "" {
+			return errors.New("dependency name is empty")
+		}
+		if d == s.Name {
+			return fmt.Errorf("stack %q cannot depend on itself", s.Name)
+		}
+		if seen[d] {
+			continue
+		}
+		seen[d] = true
+		o, ok := byName[d]
+		if !ok {
+			return fmt.Errorf("dependency %q is not a known stack", d)
+		}
+		if !SameHost(s, o) {
+			return fmt.Errorf("dependency %q is on a different docker host than %q", d, s.Name)
+		}
+		clean = append(clean, d)
+	}
+
+	// Cycle check over the whole graph with s's edges replaced by the new set.
+	ids := make([]string, 0, len(byName)+1)
+	for name := range byName {
+		ids = append(ids, name)
+	}
+	if _, ok := byName[s.Name]; !ok {
+		ids = append(ids, s.Name)
+	}
+	depsOf := func(id string) []string {
+		if id == s.Name {
+			return clean
+		}
+		return byName[id].DependsOn
+	}
+	if _, err := dag.Waves(ids, depsOf); err != nil {
+		return fmt.Errorf("dependencies of %q would form a cycle: %w", s.Name, err)
+	}
+
+	s.DependsOn = clean
+	s.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+// SameHost reports whether two stacks deploy to the same docker daemon.
+// A nil HostID is the default host, so nil == nil counts as the same host.
+func SameHost(a, b *Stack) bool {
+	if a.HostID == nil || b.HostID == nil {
+		return a.HostID == nil && b.HostID == nil
+	}
+	return *a.HostID == *b.HostID
+}
+
+// DeployOrder groups stacks into deploy waves that honour DependsOn. Only
+// edges whose target is also in stacks count: a dependency outside the set
+// is ignored, not auto-added, so "deploy these three" never grows into
+// "deploy these seven". Stacks in the same wave may deploy concurrently.
+// Returns a *dag.CycleError when the stored edges contain a cycle.
+func DeployOrder(stacks []*Stack) ([][]string, error) {
+	ids := make([]string, 0, len(stacks))
+	depMap := make(map[string][]string, len(stacks))
+	for _, s := range stacks {
+		if s == nil {
+			continue
+		}
+		ids = append(ids, s.Name)
+		depMap[s.Name] = s.DependsOn
+	}
+	return dag.Waves(ids, func(id string) []string { return depMap[id] })
 }
 
 // validateName checks that a stack name is filesystem-safe.

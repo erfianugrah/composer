@@ -40,6 +40,7 @@ Pure business logic with zero external dependencies. Contains:
 - **stack/** -- Stack aggregate with git source support, compose content, status tracking
 - **container/** -- Container entity with status and health enums
 - **pipeline/** -- Pipeline aggregate, Step, Run, DAG validation, topological ordering
+- **dag/** -- Kahn's-algorithm wave ordering + cycle detection shared by pipeline steps and stack batch deploys
 - **event/** -- Event bus interface + all domain event types (stack, container, pipeline)
 
 The domain layer imports only the Go standard library (+ `golang.org/x/crypto/bcrypt`).
@@ -48,7 +49,7 @@ The domain layer imports only the Go standard library (+ `golang.org/x/crypto/bc
 
 Orchestrates domain objects and infrastructure:
 - **AuthService** -- Bootstrap, login/logout, session validation, API key management
-- **StackService** -- CRUD, deploy/stop/restart/pull, event publishing, git-stack dirty detection
+- **StackService** -- CRUD, deploy/stop/restart/pull, dependency-ordered batch deploy, event publishing, git-stack dirty detection
 - **GitService** -- Git-backed stack creation, sync, sync+redeploy (GitOps flow)
 - **PipelineService** -- Pipeline CRUD, async run execution
 - **PipelineExecutor** -- DAG step executor with concurrency, timeouts, cancellation
@@ -96,6 +97,24 @@ StackService.Deploy()
   → EventBus fans out to all SSE subscribers
   → SSE handler sends to connected browsers
 ```
+
+## Batch deploy ordering
+
+Stacks on one host routinely share a docker network that exactly one of them
+creates and the others declare `external: true`. Compose has no cross-project
+ordering, so "select all, deploy" after a reboot used to fan out N parallel
+`compose up` calls and fail every dependent with "network declared as
+external, but could not be found" (servarr, 2026-09-07: 18 stacks). Each stack
+therefore carries `depends_on` (`stacks.depends_on`, JSON array of names):
+the stacks that must deploy successfully before it *when both are in the same
+batch*. `PUT /stacks/{name}/depends-on` validates existence, same host, no
+self reference and acyclicity in the domain layer (`stack.SetDependsOn`).
+`POST /stacks/deploy-batch` sorts the requested stacks into waves with
+`domain/dag` (the same orderer the pipeline executor uses), deploys each wave
+concurrently through `StackService.Deploy` (so the shared `StackLocks` still
+serialise per stack), and marks a stack `skipped` instead of starting it when
+an in-batch dependency failed. Edges to stacks outside the request are
+ignored, not auto-added; single-stack deploys ignore `depends_on` entirely.
 
 ## Database
 

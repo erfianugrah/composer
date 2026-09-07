@@ -77,7 +77,7 @@ Global + per-stack Docker registry auth. Multi-registry: one row per registry. S
 | `PUT` | `/api/v1/registries/{id}` | Update credential (admin). Leave `secret` empty to keep the existing value |
 | `DELETE` | `/api/v1/registries/{id}` | Delete credential (admin) |
 
-### Stacks (20 endpoints)
+### Stacks (22 endpoints)
 
 Compose operations (`up`, `build`, `down`, `restart`, `pull`) accept `?async=true` to run as a background job. When async, the response includes a `job_id` instead of stdout/stderr. Poll `GET /api/v1/jobs/{id}` for status.
 
@@ -92,6 +92,8 @@ Compose operations (`up`, `build`, `down`, `restart`, `pull`) accept `?async=tru
 | `PUT` | `/api/v1/stacks/{name}/env` | Operator+ | Update `.env` file for stack |
 | `DELETE` | `/api/v1/stacks/{name}` | Operator+ | Delete stack. `?remove_volumes=true` |
 | `POST` | `/api/v1/stacks/{name}/up` | Operator+ | Deploy (docker compose up). `?async=true` |
+| `POST` | `/api/v1/stacks/deploy-batch` | Operator+ | Deploy several stacks in `depends_on` order (see below). `?async=true` |
+| `PUT` | `/api/v1/stacks/{name}/depends-on` | Operator+ | Replace the stacks this one deploys after in a batch |
 | `POST` | `/api/v1/stacks/{name}/build` | Operator+ | Build & deploy (docker compose up --build). `?async=true` |
 | `POST` | `/api/v1/stacks/{name}/down` | Operator+ | Stop (docker compose down). `?async=true` |
 | `POST` | `/api/v1/stacks/{name}/restart` | Operator+ | Restart all services. `?async=true` |
@@ -104,6 +106,41 @@ Compose operations (`up`, `build`, `down`, `restart`, `pull`) accept `?async=tru
 | `GET` | `/api/v1/stacks/{name}/diff` | Viewer+ | Show pending compose changes |
 | `GET` | `/api/v1/stacks/{name}/credentials` | Operator+ | Get resolved credential chain (per-stack vs global) |
 | `PUT` | `/api/v1/stacks/{name}/credentials` | Operator+ | Update per-stack credential overrides |
+
+#### Batch deploy ordering
+
+A stack can declare which other stacks must be up before it. The typical case is a docker network created by one stack and referenced as `external: true` by the rest: deploying everything in parallel after a reboot fails every dependent with `network ... declared as external, but could not be found`.
+
+```
+PUT /api/v1/stacks/sonarr/depends-on
+{"depends_on": ["servarr"]}
+```
+
+Full replace; `[]` clears. Each name must be an existing stack on the same docker host; self references and cycles are rejected with 422. The list is returned as `depends_on` on `GET /api/v1/stacks` and `GET /api/v1/stacks/{name}`. Single-stack deploys ignore it.
+
+```
+POST /api/v1/stacks/deploy-batch?async=true
+{"stacks": ["servarr", "sonarr", "radarr", "bazarr"]}
+```
+
+The server topologically sorts the requested stacks into waves using only `depends_on` edges whose target is also in the request (a dependency outside the list is ignored, never auto-added). Each wave runs `docker compose up -d` concurrently, under the same per-stack lock as every other compose operation. A stack whose in-batch dependency failed (or was itself skipped) is never started and is reported as `skipped` with the reason. A cycle in the stored edges rejects the whole batch with 422 before anything deploys.
+
+Synchronous response:
+
+```json
+{
+  "results": [
+    {"name": "servarr", "status": "ok", "wave": 0},
+    {"name": "radarr",  "status": "failed", "error": "...compose stderr...", "wave": 1},
+    {"name": "sonarr",  "status": "ok", "wave": 1},
+    {"name": "bazarr",  "status": "skipped", "error": "dependency \"radarr\" failed", "wave": 2}
+  ],
+  "waves": [["servarr"], ["radarr", "sonarr"], ["bazarr"]],
+  "summary": {"total": 4, "ok": 2, "failed": 1, "skipped": 1}
+}
+```
+
+With `?async=true` (recommended: a multi-wave batch will outlive the 60s response timeout) the response carries `job_id` only. The job's `output` gains one line per stack as each finishes, `ok|failed|skipped <name>[: reason]`, followed by a `N ok, N failed, N skipped` summary line; the job ends `failed` when any stack failed. Unknown stack names are reported `failed` with `stack not found` rather than rejecting the batch.
 
 ### Containers (6 endpoints)
 

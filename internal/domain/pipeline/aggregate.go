@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/erfianugrah/composer/internal/domain/dag"
 )
 
 // Pipeline is the aggregate root for CI-esque deployment workflows.
@@ -145,87 +147,50 @@ func (p *Pipeline) Validate() error {
 		stepIDs[s.ID] = true
 	}
 
-	// Check for cycles using DFS
-	visited := make(map[string]int) // 0=unvisited, 1=visiting, 2=done
-	var hasCycle func(id string) bool
-	depMap := make(map[string][]string)
-	for _, s := range p.Steps {
-		depMap[s.ID] = s.DependsOn
-	}
-
-	hasCycle = func(id string) bool {
-		if visited[id] == 1 {
-			return true // cycle
+	// Cycle check via the shared DAG orderer (also drives stack batch deploys).
+	ids, depMap := p.stepGraph()
+	if _, err := dag.Waves(ids, func(id string) []string { return depMap[id] }); err != nil {
+		var cycle *dag.CycleError
+		if errors.As(err, &cycle) && len(cycle.Nodes) > 0 {
+			return fmt.Errorf("cycle detected involving step %q", cycle.Nodes[0])
 		}
-		if visited[id] == 2 {
-			return false
-		}
-		visited[id] = 1
-		for _, dep := range depMap[id] {
-			if hasCycle(dep) {
-				return true
-			}
-		}
-		visited[id] = 2
-		return false
-	}
-
-	for _, s := range p.Steps {
-		if hasCycle(s.ID) {
-			return fmt.Errorf("cycle detected involving step %q", s.ID)
-		}
+		return err
 	}
 
 	return nil
 }
 
+// stepGraph projects the steps to the id list + dependency map dag.Waves wants.
+func (p *Pipeline) stepGraph() ([]string, map[string][]string) {
+	ids := make([]string, 0, len(p.Steps))
+	depMap := make(map[string][]string, len(p.Steps))
+	for _, s := range p.Steps {
+		ids = append(ids, s.ID)
+		depMap[s.ID] = s.DependsOn
+	}
+	return ids, depMap
+}
+
 // ExecutionOrder returns steps in topological order (respecting dependencies).
 // Steps with no deps come first. Steps with same depth can run concurrently.
 func (p *Pipeline) ExecutionOrder() [][]Step {
-	depMap := make(map[string][]string)
-	stepMap := make(map[string]Step)
-	inDegree := make(map[string]int)
-
+	stepMap := make(map[string]Step, len(p.Steps))
 	for _, s := range p.Steps {
 		stepMap[s.ID] = s
-		depMap[s.ID] = s.DependsOn
-		inDegree[s.ID] = len(s.DependsOn)
 	}
+	ids, depMap := p.stepGraph()
+	// A cycle cannot reach here once Validate() has passed; if it does, the
+	// waves computed before the cycle are returned (the previous behaviour).
+	waves, _ := dag.Waves(ids, func(id string) []string { return depMap[id] })
 
-	var result [][]Step
-
-	for len(stepMap) > 0 {
-		// Find all steps with zero in-degree (ready to run)
-		var batch []Step
-		for id, deg := range inDegree {
-			if deg == 0 {
-				if s, ok := stepMap[id]; ok {
-					batch = append(batch, s)
-				}
-			}
+	result := make([][]Step, 0, len(waves))
+	for _, wave := range waves {
+		batch := make([]Step, 0, len(wave))
+		for _, id := range wave {
+			batch = append(batch, stepMap[id])
 		}
-
-		if len(batch) == 0 {
-			break // shouldn't happen if Validate() passes
-		}
-
 		result = append(result, batch)
-
-		// Remove batch from graph
-		for _, s := range batch {
-			delete(stepMap, s.ID)
-			delete(inDegree, s.ID)
-			// Reduce in-degree of dependents
-			for id, deps := range depMap {
-				for _, dep := range deps {
-					if dep == s.ID {
-						inDegree[id]--
-					}
-				}
-			}
-		}
 	}
-
 	return result
 }
 

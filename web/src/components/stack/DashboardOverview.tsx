@@ -17,6 +17,9 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
 import { apiFetch } from "@/lib/api/errors";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { statusColor, statusClass } from "@/lib/status-colors";
+import { toast } from "@/components/ui/toast";
+import { deployBatch, toastBatchOutcome, type BatchStackResult } from "@/lib/batch-deploy";
+import { BatchDeployResults } from "./BatchDeployResults";
 
 interface StackSummary {
   name: string;
@@ -90,16 +93,40 @@ export function DashboardOverview() {
   const { busy, run } = useBusy();
   const selectedRunning = sorted.filter((s) => sel.isSelected(s.name) && s.status === "running");
   const selectedStopped = sorted.filter((s) => sel.isSelected(s.name) && s.status !== "running");
+  // Outcome of the last batch deploy, kept on screen until dismissed: a toast
+  // holds one failure, the operator needs all of them (and the skips).
+  const [batch, setBatch] = useState<{ names: string[]; results: BatchStackResult[]; running: boolean } | null>(null);
+
+  // Deploy goes through the batch endpoint so stacks come up in depends_on
+  // order (a stack owning an `external: true` network before its users)
+  // instead of N parallel single deploys racing each other.
+  async function bulkDeploy(names: string[]) {
+    setBatch({ names, results: [], running: true });
+    const { results, error } = await deployBatch(names, {
+      onProgress: (results) => setBatch({ names, results, running: true }),
+    });
+    if (error) {
+      toast.error("Batch deploy failed", { detail: error });
+      setBatch(results.length > 0 ? { names, results, running: false } : null);
+      return;
+    }
+    setBatch({ names, results, running: false });
+    toastBatchOutcome(results, names.length);
+  }
 
   async function bulk(action: "up" | "down" | "restart") {
     const targets = action === "up" ? selectedStopped : selectedRunning;
     const names = targets.map((s) => s.name);
-    const verb = action === "up" ? "Deploy" : action === "down" ? "Stopp" : "Restart";
-    const infinitive = action === "up" ? "deploy" : action === "down" ? "stop" : "restart";
     await run(async () => {
-      await runBulk(names, (n) => apiFetch(`/api/v1/stacks/${encodeURIComponent(n)}/${action}`, { method: "POST" }), {
-        verb, noun: "stack", infinitive,
-      });
+      if (action === "up") {
+        await bulkDeploy(names);
+      } else {
+        const verb = action === "down" ? "Stopp" : "Restart";
+        const infinitive = action === "down" ? "stop" : "restart";
+        await runBulk(names, (n) => apiFetch(`/api/v1/stacks/${encodeURIComponent(n)}/${action}`, { method: "POST" }), {
+          verb, noun: "stack", infinitive,
+        });
+      }
       sel.clear();
     });
   }
@@ -185,6 +212,9 @@ export function DashboardOverview() {
             Stop ({selectedRunning.length})
           </ConfirmButton>
         </BulkBar>
+        {batch && (
+          <BatchDeployResults names={batch.names} results={batch.results} running={batch.running} onDismiss={() => setBatch(null)} />
+        )}
         <CardContent>
           {stacks.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="no-stacks">

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -125,6 +126,16 @@ func (h *StackHandler) Register(api huma.API) {
 	}, h.Deploy)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "deployStackBatch",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/stacks/deploy-batch",
+		Summary:     "Deploy several stacks in dependency order",
+		Description: "Runs `docker compose up -d` for every listed stack, grouped into waves by each stack's `depends_on` so a stack that owns a shared resource (e.g. an `external: true` network) is up before the stacks that reference it. Only dependencies that are also in the request order the batch; others are ignored, not added. Stacks in one wave deploy concurrently; a stack whose in-batch dependency failed is reported `skipped` and never started. Use `?async=true` (recommended for more than a few stacks) to get a job ID and poll `/api/v1/jobs/{id}` - the job output carries one `ok|failed|skipped <name>[: reason]` line per stack.",
+		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
+	}, h.DeployBatch)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "stopStack",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/stacks/{name}/down",
@@ -203,6 +214,16 @@ func (h *StackHandler) Register(api huma.API) {
 		Tags:        []string{"stacks"},
 		Errors:      errsOperatorMutation,
 	}, h.UpdateEnv)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "updateStackDependsOn",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/stacks/{name}/depends-on",
+		Summary:     "Replace the stacks this stack deploys after",
+		Description: "Sets the batch-deploy ordering for a stack: every listed stack must deploy successfully before this one when both are in the same `deployStackBatch` request. Each name must be an existing stack on the same docker host; self references and cycles are rejected with 422. Full replace - send `[]` to clear. Has no effect on single-stack deploys.",
+		Tags:        []string{"stacks"},
+		Errors:      errsOperatorMutation,
+	}, h.UpdateDependsOn)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getStackCredentials",
@@ -322,6 +343,7 @@ func (h *StackHandler) List(ctx context.Context, input *struct{}) (*dto.StackLis
 			ContainerCount: b.Total,
 			RunningCount:   b.Running,
 			Reachable:      reachable,
+			DependsOn:      dependsOnList(s),
 			CreatedAt:      s.CreatedAt,
 			UpdatedAt:      s.UpdatedAt,
 		})
@@ -370,6 +392,7 @@ func (h *StackHandler) Get(ctx context.Context, input *dto.GetStackInput) (*dto.
 	out.Body.Status = string(st.Status)
 	out.Body.Host = resolveHostName(ctx, h.hostRepo, st.HostID)
 	out.Body.ComposeContent = st.ComposeContent
+	out.Body.DependsOn = dependsOnList(st)
 	out.Body.CreatedAt = st.CreatedAt
 	out.Body.UpdatedAt = st.UpdatedAt
 
@@ -449,10 +472,135 @@ func (h *StackHandler) Update(ctx context.Context, input *dto.UpdateStackInput) 
 	out.Body.Status = string(st.Status)
 	out.Body.Host = resolveHostName(ctx, h.hostRepo, st.HostID)
 	out.Body.ComposeContent = st.ComposeContent
+	out.Body.DependsOn = dependsOnList(st)
 	out.Body.CreatedAt = st.CreatedAt
 	out.Body.UpdatedAt = st.UpdatedAt
 	out.Body.Containers = []dto.ContainerOutput{}
 	return out, nil
+}
+
+// dependsOnList returns the stack's depends_on as a non-nil slice so the JSON
+// field is always an array, never null.
+func dependsOnList(st *stack.Stack) []string {
+	if st == nil || len(st.DependsOn) == 0 {
+		return []string{}
+	}
+	return st.DependsOn
+}
+
+// UpdateDependsOn replaces the batch-deploy ordering for a stack.
+func (h *StackHandler) UpdateDependsOn(ctx context.Context, input *dto.UpdateStackDependsOnInput) (*dto.StackDependsOnOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+	st, err := h.stacks.UpdateDependsOn(ctx, input.Name, input.Body.DependsOn)
+	if err != nil {
+		if errors.Is(err, app.ErrNotFound) {
+			return nil, huma.Error404NotFound("stack not found")
+		}
+		if errors.Is(err, app.ErrInvalidDependency) {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+		return nil, serverError(ctx, err)
+	}
+	out := &dto.StackDependsOnOutput{}
+	out.Body.Name = st.Name
+	out.Body.DependsOn = dependsOnList(st)
+	return out, nil
+}
+
+// DeployBatch deploys several stacks in dependency-ordered waves. Mirrors the
+// single-stack verbs: `?async=true` returns a job ID and the work continues
+// under context.Background() so a client disconnect cannot kill it.
+func (h *StackHandler) DeployBatch(ctx context.Context, input *dto.DeployBatchInput) (*dto.DeployBatchOutput, error) {
+	if err := authmw.CheckRole(ctx, auth.RoleOperator); err != nil {
+		return nil, err
+	}
+	names := input.Body.Stacks
+
+	if input.Async && h.jobs != nil {
+		job := h.jobs.Create("deploy_batch", batchJobTarget(names))
+		h.jobs.Start(job.ID)
+		go func() {
+			res, err := h.stacks.DeployBatch(context.Background(), names, func(r app.BatchStackResult) {
+				h.jobs.AppendOutput(job.ID, formatBatchLine(r))
+			})
+			if err != nil {
+				h.jobs.Fail(job.ID, err.Error())
+				return
+			}
+			if _, failed, _ := res.Counts(); failed > 0 {
+				// Keep the per-stack lines already appended; the summary is the error.
+				h.jobs.AppendOutput(job.ID, res.Summary())
+				h.jobs.Fail(job.ID, "batch deploy: "+res.Summary())
+				return
+			}
+			h.jobs.Complete(job.ID, formatBatchOutput(res), "")
+		}()
+		out := &dto.DeployBatchOutput{}
+		out.Body.Results = []dto.BatchStackResult{}
+		out.Body.Waves = [][]string{}
+		out.Body.Summary.Total = len(names)
+		out.Body.JobID = job.ID
+		return out, nil
+	}
+
+	// Synchronous: background context so a client disconnect cannot kill a
+	// half-finished wave. Each stack is bounded to 10 minutes by the service.
+	res, err := h.stacks.DeployBatch(context.Background(), names, nil)
+	if err != nil {
+		if errors.Is(err, app.ErrInvalidDependency) {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+		return nil, serverError(ctx, err)
+	}
+	out := &dto.DeployBatchOutput{}
+	out.Body.Results = make([]dto.BatchStackResult, 0, len(res.Results))
+	for _, r := range res.Results {
+		out.Body.Results = append(out.Body.Results, dto.BatchStackResult{
+			Name: r.Name, Status: string(r.Status), Error: r.Error, Wave: r.Wave,
+		})
+	}
+	out.Body.Waves = res.Waves
+	if out.Body.Waves == nil {
+		out.Body.Waves = [][]string{}
+	}
+	ok, failed, skipped := res.Counts()
+	out.Body.Summary = dto.BatchDeploySummary{Total: len(res.Results), OK: ok, Failed: failed, Skipped: skipped}
+	return out, nil
+}
+
+// batchJobTarget renders the job's Target column: the full list when short,
+// otherwise the first name and a count so the Jobs drawer stays readable.
+func batchJobTarget(names []string) string {
+	if len(names) <= 3 {
+		return strings.Join(names, ", ")
+	}
+	return fmt.Sprintf("%s +%d more", names[0], len(names)-1)
+}
+
+// formatBatchLine is the per-stack job output line the UI parses:
+// `<status> <name>` or `<status> <name>: <reason>`. The reason is collapsed
+// onto one line (compose stderr is multi-line) so one line == one stack.
+func formatBatchLine(r app.BatchStackResult) string {
+	line := string(r.Status) + " " + r.Name
+	if r.Error != "" {
+		line += ": " + strings.Join(strings.Fields(r.Error), " ")
+	}
+	return line
+}
+
+// formatBatchOutput renders every result line plus the summary, used as the
+// final job output on success (Complete overwrites the appended lines).
+func formatBatchOutput(res *app.BatchDeployResult) string {
+	var b strings.Builder
+	for _, r := range res.Results {
+		b.WriteString(formatBatchLine(r))
+		b.WriteByte('\n')
+	}
+	b.WriteString(res.Summary())
+	b.WriteByte('\n')
+	return b.String()
 }
 
 func (h *StackHandler) Delete(ctx context.Context, input *dto.DeleteStackInput) (*struct{}, error) {

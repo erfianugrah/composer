@@ -62,6 +62,7 @@ type StackSummary struct {
 	Reachable      bool      `json:"reachable" doc:"False when the stack's docker host is unreachable; its status is then stale and reported as 'unknown'"`
 	ContainerCount int       `json:"container_count" doc:"Number of containers in this stack"`
 	RunningCount   int       `json:"running_count" doc:"Number of running containers"`
+	DependsOn      []string  `json:"depends_on" doc:"Stacks that must deploy before this one in a batch deploy (see PUT /stacks/{name}/depends-on)"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
@@ -85,6 +86,7 @@ type StackDetailOutput struct {
 		Dockerfiles      []StackFile       `json:"dockerfiles,omitempty" doc:"Dockerfiles found in the stack directory"`
 		GitConfig        *GitSourceOutput  `json:"git_config,omitempty"`
 		Containers       []ContainerOutput `json:"containers"`
+		DependsOn        []string          `json:"depends_on" doc:"Stacks that must deploy before this one in a batch deploy (see PUT /stacks/{name}/depends-on)"`
 		CreatedAt        time.Time         `json:"created_at"`
 		UpdatedAt        time.Time         `json:"updated_at"`
 	}
@@ -237,5 +239,60 @@ type ComposeOpOutput struct {
 		Stdout string `json:"stdout"`
 		Stderr string `json:"stderr"`
 		JobID  string `json:"job_id,omitempty" doc:"Background job ID (present when async=true)"`
+	}
+}
+
+// --- Deploy ordering (depends_on) ---
+
+// UpdateStackDependsOnInput replaces the list of stacks this stack deploys
+// after in a batch deploy. Full-replace semantics: send the desired end
+// state; an empty list clears it.
+type UpdateStackDependsOnInput struct {
+	Name string `path:"name" maxLength:"128" doc:"Stack name"`
+	Body struct {
+		DependsOn []string `json:"depends_on" maxItems:"64" doc:"Names of stacks that must deploy successfully before this one when both are in the same batch deploy. Each must be an existing stack on the same docker host; self references and cycles are rejected with 422. Replaces the current list; [] clears it."`
+	}
+}
+
+// StackDependsOnOutput echoes the stored list after an update.
+type StackDependsOnOutput struct {
+	Body struct {
+		Name      string   `json:"name"`
+		DependsOn []string `json:"depends_on" doc:"Stacks this stack deploys after (validated, de-duplicated, order preserved)"`
+	}
+}
+
+// DeployBatchInput selects the stacks for an ordered batch deploy.
+type DeployBatchInput struct {
+	Async bool `query:"async" default:"false" doc:"Run as a background job and return a job ID immediately. Recommended: a multi-wave batch easily outlives the 60s response timeout on synchronous calls. Poll /api/v1/jobs/{id}; its output has one line per stack (ok|failed|skipped <name>[: reason]) followed by a summary line."`
+	Body  struct {
+		Stacks []string `json:"stacks" minItems:"1" maxItems:"200" doc:"Stack names to deploy. Grouped into waves by each stack's depends_on; only dependencies that are ALSO in this list order the batch - a dependency outside the list is ignored, never auto-added."`
+	}
+}
+
+// BatchStackResult is one stack's outcome in a batch deploy.
+type BatchStackResult struct {
+	Name   string `json:"name"`
+	Status string `json:"status" enum:"ok,failed,skipped" doc:"ok = compose up succeeded; failed = deploy error (or unknown stack); skipped = never started because an in-batch dependency failed or was skipped"`
+	Error  string `json:"error,omitempty" doc:"Failure message, or for skipped stacks the reason (which dependency failed)"`
+	Wave   int    `json:"wave" doc:"Zero-based wave the stack was scheduled in (-1 for unknown stacks)"`
+}
+
+// BatchDeploySummary tallies a batch deploy.
+type BatchDeploySummary struct {
+	Total   int `json:"total"`
+	OK      int `json:"ok"`
+	Failed  int `json:"failed"`
+	Skipped int `json:"skipped"`
+}
+
+// DeployBatchOutput reports per-stack outcomes (synchronous mode) or the job
+// ID to poll (async mode).
+type DeployBatchOutput struct {
+	Body struct {
+		Results []BatchStackResult `json:"results" doc:"Per-stack outcomes sorted by wave then name. Empty when async=true."`
+		Waves   [][]string         `json:"waves" doc:"The computed schedule: stacks in the same wave deployed concurrently. Empty when async=true."`
+		Summary BatchDeploySummary `json:"summary"`
+		JobID   string             `json:"job_id,omitempty" doc:"Background job ID (present when async=true)"`
 	}
 }

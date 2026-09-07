@@ -46,6 +46,13 @@ export const statusColor: Record<string, string> = {
   partial: PEACH,
   unknown: NEUTRAL,
 
+  // Batch deploy outcomes (POST /stacks/deploy-batch). A skipped stack was
+  // deliberately not started because a dependency failed: a hold, not an
+  // alert - the alert is the failed dependency next to it.
+  ok: GREEN,
+  failed: RED,
+  skipped: PEACH,
+
   // A one-off task that ran to completion, as opposed to a service that
   // stopped. Distinct from "exited" on purpose.
   completed: "bg-cp-blue/20 text-cp-blue border-cp-blue/30",

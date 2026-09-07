@@ -185,6 +185,8 @@ Stack (Aggregate Root)
   |-- composeContent: string (raw compose.yaml)
   |-- services: []ServiceDefinition (parsed from compose)
   |-- gitConfig: *GitSource (nil for local stacks)
+  |-- dependsOn: []string (stacks that must deploy first in a batch deploy;
+  |                        same host, no self reference, acyclic)
   |-- webhookID: *string (nil if no webhook registered)
   |-- createdAt: time.Time
   |-- updatedAt: time.Time
@@ -559,6 +561,8 @@ PUT    /api/v1/stacks/{name}        -- update compose content               [don
 DELETE /api/v1/stacks/{name}        -- delete stack (optionally volumes)    [done]
 
 POST   /api/v1/stacks/{name}/up       -- deploy (docker compose up -d)     [done]
+POST   /api/v1/stacks/deploy-batch    -- deploy many, ordered by depends_on [done]
+PUT    /api/v1/stacks/{name}/depends-on -- set batch deploy ordering        [done]
 POST   /api/v1/stacks/{name}/down     -- stop (docker compose down)        [done]
 POST   /api/v1/stacks/{name}/restart  -- restart all services              [done]
 POST   /api/v1/stacks/{name}/pull     -- pull latest images                [done]

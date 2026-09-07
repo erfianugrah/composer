@@ -23,9 +23,9 @@ func NewStackRepo(db *sql.DB) *StackRepo {
 
 func (r *StackRepo) Create(ctx context.Context, s *stack.Stack) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO stacks (name, path, source, host_id, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		s.Name, s.Path, string(s.Source), s.HostID, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO stacks (name, path, source, host_id, depends_on, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		s.Name, s.Path, string(s.Source), s.HostID, encodeDependsOn(s.DependsOn), s.CreatedAt, s.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("inserting stack: %w", err)
@@ -44,11 +44,11 @@ func (r *StackRepo) GetByName(ctx context.Context, name string) (*stack.Stack, e
 		return nil, nil
 	}
 	s := &stack.Stack{}
-	var source string
+	var source, dependsOn string
 	err := r.db.QueryRowContext(ctx,
-		`SELECT name, path, source, host_id, created_at, updated_at
+		`SELECT name, path, source, host_id, depends_on, created_at, updated_at
 		 FROM stacks WHERE name = $1`, name,
-	).Scan(&s.Name, &s.Path, &source, &s.HostID, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.Name, &s.Path, &source, &s.HostID, &dependsOn, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -57,12 +57,13 @@ func (r *StackRepo) GetByName(ctx context.Context, name string) (*stack.Stack, e
 	}
 	s.Source = stack.Source(source)
 	s.Status = stack.StatusUnknown
+	s.DependsOn = decodeDependsOn(dependsOn)
 	return s, nil
 }
 
 func (r *StackRepo) List(ctx context.Context) ([]*stack.Stack, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT name, path, source, host_id, created_at, updated_at
+		`SELECT name, path, source, host_id, depends_on, created_at, updated_at
 		 FROM stacks WHERE name != $1 ORDER BY name ASC LIMIT 500`, systemStackName)
 	if err != nil {
 		return nil, fmt.Errorf("listing stacks: %w", err)
@@ -72,12 +73,13 @@ func (r *StackRepo) List(ctx context.Context) ([]*stack.Stack, error) {
 	var stacks []*stack.Stack
 	for rows.Next() {
 		s := &stack.Stack{}
-		var source string
-		if err := rows.Scan(&s.Name, &s.Path, &source, &s.HostID, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var source, dependsOn string
+		if err := rows.Scan(&s.Name, &s.Path, &source, &s.HostID, &dependsOn, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning stack row: %w", err)
 		}
 		s.Source = stack.Source(source)
 		s.Status = stack.StatusUnknown
+		s.DependsOn = decodeDependsOn(dependsOn)
 		stacks = append(stacks, s)
 	}
 	return stacks, rows.Err()
@@ -85,8 +87,8 @@ func (r *StackRepo) List(ctx context.Context) ([]*stack.Stack, error) {
 
 func (r *StackRepo) Update(ctx context.Context, s *stack.Stack) error {
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE stacks SET path=$2, source=$3, host_id=$4, updated_at=$5 WHERE name=$1`,
-		s.Name, s.Path, string(s.Source), s.HostID, s.UpdatedAt,
+		`UPDATE stacks SET path=$2, source=$3, host_id=$4, depends_on=$5, updated_at=$6 WHERE name=$1`,
+		s.Name, s.Path, string(s.Source), s.HostID, encodeDependsOn(s.DependsOn), s.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("updating stack: %w", err)
@@ -95,6 +97,33 @@ func (r *StackRepo) Update(ctx context.Context, s *stack.Stack) error {
 		return ErrNotUpdated
 	}
 	return nil
+}
+
+// encodeDependsOn serialises the deploy-ordering list for the depends_on
+// column. nil and empty both become "[]" so the NOT NULL column never sees
+// JSON null and readers can treat the column as always-an-array.
+func encodeDependsOn(deps []string) string {
+	if len(deps) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(deps)
+	if err != nil {
+		return "[]" // []string cannot fail to marshal; defensive only
+	}
+	return string(b)
+}
+
+// decodeDependsOn parses the depends_on column. Malformed content (hand-edited
+// DB) degrades to "no dependencies" rather than failing every stack read.
+func decodeDependsOn(raw string) []string {
+	if raw == "" || raw == "[]" {
+		return []string{}
+	}
+	var deps []string
+	if err := json.Unmarshal([]byte(raw), &deps); err != nil || deps == nil {
+		return []string{}
+	}
+	return deps
 }
 
 func (r *StackRepo) Delete(ctx context.Context, name string) error {

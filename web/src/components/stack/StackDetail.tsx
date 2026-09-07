@@ -32,6 +32,7 @@ import { StackRegistryAuths } from "./StackRegistryAuths";
 import { EnvEditor } from "./EnvEditor";
 import { StackWebhooks } from "./StackWebhooks";
 import { StackCredentials } from "./StackCredentials";
+import { StackDependsOn } from "./StackDependsOn";
 import { highlightDockerfile } from "@/lib/dockerfile-highlight";
 import { statusColor, statusClass, transitionalColor } from "@/lib/status-colors";
 
@@ -68,6 +69,8 @@ interface StackData {
     sync_status: string;
     last_commit_sha: string;
   };
+  /** Stacks that must deploy before this one in a batch deploy. */
+  depends_on?: string[];
 }
 
 type StackContainer = StackData["containers"][number];
@@ -103,8 +106,8 @@ export function StackDetail({ stackName }: { stackName: string }) {
   const [actionOutput, setActionOutput] = useState("");
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
   const [attachGitUrl, setAttachGitUrl] = useState<string | null>(null);
-  type TabId = "containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "registries" | "git";
-  const VALID_TABS: readonly TabId[] = ["containers", "compose", "dockerfiles", "env", "diff", "logs", "console", "terminal", "stats", "webhooks", "credentials", "registries", "git"];
+  type TabId = "containers" | "compose" | "dockerfiles" | "env" | "diff" | "logs" | "console" | "terminal" | "stats" | "webhooks" | "credentials" | "registries" | "dependencies" | "git";
+  const VALID_TABS: readonly TabId[] = ["containers", "compose", "dockerfiles", "env", "diff", "logs", "console", "terminal", "stats", "webhooks", "credentials", "registries", "dependencies", "git"];
   // Tab state is driven by the React Router :tab URL param. The router
   // (StacksRouter) maps /stacks/:name/:tab here; setActiveTab navigates
   // which updates :tab and re-renders. Default to "containers" when no
@@ -399,7 +402,7 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {/* Tabs */}
       <div role="tablist" className="flex gap-1 border-b border-border overflow-x-auto">
-        {(["containers", "compose", ...(stack.dockerfiles?.length ? ["dockerfiles" as const] : []), "env", "diff", "logs", "console", "terminal", "stats", "registries" as const, ...(stack.source === "git" ? ["webhooks" as const, "credentials" as const, "git" as const] : [])] as const).map((tab) => (
+        {(["containers", "compose", ...(stack.dockerfiles?.length ? ["dockerfiles" as const] : []), "env", "diff", "logs", "console", "terminal", "stats", "registries" as const, "dependencies" as const, ...(stack.source === "git" ? ["webhooks" as const, "credentials" as const, "git" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             role="tab"
@@ -838,6 +841,10 @@ export function StackDetail({ stackName }: { stackName: string }) {
 
       {activeTab === "registries" && (
         <StackRegistryAuths stackName={stack.name} />
+      )}
+
+      {activeTab === "dependencies" && (
+        <StackDependsOn stackName={stack.name} host={stack.host} current={stack.depends_on ?? []} onSaved={fetchStack} />
       )}
     </div>
   );
